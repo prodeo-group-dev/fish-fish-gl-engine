@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.domain.ledger
 
 import java.math.BigDecimal
+import java.math.MathContext
 import java.math.RoundingMode
 import java.util.Currency
 
@@ -31,6 +32,21 @@ class Money(amount: BigDecimal, val currency: Currency) : Comparable<Money> {
     operator fun minus(other: Money): Money {
         requireSameCurrency(other)
         return Money(amount - other.amount, currency)
+    }
+
+    /** Scalar multiplication - needed for weighted-average inventory costing (quantity x unit cost). */
+    operator fun times(scalar: BigDecimal): Money = Money(amount * scalar, currency)
+
+    /**
+     * Scalar division - needed for weighted-average inventory costing
+     * (total value / total quantity). Divides at high precision first so
+     * non-terminating decimals (e.g. dividing by 3) don't throw
+     * ArithmeticException; the constructor's own minor-unit rounding
+     * has the final say on precision.
+     */
+    operator fun div(divisor: BigDecimal): Money {
+        require(divisor.signum() != 0) { "Cannot divide Money by zero" }
+        return Money(amount.divide(divisor, MathContext(34)), currency)
     }
 
     override fun compareTo(other: Money): Int {

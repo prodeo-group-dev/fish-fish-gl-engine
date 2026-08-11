@@ -43,6 +43,41 @@ class MoneyTest {
     }
 
     @Test
+    fun `given a Money value, when multiplied by a scalar, then the amount scales and the currency is unchanged`() {
+        val a = Money(BigDecimal("2.00"), GBP)
+
+        val result = a * BigDecimal("10")
+
+        result.amount shouldBe BigDecimal("20.00")
+        result.currency shouldBe GBP
+    }
+
+    @Test
+    fun `given a Money value, when divided by a scalar, then the amount divides and rounds to the minor unit`() {
+        val a = Money(BigDecimal("60.00"), GBP)
+
+        val result = a / BigDecimal("20")
+
+        result.amount shouldBe BigDecimal("3.00")
+    }
+
+    @Test
+    fun `given a Money value, when divided by a scalar that doesn't divide evenly, then it rounds rather than throwing`() {
+        val a = Money(BigDecimal("10.00"), GBP)
+
+        val result = a / BigDecimal("3")
+
+        result.amount shouldBe BigDecimal("3.33")
+    }
+
+    @Test
+    fun `given a Money value, when divided by zero, then it fails`() {
+        val a = Money(BigDecimal("10.00"), GBP)
+
+        shouldThrow<IllegalArgumentException> { a / BigDecimal.ZERO }
+    }
+
+    @Test
     fun `given two Money values in different currencies, when subtracted, then it fails`() {
         val a = Money(BigDecimal("10.00"), GBP)
         val b = Money(BigDecimal("10.00"), USD)
