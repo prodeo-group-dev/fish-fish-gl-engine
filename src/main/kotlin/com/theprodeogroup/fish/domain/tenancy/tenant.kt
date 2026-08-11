@@ -14,12 +14,12 @@ import java.util.Currency
  * Membership are their own aggregate roots, never embedded here). Built to
  * match the OnboardTenantUseCase flow in docs/DDD_Design.md Section 9:
  * [onboard] creates a bare Draft tenant, [addCompany]/[addAdminMembership]/
- * [recordKybOutcome] populate it, and [activate] performs the same checks
- * as Section 9.2 step 7 before flipping it live.
+ * [recordKybOutcome]/[recordAdminKycOutcome] populate it, and [activate]
+ * performs the same checks as Section 9.2 step 7 before flipping it live.
  *
- * KYB verification is deliberately not part of [TenantStatus] - see
+ * Verification is deliberately not part of [TenantStatus] - see
  * [isKybGracePeriodExpired] and the 180-day grace period it implements
- * (Section 9.4).
+ * (Section 9.4), which covers both [kybStatus] and [adminKycStatus].
  */
 class Tenant private constructor(
     val id: TenantId,
@@ -30,9 +30,21 @@ class Tenant private constructor(
     var status: TenantStatus = TenantStatus.DRAFT
         private set
 
-    var kybStatus: KybStatus = KybStatus.PENDING
+    /** Business-level KYB check outcome. */
+    var kybStatus: VerificationStatus = VerificationStatus.PENDING
         private set
 
+    /**
+     * Personal KYC outcome for the admin User created at onboarding
+     * (Section 9.2 step 4) - tracked separately from [kybStatus] since they
+     * can clear at different times or come from different verification
+     * providers, but share the same activation rule and grace-period
+     * deadline (Section 9.4).
+     */
+    var adminKycStatus: VerificationStatus = VerificationStatus.PENDING
+        private set
+
+    /** Shared 180-day deadline for both [kybStatus] and [adminKycStatus] to reach VERIFIED. */
     var kybVerificationDeadline: Instant? = null
         private set
 
@@ -75,22 +87,33 @@ class Tenant private constructor(
     }
 
     /**
-     * Section 9.2 step 5. Recording an outcome never fails - FiSH doesn't
-     * perform the check, only records whatever the external result was,
-     * even after activation (a later Flagged result is what the arrears/
-     * suspension workflow reacts to).
+     * Section 9.2 step 5 (business half). Recording an outcome never fails -
+     * FiSH doesn't perform the check, only records whatever the external
+     * result was, even after activation (a later Flagged result is what the
+     * arrears/suspension workflow reacts to).
      */
-    fun recordKybOutcome(newStatus: KybStatus) {
+    fun recordKybOutcome(newStatus: VerificationStatus) {
         kybStatus = newStatus
+    }
+
+    /**
+     * Section 9.2 step 5 (admin-KYC half) - the founding admin's personal
+     * identity check, part of the same onboarding KYB step, not the later
+     * per-member declaration (spec Section 7.11). Recording an outcome
+     * never fails, same rationale as [recordKybOutcome].
+     */
+    fun recordAdminKycOutcome(newStatus: VerificationStatus) {
+        adminKycStatus = newStatus
     }
 
     /**
      * Section 9.2 step 7. Only a Draft tenant can be activated this way -
      * a Suspended tenant must go through [reactivate] instead. Resolved
-     * per Section 9.2: a Pending KYB status does not block this; only
-     * Flagged does. On success, starts the 180-day KYB grace-period clock
-     * (Section 9.4) and raises both TenantActivated and TenantOnboarded -
-     * this call is literally steps 7 and 8 of OnboardTenantUseCase.
+     * per Section 9.2: Pending kybStatus/adminKycStatus does not block
+     * this; Flagged on either does. On success, starts the shared 180-day
+     * grace-period clock (Section 9.4) and raises both TenantActivated and
+     * TenantOnboarded - this call is literally steps 7 and 8 of
+     * OnboardTenantUseCase.
      */
     fun activate(now: Instant = Instant.now()): ValidationResult {
         val statusCheck = if (status == TenantStatus.DRAFT) {
@@ -113,8 +136,14 @@ class Tenant private constructor(
         } else {
             ValidationResult.failure("Tenant KYB status is Flagged - cannot activate")
         }
+        val adminKycCheck = if (!adminKycStatus.blocksActivation()) {
+            ValidationResult.success()
+        } else {
+            ValidationResult.failure("Admin KYC status is Flagged - cannot activate")
+        }
 
-        val result = statusCheck.combine(companyCheck).combine(membershipCheck).combine(kybCheck)
+        val result = statusCheck.combine(companyCheck).combine(membershipCheck)
+            .combine(kybCheck).combine(adminKycCheck)
         if (!result.isValid) return result
 
         status = TenantStatus.ACTIVE
@@ -124,7 +153,7 @@ class Tenant private constructor(
         return ValidationResult.success()
     }
 
-    /** Reversible - non-payment, a KYB flag raised post-activation, or [suspendForExpiredKyb]. */
+    /** Reversible - non-payment, a KYB/KYC flag raised post-activation, or [suspendForExpiredKyb]. */
     fun suspend(reason: String, now: Instant = Instant.now()): ValidationResult {
         if (!status.canTransitionTo(TenantStatus.SUSPENDED)) {
             return ValidationResult.failure("Cannot suspend a tenant in status $status")
@@ -155,14 +184,16 @@ class Tenant private constructor(
     }
 
     /**
-     * True once an Active tenant is past [kybVerificationDeadline] with KYB
-     * still not Verified - what the scheduled sweep in Section 9.4 checks
-     * for. Never true for a tenant that was never activated (no deadline
-     * set) or one that's already Verified/no longer Active.
+     * True once an Active tenant is past [kybVerificationDeadline] with
+     * either [kybStatus] or [adminKycStatus] still not Verified - what the
+     * scheduled sweep in Section 9.4 checks for. Never true for a tenant
+     * that was never activated (no deadline set) or one that's already
+     * fully Verified/no longer Active.
      */
     fun isKybGracePeriodExpired(asOf: Instant = Instant.now()): Boolean {
         val deadline = kybVerificationDeadline ?: return false
-        return status == TenantStatus.ACTIVE && kybStatus != KybStatus.VERIFIED && asOf.isAfter(deadline)
+        val bothVerified = kybStatus == VerificationStatus.VERIFIED && adminKycStatus == VerificationStatus.VERIFIED
+        return status == TenantStatus.ACTIVE && !bothVerified && asOf.isAfter(deadline)
     }
 
     /**
@@ -172,7 +203,7 @@ class Tenant private constructor(
      */
     fun suspendForExpiredKyb(now: Instant = Instant.now()): ValidationResult {
         if (!isKybGracePeriodExpired(now)) {
-            return ValidationResult.failure("KYB grace period has not expired, or tenant is not eligible for automated suspension")
+            return ValidationResult.failure("KYB/KYC grace period has not expired, or tenant is not eligible for automated suspension")
         }
         status = TenantStatus.SUSPENDED
         _domainEvents.add(KybGracePeriodExpired(id, now))

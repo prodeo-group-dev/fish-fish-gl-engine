@@ -24,7 +24,8 @@ class TenantTest {
         tenant.status shouldBe TenantStatus.DRAFT
         tenant.companyIds shouldHaveSize 0
         tenant.adminMembershipIds shouldHaveSize 0
-        tenant.kybStatus shouldBe KybStatus.PENDING
+        tenant.kybStatus shouldBe VerificationStatus.PENDING
+        tenant.adminKycStatus shouldBe VerificationStatus.PENDING
         tenant.kybVerificationDeadline shouldBe null
     }
 
@@ -51,7 +52,7 @@ class TenantTest {
     }
 
     @Test
-    fun `given a Draft tenant with a Company and admin Membership, when activated, then it succeeds even though KYB is still Pending`() {
+    fun `given a Draft tenant with a Company and admin Membership, when activated, then it succeeds even though KYB and admin KYC are still Pending`() {
         val tenant = Tenant.onboard("Acme SMB", TenantSegment.EXTERNAL_B2B, GBP)
         tenant.addCompany(CompanyId.generate())
         tenant.addAdminMembership(MembershipId.generate())
@@ -60,7 +61,8 @@ class TenantTest {
 
         result.isValid shouldBe true
         tenant.status shouldBe TenantStatus.ACTIVE
-        tenant.kybStatus shouldBe KybStatus.PENDING
+        tenant.kybStatus shouldBe VerificationStatus.PENDING
+        tenant.adminKycStatus shouldBe VerificationStatus.PENDING
     }
 
     @Test
@@ -68,7 +70,20 @@ class TenantTest {
         val tenant = Tenant.onboard("Suspicious Co", TenantSegment.EXTERNAL_B2B, GBP)
         tenant.addCompany(CompanyId.generate())
         tenant.addAdminMembership(MembershipId.generate())
-        tenant.recordKybOutcome(KybStatus.FLAGGED)
+        tenant.recordKybOutcome(VerificationStatus.FLAGGED)
+
+        val result = tenant.activate()
+
+        result.isValid shouldBe false
+        tenant.status shouldBe TenantStatus.DRAFT
+    }
+
+    @Test
+    fun `given a Draft tenant whose admin KYC is Flagged, when activation is attempted, then it is rejected too`() {
+        val tenant = Tenant.onboard("Acme SMB", TenantSegment.EXTERNAL_B2B, GBP)
+        tenant.addCompany(CompanyId.generate())
+        tenant.addAdminMembership(MembershipId.generate())
+        tenant.recordAdminKycOutcome(VerificationStatus.FLAGGED)
 
         val result = tenant.activate()
 
@@ -169,7 +184,7 @@ class TenantTest {
     }
 
     @Test
-    fun `given an Active tenant past its KYB deadline and still Pending, when checked, then the grace period is expired`() {
+    fun `given an Active tenant past its deadline with KYB and admin KYC still Pending, when checked, then the grace period is expired`() {
         val tenant = readyToActivate()
         val activatedAt = Instant.parse("2026-01-01T00:00:00Z")
         tenant.activate(activatedAt)
@@ -180,7 +195,7 @@ class TenantTest {
     }
 
     @Test
-    fun `given an Active tenant within its KYB deadline, when checked, then the grace period is not expired`() {
+    fun `given an Active tenant within its deadline, when checked, then the grace period is not expired`() {
         val tenant = readyToActivate()
         val activatedAt = Instant.parse("2026-01-01T00:00:00Z")
         tenant.activate(activatedAt)
@@ -191,11 +206,24 @@ class TenantTest {
     }
 
     @Test
-    fun `given an Active tenant whose KYB became Verified, when checked past the original deadline, then the grace period is not expired`() {
+    fun `given KYB Verified but admin KYC still Pending, when checked past the deadline, then the grace period is still expired`() {
         val tenant = readyToActivate()
         val activatedAt = Instant.parse("2026-01-01T00:00:00Z")
         tenant.activate(activatedAt)
-        tenant.recordKybOutcome(KybStatus.VERIFIED)
+        tenant.recordKybOutcome(VerificationStatus.VERIFIED)
+
+        val afterDeadline = activatedAt.plus(181, ChronoUnit.DAYS)
+
+        tenant.isKybGracePeriodExpired(afterDeadline) shouldBe true
+    }
+
+    @Test
+    fun `given both KYB and admin KYC Verified, when checked past the original deadline, then the grace period is not expired`() {
+        val tenant = readyToActivate()
+        val activatedAt = Instant.parse("2026-01-01T00:00:00Z")
+        tenant.activate(activatedAt)
+        tenant.recordKybOutcome(VerificationStatus.VERIFIED)
+        tenant.recordAdminKycOutcome(VerificationStatus.VERIFIED)
 
         val afterOriginalDeadline = activatedAt.plus(181, ChronoUnit.DAYS)
 
@@ -203,7 +231,7 @@ class TenantTest {
     }
 
     @Test
-    fun `given an expired KYB grace period, when the automated sweep suspends it, then a KybGracePeriodExpired event is raised`() {
+    fun `given an expired grace period, when the automated sweep suspends it, then a KybGracePeriodExpired event is raised`() {
         val tenant = readyToActivate()
         val activatedAt = Instant.parse("2026-01-01T00:00:00Z")
         tenant.activate(activatedAt)
