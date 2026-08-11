@@ -32,6 +32,25 @@ class MoneyTest {
     }
 
     @Test
+    fun `given two Money values in the same currency, when subtracted, then the result has the difference and the same currency`() {
+        val a = Money(BigDecimal("10.00"), GBP)
+        val b = Money(BigDecimal("3.50"), GBP)
+
+        val result = a - b
+
+        result.amount shouldBe BigDecimal("6.50")
+        result.currency shouldBe GBP
+    }
+
+    @Test
+    fun `given two Money values in different currencies, when subtracted, then it fails`() {
+        val a = Money(BigDecimal("10.00"), GBP)
+        val b = Money(BigDecimal("10.00"), USD)
+
+        shouldThrow<IllegalArgumentException> { a - b }
+    }
+
+    @Test
     fun `given two Money values in different currencies, when added, then it fails rather than silently producing a wrong number`() {
         val a = Money(BigDecimal("10.00"), GBP)
         val b = Money(BigDecimal("10.00"), USD)

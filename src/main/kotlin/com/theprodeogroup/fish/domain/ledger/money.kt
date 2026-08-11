@@ -28,6 +28,11 @@ class Money(amount: BigDecimal, val currency: Currency) : Comparable<Money> {
         return Money(amount + other.amount, currency)
     }
 
+    operator fun minus(other: Money): Money {
+        requireSameCurrency(other)
+        return Money(amount - other.amount, currency)
+    }
+
     override fun compareTo(other: Money): Int {
         requireSameCurrency(other)
         return amount.compareTo(other.amount)
