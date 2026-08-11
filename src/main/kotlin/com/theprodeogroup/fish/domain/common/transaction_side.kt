@@ -21,5 +21,12 @@ enum class TransactionSide {
      * Increases: Liabilities, Equity, Income
      * Decreases: Assets, Expenses
      */
-    CREDIT
+    CREDIT;
+
+    /**
+     * The other side - needed to construct a reversal JournalLine that
+     * exactly cancels this one (docs/DDD_Design.md Section 3.1,
+     * JournalEntry.reverse()).
+     */
+    fun opposite(): TransactionSide = if (this == DEBIT) CREDIT else DEBIT
 }
