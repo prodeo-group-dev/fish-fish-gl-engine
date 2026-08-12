@@ -54,3 +54,13 @@ value class AccruedExpenseId(val value: UUID) {
         fun generate(): AccruedExpenseId = AccruedExpenseId(UUID.randomUUID())
     }
 }
+
+/**
+ * Identity of a Borrowing aggregate.
+ */
+@JvmInline
+value class BorrowingId(val value: UUID) {
+    companion object {
+        fun generate(): BorrowingId = BorrowingId(UUID.randomUUID())
+    }
+}
