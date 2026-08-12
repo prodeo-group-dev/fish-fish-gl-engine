@@ -24,3 +24,13 @@ value class PayslipId(val value: UUID) {
         fun generate(): PayslipId = PayslipId(UUID.randomUUID())
     }
 }
+
+/**
+ * Identity of a LeaveAccrual aggregate.
+ */
+@JvmInline
+value class LeaveAccrualId(val value: UUID) {
+    companion object {
+        fun generate(): LeaveAccrualId = LeaveAccrualId(UUID.randomUUID())
+    }
+}
