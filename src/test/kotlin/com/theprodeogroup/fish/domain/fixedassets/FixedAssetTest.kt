@@ -7,6 +7,7 @@ import com.theprodeogroup.fish.domain.ledger.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
@@ -126,6 +127,122 @@ class FixedAssetTest {
 
         result shouldBe null
         asset.netBookValue shouldBe Money(BigDecimal.ZERO, GBP)
+    }
+
+    @Test
+    fun `given an asset with accumulated depreciation, when disposed for proceeds above net book value, then the Sale of Fixed Asset account nets to a gain`() {
+        val asset = FixedAsset.create(
+            CompanyId.generate(), "Delivery Van", AssetCategory.VEHICLES,
+            Money(BigDecimal("1000.00"), GBP), TODAY, 4
+        )
+        asset.recordDepreciation(AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY)
+        // netBookValue is now 750.00
+        val cashAccountId = AccountId.generate()
+        val fixedAssetAccountId = AccountId.generate()
+        val accumulatedDepreciationAccountId = AccountId.generate()
+        val saleOfFixedAssetAccountId = AccountId.generate()
+
+        val entry = requireNotNull(
+            asset.dispose(
+                Money(BigDecimal("800.00"), GBP), cashAccountId, fixedAssetAccountId,
+                accumulatedDepreciationAccountId, saleOfFixedAssetAccountId, PeriodId.generate(), TODAY
+            )
+        )
+
+        JournalEntry.validateLines(entry.lines).isValid shouldBe true
+        entry.lines.first { it.accountId == fixedAssetAccountId }.let {
+            it.side shouldBe TransactionSide.CREDIT
+            it.amount shouldBe Money(BigDecimal("1000.00"), GBP)
+        }
+        entry.lines.first { it.accountId == accumulatedDepreciationAccountId }.let {
+            it.side shouldBe TransactionSide.DEBIT
+            it.amount shouldBe Money(BigDecimal("250.00"), GBP)
+        }
+        entry.lines.first { it.accountId == cashAccountId }.let {
+            it.side shouldBe TransactionSide.DEBIT
+            it.amount shouldBe Money(BigDecimal("800.00"), GBP)
+        }
+        val saleLines = entry.lines.filter { it.accountId == saleOfFixedAssetAccountId }
+        val netSaleBalance = saleLines.fold(Money(BigDecimal.ZERO, GBP)) { sum, line ->
+            if (line.side == TransactionSide.CREDIT) sum + line.amount else sum - line.amount
+        }
+        netSaleBalance shouldBe Money(BigDecimal("50.00"), GBP)
+    }
+
+    @Test
+    fun `given an asset with accumulated depreciation, when disposed for proceeds below net book value, then the Sale of Fixed Asset account nets to a loss`() {
+        val asset = FixedAsset.create(
+            CompanyId.generate(), "Delivery Van", AssetCategory.VEHICLES,
+            Money(BigDecimal("1000.00"), GBP), TODAY, 4
+        )
+        asset.recordDepreciation(AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY)
+        // netBookValue is now 750.00
+        val saleOfFixedAssetAccountId = AccountId.generate()
+
+        val entry = requireNotNull(
+            asset.dispose(
+                Money(BigDecimal("500.00"), GBP), AccountId.generate(), AccountId.generate(),
+                AccountId.generate(), saleOfFixedAssetAccountId, PeriodId.generate(), TODAY
+            )
+        )
+
+        val saleLines = entry.lines.filter { it.accountId == saleOfFixedAssetAccountId }
+        val netSaleBalance = saleLines.fold(Money(BigDecimal.ZERO, GBP)) { sum, line ->
+            if (line.side == TransactionSide.CREDIT) sum + line.amount else sum - line.amount
+        }
+        // a negative (debit) balance on a Revenue-type account represents the loss
+        netSaleBalance shouldBe Money(BigDecimal("-250.00"), GBP)
+    }
+
+    @Test
+    fun `given no depreciation recorded yet, when disposed for proceeds equal to cost, then the accumulated depreciation line is omitted and the Sale account nets to zero`() {
+        val asset = equipment()
+        // netBookValue is cost, 1000.00, no depreciation recorded yet
+        val accumulatedDepreciationAccountId = AccountId.generate()
+        val saleOfFixedAssetAccountId = AccountId.generate()
+
+        val entry = requireNotNull(
+            asset.dispose(
+                Money(BigDecimal("1000.00"), GBP), AccountId.generate(), AccountId.generate(),
+                accumulatedDepreciationAccountId, saleOfFixedAssetAccountId, PeriodId.generate(), TODAY
+            )
+        )
+
+        JournalEntry.validateLines(entry.lines).isValid shouldBe true
+        entry.lines.none { it.accountId == accumulatedDepreciationAccountId } shouldBe true
+        entry.lines shouldHaveSize 4
+    }
+
+    @Test
+    fun `given an already-disposed asset, when disposed again, then it fails`() {
+        val asset = equipment()
+        asset.dispose(
+            Money(BigDecimal("1000.00"), GBP), AccountId.generate(), AccountId.generate(),
+            AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY
+        )
+
+        val result = asset.dispose(
+            Money(BigDecimal("100.00"), GBP), AccountId.generate(), AccountId.generate(),
+            AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY
+        )
+
+        result shouldBe null
+    }
+
+    @Test
+    fun `given a disposed asset, when recordDepreciation is called, then it fails`() {
+        val asset = FixedAsset.create(
+            CompanyId.generate(), "Delivery Van", AssetCategory.VEHICLES,
+            Money(BigDecimal("1000.00"), GBP), TODAY, 4
+        )
+        asset.dispose(
+            Money(BigDecimal("750.00"), GBP), AccountId.generate(), AccountId.generate(),
+            AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY
+        )
+
+        val result = asset.recordDepreciation(AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY)
+
+        result shouldBe null
     }
 
     private fun equipment(): FixedAsset = FixedAsset.create(

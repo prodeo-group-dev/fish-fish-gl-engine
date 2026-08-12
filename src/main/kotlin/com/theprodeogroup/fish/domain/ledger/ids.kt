@@ -34,3 +34,13 @@ value class JournalEntryId(val value: UUID) {
         fun generate(): JournalEntryId = JournalEntryId(UUID.randomUUID())
     }
 }
+
+/**
+ * Identity of a Prepayment aggregate.
+ */
+@JvmInline
+value class PrepaymentId(val value: UUID) {
+    companion object {
+        fun generate(): PrepaymentId = PrepaymentId(UUID.randomUUID())
+    }
+}

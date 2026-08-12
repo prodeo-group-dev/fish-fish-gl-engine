@@ -29,6 +29,9 @@ import java.time.LocalDate
  * of `JournalEntry` never inspecting `Period`'s own type/duration
  * (Section 3.1's design note); callers decide how often to call this
  * based on their own reporting cadence.
+ *
+ * [dispose] closes the original "disposal deferred" scope note, built
+ * 2026-08-12.
  */
 class FixedAsset private constructor(
     val id: FixedAssetId,
@@ -40,6 +43,9 @@ class FixedAsset private constructor(
     val usefulLifeYears: Int?
 ) {
     var accumulatedDepreciation: Money = Money(BigDecimal.ZERO, cost.currency)
+        private set
+
+    var isDisposed: Boolean = false
         private set
 
     val netBookValue: Money
@@ -74,6 +80,7 @@ class FixedAsset private constructor(
         date: LocalDate,
         journalEntryId: JournalEntryId = JournalEntryId.generate()
     ): JournalEntry? {
+        if (isDisposed) return null
         val annualCharge = annualDepreciationCharge ?: return null
         val remaining = netBookValue
         if (remaining.amount.signum() <= 0) return null
@@ -88,6 +95,71 @@ class FixedAsset private constructor(
         return JournalEntry.create(
             periodId, date, lines, JournalSource.SYSTEM,
             "Depreciation - $name ($id)", journalEntryId
+        )
+    }
+
+    /**
+     * Disposes of the asset (sale or scrap) using the standard Asset
+     * Disposal Account method (docs/DDD_Design.md Section 2.8, confirmed
+     * 2026-08-12 - a real correction to an earlier compound-entry design
+     * that computed gain/loss directly instead of letting the ledger
+     * derive it). [saleOfFixedAssetAccountId] ("Sale of Fixed Asset," a
+     * Revenue-type account) is the clearing account everything routes
+     * through, **not** a separate gain-only target:
+     *
+     * 1. Debit [saleOfFixedAssetAccountId], credit [fixedAssetAccountId]
+     *    for [cost] - removes the asset from the Fixed Asset register.
+     * 2. Debit [accumulatedDepreciationAccountId], credit
+     *    [saleOfFixedAssetAccountId] for [accumulatedDepreciation] -
+     *    clears the accumulated depreciation. After steps 1-2 alone,
+     *    [saleOfFixedAssetAccountId]'s net balance is exactly
+     *    [netBookValue] (debit).
+     * 3. Debit [cashAccountId], credit [saleOfFixedAssetAccountId] for
+     *    [proceeds].
+     *
+     * No separate gain/loss computation or account - whatever balance
+     * remains on [saleOfFixedAssetAccountId] after all three postings
+     * *is* the gain (a credit balance, matching its Revenue type) or
+     * loss (an abnormal debit balance). The accumulated-depreciation and
+     * proceeds legs are omitted entirely when exactly zero (matching
+     * `Customer.assessExpectedCreditLoss()`'s "nothing to post"
+     * precedent) - e.g. disposing an asset with no depreciation recorded
+     * yet, or a scrapped asset with zero proceeds.
+     *
+     * Marks the asset [isDisposed] - `recordDepreciation()` and a second
+     * `dispose()` call both fail afterward. Returns `null` if already
+     * disposed, matching every other "already in that state" precedent
+     * in this codebase.
+     */
+    fun dispose(
+        proceeds: Money,
+        cashAccountId: AccountId,
+        fixedAssetAccountId: AccountId,
+        accumulatedDepreciationAccountId: AccountId,
+        saleOfFixedAssetAccountId: AccountId,
+        periodId: PeriodId,
+        date: LocalDate,
+        journalEntryId: JournalEntryId = JournalEntryId.generate()
+    ): JournalEntry? {
+        if (isDisposed) return null
+
+        val lines = mutableListOf(
+            JournalLine(saleOfFixedAssetAccountId, cost, TransactionSide.DEBIT),
+            JournalLine(fixedAssetAccountId, cost, TransactionSide.CREDIT)
+        )
+        if (accumulatedDepreciation.amount.signum() > 0) {
+            lines.add(JournalLine(accumulatedDepreciationAccountId, accumulatedDepreciation, TransactionSide.DEBIT))
+            lines.add(JournalLine(saleOfFixedAssetAccountId, accumulatedDepreciation, TransactionSide.CREDIT))
+        }
+        if (proceeds.amount.signum() > 0) {
+            lines.add(JournalLine(cashAccountId, proceeds, TransactionSide.DEBIT))
+            lines.add(JournalLine(saleOfFixedAssetAccountId, proceeds, TransactionSide.CREDIT))
+        }
+
+        isDisposed = true
+        return JournalEntry.create(
+            periodId, date, lines, JournalSource.MANUAL,
+            "Disposal - $name ($id)", journalEntryId
         )
     }
 

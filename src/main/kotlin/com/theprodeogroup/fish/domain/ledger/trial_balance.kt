@@ -40,6 +40,18 @@ class TrialBalance private constructor(
     val isBalanced: Boolean
         get() = totalAssetAndExpense == totalLiabilityEquityRevenue
 
+    /**
+     * IAS 1: a Cash/Asset account with a negative balance (an overdraft)
+     * should be *presented* as a Current Liability, not a negative
+     * Asset. This is a presentation-layer flag only - it doesn't change
+     * [totalAssetAndExpense]/[totalLiabilityEquityRevenue]/[isBalanced],
+     * which stay based on each Account's own `normalBalance()` type
+     * exactly as before. A future Balance Sheet view would use this to
+     * move these lines into the liability section when rendering.
+     */
+    val overdraftLines: List<TrialBalanceLine>
+        get() = lines.filter { it.accountType == AccountType.ASSET && it.balance.amount.signum() < 0 }
+
     private fun sumWhere(predicate: (AccountType) -> Boolean): Money =
         lines.filter { predicate(it.accountType) }
             .fold(Money(BigDecimal.ZERO, currency)) { sum, line -> sum + line.balance }

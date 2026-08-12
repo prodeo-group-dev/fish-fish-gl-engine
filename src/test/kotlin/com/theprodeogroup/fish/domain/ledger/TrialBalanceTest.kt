@@ -135,6 +135,52 @@ class TrialBalanceTest {
         trialBalance.lines.first { it.accountId == cash.id }.balance shouldBe Money(BigDecimal("-200.00"), GBP)
     }
 
+    @Test
+    fun `given a Cash Asset account with a negative balance, when computed, then it is flagged as an overdraft`() {
+        val companyId = CompanyId.generate()
+        val cash = account(companyId, AccountType.ASSET)
+        val revenue = account(companyId, AccountType.REVENUE)
+        val entry = postedEntry(
+            JournalLine(revenue.id, Money(BigDecimal("200.00"), GBP), TransactionSide.DEBIT),
+            JournalLine(cash.id, Money(BigDecimal("200.00"), GBP), TransactionSide.CREDIT)
+        )
+
+        val trialBalance = TrialBalance.of(listOf(cash, revenue), listOf(entry), GBP)
+
+        trialBalance.overdraftLines.map { it.accountId } shouldBe listOf(cash.id)
+    }
+
+    @Test
+    fun `given an Asset account with a positive balance, when computed, then it is not flagged as an overdraft`() {
+        val companyId = CompanyId.generate()
+        val cash = account(companyId, AccountType.ASSET)
+        val revenue = account(companyId, AccountType.REVENUE)
+        val entry = postedEntry(
+            JournalLine(cash.id, Money(BigDecimal("200.00"), GBP), TransactionSide.DEBIT),
+            JournalLine(revenue.id, Money(BigDecimal("200.00"), GBP), TransactionSide.CREDIT)
+        )
+
+        val trialBalance = TrialBalance.of(listOf(cash, revenue), listOf(entry), GBP)
+
+        trialBalance.overdraftLines shouldBe emptyList()
+    }
+
+    @Test
+    fun `given an overdrawn Cash account, when computed, then totals and isBalanced are unaffected by the reclassification`() {
+        val companyId = CompanyId.generate()
+        val cash = account(companyId, AccountType.ASSET)
+        val revenue = account(companyId, AccountType.REVENUE)
+        val entry = postedEntry(
+            JournalLine(revenue.id, Money(BigDecimal("200.00"), GBP), TransactionSide.DEBIT),
+            JournalLine(cash.id, Money(BigDecimal("200.00"), GBP), TransactionSide.CREDIT)
+        )
+
+        val trialBalance = TrialBalance.of(listOf(cash, revenue), listOf(entry), GBP)
+
+        trialBalance.totalAssetAndExpense shouldBe trialBalance.totalLiabilityEquityRevenue
+        trialBalance.isBalanced shouldBe true
+    }
+
     private fun account(
         companyId: CompanyId,
         type: AccountType,
