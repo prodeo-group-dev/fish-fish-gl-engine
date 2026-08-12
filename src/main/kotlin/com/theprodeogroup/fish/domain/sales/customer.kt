@@ -5,6 +5,7 @@ import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.common.ValidationResult
 import com.theprodeogroup.fish.domain.ledger.AccountId
+import com.theprodeogroup.fish.domain.ledger.AgingBucketLabel
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.ledger.JournalLine
@@ -72,7 +73,7 @@ class Customer private constructor(
      * caller anywhere that actually posted the offsetting entry, meaning
      * a payment updated `balance` but left no trace in the Ledger - which
      * would make any aging/reporting derived from posted `JournalEntry`
-     * data (e.g. `ReceivableAging`) wrong, since every past sale would
+     * data (e.g. `AccountsReceivableAging`) wrong, since every past sale would
      * look permanently unpaid. The AR line is tagged `DimensionType.CUSTOMER`,
      * same as the sale side.
      *
@@ -107,7 +108,7 @@ class Customer private constructor(
      * IFRS 9's simplified approach for trade receivables: always measure
      * at lifetime Expected Credit Loss via a provision matrix, not the
      * full 3-stage general model. [aging] supplies the bucketed
-     * outstanding amounts (see `ReceivableAging`, derived from the
+     * outstanding amounts (see `AccountsReceivableAging`, derived from the
      * Ledger); [lossRates] is the loss-rate-per-bucket input - "data,
      * not code," the same treatment already used for `TaxRule`/
      * `PayrollDeductionLine`. A bucket missing from [lossRates] defaults
@@ -130,7 +131,7 @@ class Customer private constructor(
      * precedent for "nothing changed, nothing to post."
      */
     fun assessExpectedCreditLoss(
-        aging: ReceivableAging,
+        aging: AccountsReceivableAging,
         lossRates: Map<AgingBucketLabel, BigDecimal>,
         expenseAccountId: AccountId,
         allowanceAccountId: AccountId,

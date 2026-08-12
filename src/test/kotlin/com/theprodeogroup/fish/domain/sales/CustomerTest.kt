@@ -4,6 +4,7 @@ import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
+import com.theprodeogroup.fish.domain.ledger.AgingBucketLabel
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Money
@@ -203,7 +204,7 @@ class CustomerTest {
         entry shouldBe null
     }
 
-    private fun flatAging(customerId: CustomerId, label: AgingBucketLabel, amount: Money): ReceivableAging {
+    private fun flatAging(customerId: CustomerId, label: AgingBucketLabel, amount: Money): AccountsReceivableAging {
         val arAccountId = AccountId.generate()
         val entry = JournalEntry.create(
             PeriodId.generate(), LocalDate.of(2026, 1, 1),
@@ -223,6 +224,6 @@ class CustomerTest {
             AgingBucketLabel.DAYS_61_TO_90 -> LocalDate.of(2026, 1, 1).plusDays(75)
             AgingBucketLabel.OVER_90 -> LocalDate.of(2026, 1, 1).plusDays(120)
         }
-        return ReceivableAging.of(customerId, arAccountId, listOf(entry), asOfDate, GBP)
+        return AccountsReceivableAging.of(customerId, arAccountId, listOf(entry), asOfDate, GBP)
     }
 }

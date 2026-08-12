@@ -3,6 +3,8 @@ package com.theprodeogroup.fish.domain.sales
 import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
+import com.theprodeogroup.fish.domain.ledger.AgingBucketAmount
+import com.theprodeogroup.fish.domain.ledger.AgingBucketLabel
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.Money
 import com.theprodeogroup.fish.domain.ledger.hasHistoricalEffect
@@ -30,7 +32,7 @@ import java.util.Currency
  * it. This is the accepted tradeoff of not having invoice-level
  * allocation, not a bug.
  */
-class ReceivableAging private constructor(
+class AccountsReceivableAging private constructor(
     val customerId: CustomerId,
     val asOfDate: LocalDate,
     val currency: Currency,
@@ -46,7 +48,7 @@ class ReceivableAging private constructor(
             postedEntries: List<JournalEntry>,
             asOfDate: LocalDate,
             currency: Currency
-        ): ReceivableAging {
+        ): AccountsReceivableAging {
             val customerTag = customerId.value.toString()
             val zero = Money(BigDecimal.ZERO, currency)
 
@@ -96,7 +98,7 @@ class ReceivableAging private constructor(
             }
 
             val buckets = AgingBucketLabel.entries.map { AgingBucketAmount(it, bucketTotals.getValue(it)) }
-            return ReceivableAging(customerId, asOfDate, currency, buckets)
+            return AccountsReceivableAging(customerId, asOfDate, currency, buckets)
         }
     }
 }

@@ -1,9 +1,18 @@
 package com.theprodeogroup.fish.domain.purchasing
 
+import com.theprodeogroup.fish.domain.common.DimensionType
+import com.theprodeogroup.fish.domain.common.JournalSource
+import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.common.ValidationResult
+import com.theprodeogroup.fish.domain.ledger.AccountId
+import com.theprodeogroup.fish.domain.ledger.JournalEntry
+import com.theprodeogroup.fish.domain.ledger.JournalEntryId
+import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import java.math.BigDecimal
+import java.time.LocalDate
 import java.util.Currency
 
 /**
@@ -44,6 +53,45 @@ class Creditor private constructor(
         }
         balance = balance - amount
         return ValidationResult.success()
+    }
+
+    /**
+     * Records a payment to this Creditor AND posts the corresponding
+     * `JournalEntry` (debit the AP control account, credit Cash) in the
+     * same call - mirrors `Customer.receivePayment()`'s fix for the
+     * identical gap on the AR side (2026-08-12): [recordPayment] existed
+     * with no caller anywhere that posted the offsetting entry, which
+     * would make any aging derived from posted `JournalEntry` data wrong
+     * (every past charge would look permanently unpaid). The AP line is
+     * tagged `DimensionType.VENDOR`, same as the charge side.
+     *
+     * Debit, not credit, on the AP control line - the mirror image of
+     * `PurchaseOrder.send()`'s credit: a payment *decreases* a liability.
+     *
+     * Returns `null` (not a `ValidationResult`) if the amount is
+     * non-positive, matching `Customer.receivePayment()`'s precedent.
+     */
+    fun makePayment(
+        amount: Money,
+        cashAccountId: AccountId,
+        apControlAccountId: AccountId,
+        periodId: PeriodId,
+        date: LocalDate,
+        journalEntryId: JournalEntryId = JournalEntryId.generate()
+    ): JournalEntry? {
+        if (!recordPayment(amount).isValid) return null
+
+        val lines = listOf(
+            JournalLine(
+                apControlAccountId, amount, TransactionSide.DEBIT,
+                mapOf(DimensionType.VENDOR to id.value.toString())
+            ),
+            JournalLine(cashAccountId, amount, TransactionSide.CREDIT)
+        )
+        return JournalEntry.create(
+            periodId, date, lines, JournalSource.MANUAL,
+            "Payment made - $name", journalEntryId
+        )
     }
 
     companion object {

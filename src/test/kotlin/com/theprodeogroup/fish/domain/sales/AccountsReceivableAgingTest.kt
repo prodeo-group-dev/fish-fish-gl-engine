@@ -4,6 +4,7 @@ import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
+import com.theprodeogroup.fish.domain.ledger.AgingBucketLabel
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Money
@@ -17,11 +18,11 @@ import java.util.Currency
 private val GBP: Currency = Currency.getInstance("GBP")
 private val AS_OF = LocalDate.of(2026, 6, 30)
 
-class ReceivableAgingTest {
+class AccountsReceivableAgingTest {
 
     @Test
     fun `given no entries, when aging is computed, then every bucket is zero`() {
-        val aging = ReceivableAging.of(CustomerId.generate(), AccountId.generate(), emptyList(), AS_OF, GBP)
+        val aging = AccountsReceivableAging.of(CustomerId.generate(), AccountId.generate(), emptyList(), AS_OF, GBP)
 
         aging.totalOutstanding shouldBe zero()
         aging.buckets.forEach { it.amount shouldBe zero() }
@@ -33,7 +34,7 @@ class ReceivableAgingTest {
         val arAccountId = AccountId.generate()
         val entry = saleEntry(customerId, arAccountId, Money(BigDecimal("100.00"), GBP), AS_OF.minusDays(10))
 
-        val aging = ReceivableAging.of(customerId, arAccountId, listOf(entry), AS_OF, GBP)
+        val aging = AccountsReceivableAging.of(customerId, arAccountId, listOf(entry), AS_OF, GBP)
 
         aging.buckets.first { it.label == AgingBucketLabel.CURRENT }.amount shouldBe Money(BigDecimal("100.00"), GBP)
         aging.totalOutstanding shouldBe Money(BigDecimal("100.00"), GBP)
@@ -46,7 +47,7 @@ class ReceivableAgingTest {
         val sale = saleEntry(customerId, arAccountId, Money(BigDecimal("100.00"), GBP), AS_OF.minusDays(10))
         val receipt = receiptEntry(customerId, arAccountId, Money(BigDecimal("100.00"), GBP), AS_OF.minusDays(5))
 
-        val aging = ReceivableAging.of(customerId, arAccountId, listOf(sale, receipt), AS_OF, GBP)
+        val aging = AccountsReceivableAging.of(customerId, arAccountId, listOf(sale, receipt), AS_OF, GBP)
 
         aging.totalOutstanding shouldBe zero()
     }
@@ -58,7 +59,7 @@ class ReceivableAgingTest {
         val sale = saleEntry(customerId, arAccountId, Money(BigDecimal("100.00"), GBP), AS_OF.minusDays(10))
         val receipt = receiptEntry(customerId, arAccountId, Money(BigDecimal("40.00"), GBP), AS_OF.minusDays(5))
 
-        val aging = ReceivableAging.of(customerId, arAccountId, listOf(sale, receipt), AS_OF, GBP)
+        val aging = AccountsReceivableAging.of(customerId, arAccountId, listOf(sale, receipt), AS_OF, GBP)
 
         aging.totalOutstanding shouldBe Money(BigDecimal("60.00"), GBP)
         aging.buckets.first { it.label == AgingBucketLabel.CURRENT }.amount shouldBe Money(BigDecimal("60.00"), GBP)
@@ -72,7 +73,7 @@ class ReceivableAgingTest {
         val newerSale = saleEntry(customerId, arAccountId, Money(BigDecimal("50.00"), GBP), AS_OF.minusDays(10))
         val receipt = receiptEntry(customerId, arAccountId, Money(BigDecimal("50.00"), GBP), AS_OF.minusDays(50))
 
-        val aging = ReceivableAging.of(customerId, arAccountId, listOf(olderSale, newerSale, receipt), AS_OF, GBP)
+        val aging = AccountsReceivableAging.of(customerId, arAccountId, listOf(olderSale, newerSale, receipt), AS_OF, GBP)
 
         // the receipt should have paid off the OLDER sale first, leaving the newer (recent) sale unpaid
         aging.buckets.first { it.label == AgingBucketLabel.CURRENT }.amount shouldBe Money(BigDecimal("50.00"), GBP)
@@ -88,7 +89,7 @@ class ReceivableAgingTest {
         val bucket6190 = saleEntry(customerId, arAccountId, Money(BigDecimal("30.00"), GBP), AS_OF.minusDays(75))
         val over90 = saleEntry(customerId, arAccountId, Money(BigDecimal("40.00"), GBP), AS_OF.minusDays(120))
 
-        val aging = ReceivableAging.of(
+        val aging = AccountsReceivableAging.of(
             customerId, arAccountId, listOf(current, bucket3160, bucket6190, over90), AS_OF, GBP
         )
 
@@ -106,7 +107,7 @@ class ReceivableAgingTest {
         val arAccountId = AccountId.generate()
         val entry = saleEntry(otherCustomerId, arAccountId, Money(BigDecimal("100.00"), GBP), AS_OF.minusDays(10))
 
-        val aging = ReceivableAging.of(customerId, arAccountId, listOf(entry), AS_OF, GBP)
+        val aging = AccountsReceivableAging.of(customerId, arAccountId, listOf(entry), AS_OF, GBP)
 
         aging.totalOutstanding shouldBe zero()
     }
@@ -127,7 +128,7 @@ class ReceivableAgingTest {
             JournalSource.MANUAL
         )
 
-        val aging = ReceivableAging.of(customerId, arAccountId, listOf(draft), AS_OF, GBP)
+        val aging = AccountsReceivableAging.of(customerId, arAccountId, listOf(draft), AS_OF, GBP)
 
         aging.totalOutstanding shouldBe zero()
     }
