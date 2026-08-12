@@ -64,3 +64,13 @@ value class BorrowingId(val value: UUID) {
         fun generate(): BorrowingId = BorrowingId(UUID.randomUUID())
     }
 }
+
+/**
+ * Identity of a Provision aggregate.
+ */
+@JvmInline
+value class ProvisionId(val value: UUID) {
+    companion object {
+        fun generate(): ProvisionId = ProvisionId(UUID.randomUUID())
+    }
+}
