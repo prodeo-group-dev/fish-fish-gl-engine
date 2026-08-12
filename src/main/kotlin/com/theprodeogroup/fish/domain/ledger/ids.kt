@@ -44,3 +44,13 @@ value class PrepaymentId(val value: UUID) {
         fun generate(): PrepaymentId = PrepaymentId(UUID.randomUUID())
     }
 }
+
+/**
+ * Identity of an AccruedExpense aggregate.
+ */
+@JvmInline
+value class AccruedExpenseId(val value: UUID) {
+    companion object {
+        fun generate(): AccruedExpenseId = AccruedExpenseId(UUID.randomUUID())
+    }
+}
