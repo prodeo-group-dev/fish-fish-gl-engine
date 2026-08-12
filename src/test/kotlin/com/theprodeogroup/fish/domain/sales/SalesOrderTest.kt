@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.domain.sales
 
+import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
@@ -50,6 +51,19 @@ class SalesOrderTest {
         arLine.amount shouldBe Money(BigDecimal("200.00"), GBP)
         val revenueLine = entry.lines.first { it.accountId == order.lines[0].accountId }
         revenueLine.side shouldBe TransactionSide.CREDIT
+    }
+
+    @Test
+    fun `given a Draft order, when a line is delivered, then the AR line is tagged with the CUSTOMER dimension`() {
+        val customerId = CustomerId.generate()
+        val customer = Customer.create(CompanyId.generate(), "Beta Retail Ltd", GBP, customerId)
+        val arAccountId = AccountId.generate()
+        val order = readyOrder(customerId = customerId)
+
+        val entry = requireNotNull(order.deliverLine(0, customer, arAccountId, PeriodId.generate()))
+
+        val arLine = entry.lines.first { it.accountId == arAccountId }
+        arLine.dimensions[DimensionType.CUSTOMER] shouldBe customerId.value.toString()
     }
 
     @Test

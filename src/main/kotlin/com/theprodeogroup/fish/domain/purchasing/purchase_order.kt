@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.domain.purchasing
 
+import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
@@ -41,6 +42,14 @@ class PurchaseOrder private constructor(
      * (the actual tally *check* is a separate reporting concern, Section
      * 3.1's Trial Balance note).
      *
+     * The AP control line carries `DimensionType.VENDOR` tagged with
+     * [creditorId] - previously `JournalLine.dimensions` was never
+     * populated anywhere despite existing for exactly this purpose,
+     * meaning the Ledger had no record of which Creditor a posting
+     * belonged to. This is what lets aging/reporting be derived from
+     * already-posted `JournalEntry` data instead of needing `Creditor`
+     * to redundantly track its own transaction history.
+     *
      * Returns null (not `ValidationResult`) if this order isn't `Draft`
      * or [creditor] doesn't match [creditorId] - matches
      * `JournalEntry.reverse()`'s precedent for a method that produces a
@@ -59,7 +68,10 @@ class PurchaseOrder private constructor(
         status = PurchaseOrderStatus.SENT
         val total = totalAmount
         val journalLines = lines.map { JournalLine(it.accountId, it.amount, TransactionSide.DEBIT) } +
-            JournalLine(apControlAccountId, total, TransactionSide.CREDIT)
+            JournalLine(
+                apControlAccountId, total, TransactionSide.CREDIT,
+                mapOf(DimensionType.VENDOR to creditorId.value.toString())
+            )
         val entry = JournalEntry.create(
             periodId, date, journalLines, JournalSource.MANUAL, "Purchase Order $id", journalEntryId
         )

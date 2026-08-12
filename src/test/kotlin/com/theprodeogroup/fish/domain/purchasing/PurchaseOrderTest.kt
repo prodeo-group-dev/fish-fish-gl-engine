@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.domain.purchasing
 
+import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
@@ -48,6 +49,19 @@ class PurchaseOrderTest {
         val apLine = entry.lines.first { it.accountId == apAccountId }
         apLine.side shouldBe TransactionSide.CREDIT
         apLine.amount shouldBe Money(BigDecimal("300.00"), GBP)
+    }
+
+    @Test
+    fun `given a Draft order, when sent, then the AP control line is tagged with the VENDOR dimension`() {
+        val creditorId = CreditorId.generate()
+        val creditor = Creditor.create(CompanyId.generate(), "Acme Supplies Ltd", GBP, creditorId)
+        val apAccountId = AccountId.generate()
+        val order = readyOrder(creditorId = creditorId)
+
+        val entry = requireNotNull(order.send(creditor, apAccountId, PeriodId.generate()))
+
+        val apLine = entry.lines.first { it.accountId == apAccountId }
+        apLine.dimensions[DimensionType.VENDOR] shouldBe creditorId.value.toString()
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.domain.sales
 
+import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
@@ -58,6 +59,14 @@ class SalesOrder private constructor(
      * already delivered, or [customer] doesn't match [customerId] -
      * matches `JournalEntry.reverse()`/`PurchaseOrder.send()`'s
      * precedent for a method producing a new object on success.
+     *
+     * The AR control line carries `DimensionType.CUSTOMER` tagged with
+     * [customerId] - previously `JournalLine.dimensions` was never
+     * populated anywhere despite existing for exactly this purpose,
+     * meaning the Ledger had no record of which Customer a posting
+     * belonged to. This is what lets aging/reporting be derived from
+     * already-posted `JournalEntry` data instead of needing `Customer`
+     * to redundantly track its own transaction history.
      */
     fun deliverLine(
         lineIndex: Int,
@@ -75,7 +84,10 @@ class SalesOrder private constructor(
         deliveredLineIndices.add(lineIndex)
 
         val journalLines = listOf(
-            JournalLine(arControlAccountId, line.amount, TransactionSide.DEBIT),
+            JournalLine(
+                arControlAccountId, line.amount, TransactionSide.DEBIT,
+                mapOf(DimensionType.CUSTOMER to customerId.value.toString())
+            ),
             JournalLine(line.accountId, line.amount, TransactionSide.CREDIT)
         )
         val entry = JournalEntry.create(
