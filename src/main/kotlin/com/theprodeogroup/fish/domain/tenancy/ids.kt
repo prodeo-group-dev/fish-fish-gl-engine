@@ -34,3 +34,15 @@ value class MembershipId(val value: UUID) {
         fun generate(): MembershipId = MembershipId(UUID.randomUUID())
     }
 }
+
+/**
+ * Identity of a User aggregate - a global identity, not scoped to any
+ * one Tenant (Section 3.2: "a User can hold Memberships across multiple
+ * Tenants").
+ */
+@JvmInline
+value class UserId(val value: UUID) {
+    companion object {
+        fun generate(): UserId = UserId(UUID.randomUUID())
+    }
+}

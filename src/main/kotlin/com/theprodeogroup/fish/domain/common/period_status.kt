@@ -52,24 +52,31 @@ enum class PeriodStatus {
     LOCKED;
     
     /**
-     * Checks if transition to new status is valid
-     * 
+     * Checks if transition to a new status is valid
+     *
      * Valid transitions:
      * - DRAFT → OPEN
      * - OPEN → CLOSED
      * - CLOSED → OPEN (reopen)
      * - CLOSED → LOCKED
      * - LOCKED → (none - terminal)
-     * 
-     * @param from Source status
+     *
+     * Calling convention aligned with `PostingStatus.canTransitionTo()`
+     * (docs/DDD_Design.md Section 0, gap 6) - this used to be
+     * `isValidTransition(from)`, asking "can I go FROM here," while
+     * PostingStatus asked "can I go TO there." Flipped when Period
+     * (the first real consumer of this enum) was built, so the
+     * ubiquitous language ("can transition to") is uniform across both.
+     *
+     * @param newStatus Target status
      * @return True if transition is valid
      */
-    fun isValidTransition(from: PeriodStatus): Boolean {
+    fun canTransitionTo(newStatus: PeriodStatus): Boolean {
         return when (this) {
-            DRAFT -> from == DRAFT
-            OPEN -> from in setOf(DRAFT, CLOSED)
-            CLOSED -> from == OPEN
-            LOCKED -> from == CLOSED
+            DRAFT -> newStatus == OPEN
+            OPEN -> newStatus == CLOSED
+            CLOSED -> newStatus in setOf(OPEN, LOCKED)
+            LOCKED -> false
         }
     }
     
