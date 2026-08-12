@@ -15,8 +15,12 @@ import java.util.Currency
  * reversal would leave only the reversal's lines counted, doubling the
  * error instead of netting to zero. `Draft`/`Pending`/`Rejected` never
  * had real effect, so they're excluded the same as `affectsBalance()`.
+ *
+ * `internal`, not file-private - `BankReconciliation` also needs this
+ * same filter (only Posted/System/Reversed entries are eligible to
+ * reconcile against a bank statement).
  */
-private fun PostingStatus.hasHistoricalEffect(): Boolean =
+internal fun PostingStatus.hasHistoricalEffect(): Boolean =
     this == PostingStatus.POSTED || this == PostingStatus.SYSTEM || this == PostingStatus.REVERSED
 
 /**
