@@ -5,6 +5,7 @@ import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AgingBucketLabel
+import com.theprodeogroup.fish.domain.ledger.CashFlowActivity
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Money
@@ -91,6 +92,7 @@ class CustomerTest {
         val cashLine = entry.lines.first { it.accountId == cashAccountId }
         cashLine.side shouldBe TransactionSide.DEBIT
         cashLine.amount shouldBe Money(BigDecimal("150.00"), GBP)
+        cashLine.dimensions[DimensionType.CASH_FLOW_ACTIVITY] shouldBe CashFlowActivity.OPERATING.name
         val arLine = entry.lines.first { it.accountId == arAccountId }
         arLine.side shouldBe TransactionSide.CREDIT
         arLine.dimensions[DimensionType.CUSTOMER] shouldBe customerId.value.toString()

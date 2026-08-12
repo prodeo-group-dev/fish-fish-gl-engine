@@ -5,6 +5,7 @@ import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.common.ValidationResult
 import com.theprodeogroup.fish.domain.ledger.AccountId
+import com.theprodeogroup.fish.domain.ledger.CashFlowActivity
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.ledger.JournalLine
@@ -63,7 +64,9 @@ class Creditor private constructor(
      * with no caller anywhere that posted the offsetting entry, which
      * would make any aging derived from posted `JournalEntry` data wrong
      * (every past charge would look permanently unpaid). The AP line is
-     * tagged `DimensionType.VENDOR`, same as the charge side.
+     * tagged `DimensionType.VENDOR`, same as the charge side. The cash
+     * line is tagged `CashFlowActivity.OPERATING` (IAS 7) - settling a
+     * payable is always an Operating activity.
      *
      * Debit, not credit, on the AP control line - the mirror image of
      * `PurchaseOrder.send()`'s credit: a payment *decreases* a liability.
@@ -86,7 +89,10 @@ class Creditor private constructor(
                 apControlAccountId, amount, TransactionSide.DEBIT,
                 mapOf(DimensionType.VENDOR to id.value.toString())
             ),
-            JournalLine(cashAccountId, amount, TransactionSide.CREDIT)
+            JournalLine(
+                cashAccountId, amount, TransactionSide.CREDIT,
+                mapOf(DimensionType.CASH_FLOW_ACTIVITY to CashFlowActivity.OPERATING.name)
+            )
         )
         return JournalEntry.create(
             periodId, date, lines, JournalSource.MANUAL,

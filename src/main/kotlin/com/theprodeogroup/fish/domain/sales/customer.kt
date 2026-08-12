@@ -6,6 +6,7 @@ import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.common.ValidationResult
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AgingBucketLabel
+import com.theprodeogroup.fish.domain.ledger.CashFlowActivity
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.ledger.JournalLine
@@ -75,7 +76,10 @@ class Customer private constructor(
      * would make any aging/reporting derived from posted `JournalEntry`
      * data (e.g. `AccountsReceivableAging`) wrong, since every past sale would
      * look permanently unpaid. The AR line is tagged `DimensionType.CUSTOMER`,
-     * same as the sale side.
+     * same as the sale side. The cash line is tagged
+     * `CashFlowActivity.OPERATING` (IAS 7) - collecting a receivable is
+     * always an Operating activity, unlike `FixedAsset.dispose()`'s
+     * proceeds, which are Investing.
      *
      * Returns `null` (not a `ValidationResult`) if the amount is
      * non-positive, matching `SalesOrder.deliverLine()`'s precedent for
@@ -92,7 +96,10 @@ class Customer private constructor(
         if (!recordReceipt(amount).isValid) return null
 
         val lines = listOf(
-            JournalLine(cashAccountId, amount, TransactionSide.DEBIT),
+            JournalLine(
+                cashAccountId, amount, TransactionSide.DEBIT,
+                mapOf(DimensionType.CASH_FLOW_ACTIVITY to CashFlowActivity.OPERATING.name)
+            ),
             JournalLine(
                 arControlAccountId, amount, TransactionSide.CREDIT,
                 mapOf(DimensionType.CUSTOMER to id.value.toString())

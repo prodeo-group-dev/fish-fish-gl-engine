@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.domain.ledger
 
+import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
@@ -110,6 +111,73 @@ class StatementOfCashFlowsTest {
         }
     }
 
+    @Test
+    fun `given a cash line tagged Operating, when computed, then its amount is bucketed under Operating`() {
+        val cashAccount = cashAccount()
+        val entry = taggedCashEntry(
+            cashAccount.id, Money(BigDecimal("300.00"), GBP), PERIOD_START.plusDays(5),
+            TransactionSide.DEBIT, CashFlowActivity.OPERATING
+        )
+
+        val statement = StatementOfCashFlows.of(cashAccount, listOf(entry), PERIOD_START, PERIOD_END, GBP)
+
+        statement.activityAmounts.first { it.activity == CashFlowActivity.OPERATING }.netAmount shouldBe
+            Money(BigDecimal("300.00"), GBP)
+        statement.activityAmounts.first { it.activity == CashFlowActivity.INVESTING }.netAmount shouldBe zero()
+        statement.activityAmounts.first { it.activity == CashFlowActivity.FINANCING }.netAmount shouldBe zero()
+        statement.uncategorizedAmount shouldBe zero()
+    }
+
+    @Test
+    fun `given a credited cash line tagged Investing, when computed, then it is a negative Investing amount`() {
+        val cashAccount = cashAccount()
+        val entry = taggedCashEntry(
+            cashAccount.id, Money(BigDecimal("400.00"), GBP), PERIOD_START.plusDays(5),
+            TransactionSide.CREDIT, CashFlowActivity.INVESTING
+        )
+
+        val statement = StatementOfCashFlows.of(cashAccount, listOf(entry), PERIOD_START, PERIOD_END, GBP)
+
+        statement.activityAmounts.first { it.activity == CashFlowActivity.INVESTING }.netAmount shouldBe
+            Money(BigDecimal("-400.00"), GBP)
+    }
+
+    @Test
+    fun `given an untagged cash line within the period, when computed, then it is bucketed as uncategorized`() {
+        val cashAccount = cashAccount()
+        val entry = cashEntry(cashAccount.id, Money(BigDecimal("150.00"), GBP), PERIOD_START.plusDays(5))
+
+        val statement = StatementOfCashFlows.of(cashAccount, listOf(entry), PERIOD_START, PERIOD_END, GBP)
+
+        statement.uncategorizedAmount shouldBe Money(BigDecimal("150.00"), GBP)
+        statement.activityAmounts.forEach { it.netAmount shouldBe zero() }
+    }
+
+    @Test
+    fun `given a mix of tagged and untagged cash lines, when computed, then activity amounts plus uncategorized equals net cash flow`() {
+        val cashAccount = cashAccount()
+        val operating = taggedCashEntry(
+            cashAccount.id, Money(BigDecimal("300.00"), GBP), PERIOD_START.plusDays(2),
+            TransactionSide.DEBIT, CashFlowActivity.OPERATING
+        )
+        val investing = taggedCashEntry(
+            cashAccount.id, Money(BigDecimal("400.00"), GBP), PERIOD_START.plusDays(3),
+            TransactionSide.CREDIT, CashFlowActivity.INVESTING
+        )
+        val financing = taggedCashEntry(
+            cashAccount.id, Money(BigDecimal("1000.00"), GBP), PERIOD_START.plusDays(4),
+            TransactionSide.DEBIT, CashFlowActivity.FINANCING
+        )
+        val untagged = cashEntry(cashAccount.id, Money(BigDecimal("150.00"), GBP), PERIOD_START.plusDays(5))
+
+        val statement = StatementOfCashFlows.of(
+            cashAccount, listOf(operating, investing, financing, untagged), PERIOD_START, PERIOD_END, GBP
+        )
+
+        val bucketedTotal = statement.activityAmounts.fold(zero()) { sum, bucket -> sum + bucket.netAmount }
+        (bucketedTotal + statement.uncategorizedAmount) shouldBe statement.netCashFlow
+    }
+
     private fun cashAccount(): Account = Account.create(
         CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1000", "Bank Current Account"
     )
@@ -120,6 +188,28 @@ class StatementOfCashFlowsTest {
             listOf(
                 JournalLine(cashAccountId, amount, TransactionSide.DEBIT),
                 JournalLine(AccountId.generate(), amount, TransactionSide.CREDIT)
+            ),
+            JournalSource.MANUAL
+        )
+        entry.post()
+        return entry
+    }
+
+    private fun taggedCashEntry(
+        cashAccountId: AccountId,
+        amount: Money,
+        date: LocalDate,
+        cashSide: TransactionSide,
+        activity: CashFlowActivity
+    ): JournalEntry {
+        val entry = JournalEntry.create(
+            PeriodId.generate(), date,
+            listOf(
+                JournalLine(
+                    cashAccountId, amount, cashSide,
+                    mapOf(DimensionType.CASH_FLOW_ACTIVITY to activity.name)
+                ),
+                JournalLine(AccountId.generate(), amount, cashSide.opposite())
             ),
             JournalSource.MANUAL
         )

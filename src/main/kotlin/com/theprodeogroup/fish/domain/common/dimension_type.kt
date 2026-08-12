@@ -56,7 +56,18 @@ enum class DimensionType {
      * Example: "AWS", "Office Supplies Inc"
      */
     VENDOR,
-    
+
+    /**
+     * IAS 7 cash-flow activity classification, tagged on the cash/bank
+     * side of a JournalLine (not the counter-account side). Value is a
+     * `CashFlowActivity` enum name (`domain.ledger`) - kept in `common`
+     * alongside CUSTOMER/VENDOR since both are dimensions tagged on
+     * specific control/cash lines to make Ledger-derived reporting
+     * possible without retrofitting every aggregate to store its own
+     * transaction history.
+     */
+    CASH_FLOW_ACTIVITY,
+
     /**
      * Custom dimension 1 (client-defined)
      */

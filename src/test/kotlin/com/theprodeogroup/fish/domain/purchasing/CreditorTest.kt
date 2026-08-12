@@ -3,6 +3,7 @@ package com.theprodeogroup.fish.domain.purchasing
 import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
+import com.theprodeogroup.fish.domain.ledger.CashFlowActivity
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
@@ -91,6 +92,7 @@ class CreditorTest {
         val cashLine = entry.lines.first { it.accountId == cashAccountId }
         cashLine.side shouldBe TransactionSide.CREDIT
         cashLine.amount shouldBe Money(BigDecimal("100.00"), GBP)
+        cashLine.dimensions[DimensionType.CASH_FLOW_ACTIVITY] shouldBe CashFlowActivity.OPERATING.name
         creditor.balance shouldBe Money(BigDecimal("50.00"), GBP)
     }
 

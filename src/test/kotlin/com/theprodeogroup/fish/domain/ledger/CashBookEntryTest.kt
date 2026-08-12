@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.domain.ledger
 
+import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.PostingStatus
 import com.theprodeogroup.fish.domain.common.TransactionSide
@@ -116,6 +117,35 @@ class CashBookEntryTest {
                 date = TODAY
             )
         }
+    }
+
+    @Test
+    fun `given no cashFlowActivity is specified, when converted, then the cash line defaults to Operating`() {
+        val entry = readyEntry()
+
+        val journalEntry = entry.toJournalEntry(PeriodId.generate())
+
+        val cashLine = journalEntry.lines.first { it.accountId == entry.accountId }
+        cashLine.dimensions[DimensionType.CASH_FLOW_ACTIVITY] shouldBe CashFlowActivity.OPERATING.name
+    }
+
+    @Test
+    fun `given an explicit Investing cashFlowActivity, when converted, then the cash line is tagged Investing`() {
+        val cashAccountId = AccountId.generate()
+        val entry = CashBookEntry(
+            accountId = cashAccountId,
+            direction = CashDirection.PAID,
+            amount = Money(BigDecimal("5000.00"), GBP),
+            counterAccountId = AccountId.generate(),
+            date = TODAY,
+            cashFlowActivity = CashFlowActivity.INVESTING,
+            description = "Equipment purchase"
+        )
+
+        val journalEntry = entry.toJournalEntry(PeriodId.generate())
+
+        val cashLine = journalEntry.lines.first { it.accountId == cashAccountId }
+        cashLine.dimensions[DimensionType.CASH_FLOW_ACTIVITY] shouldBe CashFlowActivity.INVESTING.name
     }
 
     private fun readyEntry(): CashBookEntry = CashBookEntry(

@@ -1,7 +1,9 @@
 package com.theprodeogroup.fish.domain.fixedassets
 
+import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
+import com.theprodeogroup.fish.domain.ledger.CashFlowActivity
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
@@ -161,6 +163,7 @@ class FixedAssetTest {
         entry.lines.first { it.accountId == cashAccountId }.let {
             it.side shouldBe TransactionSide.DEBIT
             it.amount shouldBe Money(BigDecimal("800.00"), GBP)
+            it.dimensions[DimensionType.CASH_FLOW_ACTIVITY] shouldBe CashFlowActivity.INVESTING.name
         }
         val saleLines = entry.lines.filter { it.accountId == saleOfFixedAssetAccountId }
         val netSaleBalance = saleLines.fold(Money(BigDecimal.ZERO, GBP)) { sum, line ->

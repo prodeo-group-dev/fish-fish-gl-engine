@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.domain.ledger
 
+import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import java.time.LocalDate
@@ -23,6 +24,14 @@ import java.time.LocalDate
  * (received increases an Asset, which is DEBIT; paid decreases it, which
  * is CREDIT, per `TransactionSide`'s own rule). This is not a generic
  * conversion for any Account type.
+ *
+ * [cashFlowActivity] tags the cash line for IAS 7 categorization
+ * (`StatementOfCashFlows`), confirmed 2026-08-12. Defaults to
+ * `CashFlowActivity.OPERATING` rather than being required - matches
+ * the non-accountant-friendly, forgiving-data-entry principle this type
+ * was already built around: most day-to-day cash-book entries genuinely
+ * are routine operating movements, and a caller recording a capital
+ * purchase, loan drawdown, or dividend can still override it.
  */
 class CashBookEntry(
     val accountId: AccountId,
@@ -30,6 +39,7 @@ class CashBookEntry(
     val amount: Money,
     val counterAccountId: AccountId,
     val date: LocalDate,
+    val cashFlowActivity: CashFlowActivity = CashFlowActivity.OPERATING,
     val description: String? = null
 ) {
     init {
@@ -47,7 +57,10 @@ class CashBookEntry(
             CashDirection.PAID -> TransactionSide.CREDIT
         }
         val lines = listOf(
-            JournalLine(accountId, amount, cashSide),
+            JournalLine(
+                accountId, amount, cashSide,
+                mapOf(DimensionType.CASH_FLOW_ACTIVITY to cashFlowActivity.name)
+            ),
             JournalLine(counterAccountId, amount, cashSide.opposite())
         )
         return JournalEntry.create(periodId, date, lines, JournalSource.MANUAL, description, id)

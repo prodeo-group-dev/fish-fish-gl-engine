@@ -1,8 +1,10 @@
 package com.theprodeogroup.fish.domain.fixedassets
 
+import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
+import com.theprodeogroup.fish.domain.ledger.CashFlowActivity
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.ledger.JournalLine
@@ -115,7 +117,11 @@ class FixedAsset private constructor(
      *    [saleOfFixedAssetAccountId]'s net balance is exactly
      *    [netBookValue] (debit).
      * 3. Debit [cashAccountId], credit [saleOfFixedAssetAccountId] for
-     *    [proceeds].
+     *    [proceeds]. The cash line is tagged `CashFlowActivity.INVESTING`
+     *    (IAS 7, confirmed 2026-08-12) - unlike `Customer.receivePayment()`/
+     *    `Creditor.makePayment()`'s Operating tag, proceeds from selling
+     *    a capital asset are always Investing, regardless of
+     *    [saleOfFixedAssetAccountId]'s own Revenue account type.
      *
      * No separate gain/loss computation or account - whatever balance
      * remains on [saleOfFixedAssetAccountId] after all three postings
@@ -152,7 +158,12 @@ class FixedAsset private constructor(
             lines.add(JournalLine(saleOfFixedAssetAccountId, accumulatedDepreciation, TransactionSide.CREDIT))
         }
         if (proceeds.amount.signum() > 0) {
-            lines.add(JournalLine(cashAccountId, proceeds, TransactionSide.DEBIT))
+            lines.add(
+                JournalLine(
+                    cashAccountId, proceeds, TransactionSide.DEBIT,
+                    mapOf(DimensionType.CASH_FLOW_ACTIVITY to CashFlowActivity.INVESTING.name)
+                )
+            )
             lines.add(JournalLine(saleOfFixedAssetAccountId, proceeds, TransactionSide.CREDIT))
         }
 
