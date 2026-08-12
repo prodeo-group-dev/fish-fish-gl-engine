@@ -1,6 +1,8 @@
 package com.theprodeogroup.fish.domain.purchasing
 
 import com.theprodeogroup.fish.domain.common.DimensionType
+import com.theprodeogroup.fish.domain.common.LineItemType
+import com.theprodeogroup.fish.domain.inventory.StockItem
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
@@ -107,10 +109,48 @@ class PurchaseOrderTest {
         order.send(wrongCreditor, AccountId.generate(), PeriodId.generate()) shouldBe null
     }
 
+    @Test
+    fun `given a GOODS line, when sent, then it receives stock at a unit cost derived from amount over quantity`() {
+        val creditorId = CreditorId.generate()
+        val creditor = Creditor.create(CompanyId.generate(), "Acme Supplies Ltd", GBP, creditorId)
+        val stockItem = StockItem.create(CompanyId.generate(), "Widget", GBP)
+        val line = PurchaseOrderLine(
+            "10 Widgets", AccountId.generate(), Money(BigDecimal("50.00"), GBP),
+            LineItemType.GOODS, BigDecimal("10"), stockItem.id
+        )
+        val order = PurchaseOrder.create(CompanyId.generate(), creditorId, TODAY, listOf(line))
+
+        val entry = requireNotNull(
+            order.send(creditor, AccountId.generate(), PeriodId.generate(), listOf(stockItem))
+        )
+
+        JournalEntry.validateLines(entry.lines).isValid shouldBe true
+        stockItem.quantityOnHand shouldBe BigDecimal("10")
+        stockItem.unitCost shouldBe Money(BigDecimal("5.00"), GBP)
+    }
+
+    @Test
+    fun `given a GOODS line sent without a matching StockItem, when sent, then it fails and nothing is charged`() {
+        val creditorId = CreditorId.generate()
+        val creditor = Creditor.create(CompanyId.generate(), "Acme Supplies Ltd", GBP, creditorId)
+        val stockItemId = StockItem.create(CompanyId.generate(), "Widget", GBP).id
+        val line = PurchaseOrderLine(
+            "10 Widgets", AccountId.generate(), Money(BigDecimal("50.00"), GBP),
+            LineItemType.GOODS, BigDecimal("10"), stockItemId
+        )
+        val order = PurchaseOrder.create(CompanyId.generate(), creditorId, TODAY, listOf(line))
+
+        val result = order.send(creditor, AccountId.generate(), PeriodId.generate())
+
+        result shouldBe null
+        order.status shouldBe PurchaseOrderStatus.DRAFT
+        creditor.balance shouldBe Money(BigDecimal.ZERO, GBP)
+    }
+
     private fun readyOrder(creditorId: CreditorId = CreditorId.generate()): PurchaseOrder {
         val lines = listOf(
-            PurchaseOrderLine("Office supplies", AccountId.generate(), Money(BigDecimal("200.00"), GBP)),
-            PurchaseOrderLine("Delivery charge", AccountId.generate(), Money(BigDecimal("100.00"), GBP))
+            PurchaseOrderLine("Office supplies", AccountId.generate(), Money(BigDecimal("200.00"), GBP), LineItemType.SERVICE),
+            PurchaseOrderLine("Delivery charge", AccountId.generate(), Money(BigDecimal("100.00"), GBP), LineItemType.SERVICE)
         )
         return PurchaseOrder.create(CompanyId.generate(), creditorId, TODAY, lines)
     }

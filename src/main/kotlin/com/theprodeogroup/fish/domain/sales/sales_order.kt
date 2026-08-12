@@ -2,7 +2,9 @@ package com.theprodeogroup.fish.domain.sales
 
 import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.JournalSource
+import com.theprodeogroup.fish.domain.common.LineItemType
 import com.theprodeogroup.fish.domain.common.TransactionSide
+import com.theprodeogroup.fish.domain.inventory.StockItem
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
@@ -67,12 +69,28 @@ class SalesOrder private constructor(
      * belonged to. This is what lets aging/reporting be derived from
      * already-posted `JournalEntry` data instead of needing `Customer`
      * to redundantly track its own transaction history.
+     *
+     * Confirmed 2026-08-12 - the previously-deferred PO/SO-Inventory
+     * linkage (Section 2.6): for a `GOODS` line, [stockItem] (matching
+     * [SalesOrderLine.stockItemId]) has [StockItem.recordIssue] called
+     * for the line's quantity, and the same `JournalEntry` gains two
+     * more lines - debit [cogsExpenseAccountId], credit
+     * [inventoryAssetAccountId] - for the cost of what was sold
+     * (`stockItem.unitCost * quantity`), a single compound entry
+     * recognizing both the revenue and its cost from one delivery event.
+     * A `SERVICE` line ignores all three Inventory parameters entirely.
+     * Returns `null` if a `GOODS` line's [stockItem]/[cogsExpenseAccountId]/
+     * [inventoryAssetAccountId] are missing, [stockItem] doesn't match
+     * the line's `stockItemId`, or there isn't enough stock to issue.
      */
     fun deliverLine(
         lineIndex: Int,
         customer: Customer,
         arControlAccountId: AccountId,
         periodId: PeriodId,
+        stockItem: StockItem? = null,
+        cogsExpenseAccountId: AccountId? = null,
+        inventoryAssetAccountId: AccountId? = null,
         now: Instant = Instant.now(),
         journalEntryId: JournalEntryId = JournalEntryId.generate()
     ): JournalEntry? {
@@ -81,6 +99,21 @@ class SalesOrder private constructor(
         if (customer.id != customerId) return null
 
         val line = lines[lineIndex]
+
+        val cogsLines = if (line.itemType == LineItemType.GOODS) {
+            if (stockItem == null || stockItem.id != line.stockItemId) return null
+            if (cogsExpenseAccountId == null || inventoryAssetAccountId == null) return null
+            if (!stockItem.recordIssue(line.quantity!!).isValid) return null
+
+            val cogsAmount = stockItem.unitCost * line.quantity
+            listOf(
+                JournalLine(cogsExpenseAccountId, cogsAmount, TransactionSide.DEBIT),
+                JournalLine(inventoryAssetAccountId, cogsAmount, TransactionSide.CREDIT)
+            )
+        } else {
+            emptyList()
+        }
+
         deliveredLineIndices.add(lineIndex)
 
         val journalLines = listOf(
@@ -89,7 +122,7 @@ class SalesOrder private constructor(
                 mapOf(DimensionType.CUSTOMER to customerId.value.toString())
             ),
             JournalLine(line.accountId, line.amount, TransactionSide.CREDIT)
-        )
+        ) + cogsLines
         val entry = JournalEntry.create(
             periodId, date, journalLines, JournalSource.MANUAL,
             "Sales Order $id - ${line.description}", journalEntryId

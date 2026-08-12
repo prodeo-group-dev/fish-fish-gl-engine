@@ -1,7 +1,9 @@
 package com.theprodeogroup.fish.domain.sales
 
 import com.theprodeogroup.fish.domain.common.DimensionType
+import com.theprodeogroup.fish.domain.common.LineItemType
 import com.theprodeogroup.fish.domain.common.TransactionSide
+import com.theprodeogroup.fish.domain.inventory.StockItem
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.Money
@@ -131,10 +133,114 @@ class SalesOrderTest {
         order.deliverLine(0, wrongCustomer, AccountId.generate(), PeriodId.generate()) shouldBe null
     }
 
+    @Test
+    fun `given a GOODS line with no quantity, when constructed, then it fails`() {
+        shouldThrow<IllegalArgumentException> {
+            SalesOrderLine("Widget", AccountId.generate(), Money(BigDecimal("10.00"), GBP), LineItemType.GOODS)
+        }
+    }
+
+    @Test
+    fun `given a SERVICE line with a quantity, when constructed, then it fails`() {
+        shouldThrow<IllegalArgumentException> {
+            SalesOrderLine(
+                "Consulting", AccountId.generate(), Money(BigDecimal("10.00"), GBP),
+                LineItemType.SERVICE, BigDecimal("1")
+            )
+        }
+    }
+
+    @Test
+    fun `given a GOODS line, when delivered, then it issues stock and posts a compound entry with COGS`() {
+        val customerId = CustomerId.generate()
+        val customer = Customer.create(CompanyId.generate(), "Beta Retail Ltd", GBP, customerId)
+        val stockItem = StockItem.create(CompanyId.generate(), "Widget", GBP)
+        stockItem.recordReceipt(BigDecimal("50"), Money(BigDecimal("6.00"), GBP))
+        val revenueAccountId = AccountId.generate()
+        val cogsAccountId = AccountId.generate()
+        val inventoryAccountId = AccountId.generate()
+        val line = SalesOrderLine(
+            "10 Widgets", revenueAccountId, Money(BigDecimal("150.00"), GBP),
+            LineItemType.GOODS, BigDecimal("10"), stockItem.id
+        )
+        val order = SalesOrder.create(CompanyId.generate(), customerId, TODAY, listOf(line))
+
+        val entry = requireNotNull(
+            order.deliverLine(
+                0, customer, AccountId.generate(), PeriodId.generate(),
+                stockItem, cogsAccountId, inventoryAccountId
+            )
+        )
+
+        JournalEntry.validateLines(entry.lines).isValid shouldBe true
+        entry.lines shouldHaveSize 4
+        val cogsLine = entry.lines.first { it.accountId == cogsAccountId }
+        cogsLine.side shouldBe TransactionSide.DEBIT
+        cogsLine.amount shouldBe Money(BigDecimal("60.00"), GBP)
+        val inventoryLine = entry.lines.first { it.accountId == inventoryAccountId }
+        inventoryLine.side shouldBe TransactionSide.CREDIT
+        inventoryLine.amount shouldBe Money(BigDecimal("60.00"), GBP)
+        stockItem.quantityOnHand shouldBe BigDecimal("40")
+    }
+
+    @Test
+    fun `given a GOODS line with insufficient stock, when delivered, then it fails and nothing is delivered`() {
+        val customerId = CustomerId.generate()
+        val customer = Customer.create(CompanyId.generate(), "Beta Retail Ltd", GBP, customerId)
+        val stockItem = StockItem.create(CompanyId.generate(), "Widget", GBP)
+        stockItem.recordReceipt(BigDecimal("2"), Money(BigDecimal("6.00"), GBP))
+        val line = SalesOrderLine(
+            "10 Widgets", AccountId.generate(), Money(BigDecimal("150.00"), GBP),
+            LineItemType.GOODS, BigDecimal("10"), stockItem.id
+        )
+        val order = SalesOrder.create(CompanyId.generate(), customerId, TODAY, listOf(line))
+
+        val result = order.deliverLine(
+            0, customer, AccountId.generate(), PeriodId.generate(),
+            stockItem, AccountId.generate(), AccountId.generate()
+        )
+
+        result shouldBe null
+        order.status shouldBe SalesOrderStatus.DRAFT
+        customer.balance shouldBe Money(BigDecimal.ZERO, GBP)
+    }
+
+    @Test
+    fun `given a GOODS line delivered without a StockItem, when delivered, then it fails`() {
+        val customerId = CustomerId.generate()
+        val customer = Customer.create(CompanyId.generate(), "Beta Retail Ltd", GBP, customerId)
+        val stockItemId = StockItem.create(CompanyId.generate(), "Widget", GBP).id
+        val line = SalesOrderLine(
+            "10 Widgets", AccountId.generate(), Money(BigDecimal("150.00"), GBP),
+            LineItemType.GOODS, BigDecimal("10"), stockItemId
+        )
+        val order = SalesOrder.create(CompanyId.generate(), customerId, TODAY, listOf(line))
+
+        order.deliverLine(0, customer, AccountId.generate(), PeriodId.generate()) shouldBe null
+    }
+
+    @Test
+    fun `given a GOODS line delivered with a mismatched StockItem, when delivered, then it fails`() {
+        val customerId = CustomerId.generate()
+        val customer = Customer.create(CompanyId.generate(), "Beta Retail Ltd", GBP, customerId)
+        val stockItemId = StockItem.create(CompanyId.generate(), "Widget", GBP).id
+        val otherStockItem = StockItem.create(CompanyId.generate(), "Gadget", GBP)
+        val line = SalesOrderLine(
+            "10 Widgets", AccountId.generate(), Money(BigDecimal("150.00"), GBP),
+            LineItemType.GOODS, BigDecimal("10"), stockItemId
+        )
+        val order = SalesOrder.create(CompanyId.generate(), customerId, TODAY, listOf(line))
+
+        order.deliverLine(
+            0, customer, AccountId.generate(), PeriodId.generate(),
+            otherStockItem, AccountId.generate(), AccountId.generate()
+        ) shouldBe null
+    }
+
     private fun readyOrder(customerId: CustomerId = CustomerId.generate()): SalesOrder {
         val lines = listOf(
-            SalesOrderLine("Consulting - phase 1", AccountId.generate(), Money(BigDecimal("200.00"), GBP)),
-            SalesOrderLine("Consulting - phase 2", AccountId.generate(), Money(BigDecimal("100.00"), GBP))
+            SalesOrderLine("Consulting - phase 1", AccountId.generate(), Money(BigDecimal("200.00"), GBP), LineItemType.SERVICE),
+            SalesOrderLine("Consulting - phase 2", AccountId.generate(), Money(BigDecimal("100.00"), GBP), LineItemType.SERVICE)
         )
         return SalesOrder.create(CompanyId.generate(), customerId, TODAY, lines)
     }
