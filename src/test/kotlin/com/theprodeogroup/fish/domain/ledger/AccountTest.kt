@@ -170,6 +170,56 @@ class AccountTest {
         AccountType.EXPENSE.requiresClassification() shouldBe false
     }
 
+    @Test
+    fun `given AccountType expense classification applicability, when checked, then only Expense allows it`() {
+        AccountType.EXPENSE.requiresExpenseClassification() shouldBe true
+        AccountType.ASSET.requiresExpenseClassification() shouldBe false
+        AccountType.LIABILITY.requiresExpenseClassification() shouldBe false
+        AccountType.EQUITY.requiresExpenseClassification() shouldBe false
+        AccountType.REVENUE.requiresExpenseClassification() shouldBe false
+    }
+
+    @Test
+    fun `given an Expense type with no expense classification, when an Account is created, then it succeeds - unlike classification, it's optional`() {
+        val account = Account.create(
+            companyId = CompanyId.generate(),
+            type = AccountType.EXPENSE,
+            classification = null,
+            code = "5000",
+            name = "Rent"
+        )
+
+        account.expenseClassification shouldBe null
+    }
+
+    @Test
+    fun `given an Expense type with a Factory Overhead classification, when an Account is created, then it succeeds`() {
+        val account = Account.create(
+            companyId = CompanyId.generate(),
+            type = AccountType.EXPENSE,
+            classification = null,
+            code = "5200",
+            name = "Factory Rent",
+            expenseClassification = ExpenseClassification.FACTORY_OVERHEAD
+        )
+
+        account.expenseClassification shouldBe ExpenseClassification.FACTORY_OVERHEAD
+    }
+
+    @Test
+    fun `given a non-Expense type with an expense classification provided anyway, when an Account is created, then it fails`() {
+        shouldThrow<IllegalArgumentException> {
+            Account.create(
+                companyId = CompanyId.generate(),
+                type = AccountType.ASSET,
+                classification = AccountClassification.CURRENT,
+                code = "1000",
+                name = "Cash and Bank",
+                expenseClassification = ExpenseClassification.DIRECT_LABOR
+            )
+        }
+    }
+
     private fun readyAccount(): Account = Account.create(
         companyId = CompanyId.generate(),
         type = AccountType.ASSET,

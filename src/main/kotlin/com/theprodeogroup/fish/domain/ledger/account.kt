@@ -21,6 +21,15 @@ import com.theprodeogroup.fish.domain.tenancy.CompanyId
  * check belongs at the application-service level, the same way
  * `PostingService` checks `Period.status` outside `JournalEntry` itself
  * (Section 3.1's design note on `Period`).
+ *
+ * [expenseClassification] (added 2026-08-12, `ExpenseClassification`)
+ * is a second, optional sub-classification alongside [classification] -
+ * unlike [classification], which `AccountType.requiresClassification()`
+ * enforces as mandatory for Asset/Liability, `expenseClassification` is
+ * never required even for Expense accounts (see
+ * `AccountType.requiresExpenseClassification()`'s KDoc for why) - only
+ * enforced in the one direction that a non-Expense type can't be given
+ * one.
  */
 class Account private constructor(
     val id: AccountId,
@@ -29,6 +38,7 @@ class Account private constructor(
     val classification: AccountClassification?,
     val code: String,
     val name: String,
+    val expenseClassification: ExpenseClassification?,
     val parentId: AccountId?
 ) {
     var active: Boolean = true
@@ -73,6 +83,7 @@ class Account private constructor(
             classification: AccountClassification?,
             code: String,
             name: String,
+            expenseClassification: ExpenseClassification? = null,
             parentId: AccountId? = null,
             id: AccountId = AccountId.generate()
         ): Account {
@@ -85,10 +96,15 @@ class Account private constructor(
                     "AccountType.$type does not use a current/non-current classification"
                 }
             }
+            if (!type.requiresExpenseClassification()) {
+                require(expenseClassification == null) {
+                    "AccountType.$type does not use an expense classification"
+                }
+            }
             require(parentId != id) {
                 "An Account cannot be its own parent"
             }
-            return Account(id, companyId, type, classification, code, name, parentId)
+            return Account(id, companyId, type, classification, code, name, expenseClassification, parentId)
         }
     }
 }
