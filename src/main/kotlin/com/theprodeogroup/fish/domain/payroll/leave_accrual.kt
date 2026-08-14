@@ -36,16 +36,16 @@ import java.util.Currency
  * obligation, reliable estimate) is the same shape as an ordinary
  * accrued expense, with no Payroll-specific wrapper needed.
  *
- * **Avoiding double-counting between [utilizeLeave] and `Payslip` is
+ * **Avoiding double-counting between [utilizeLeave] and `PayRun` is
  * the caller's responsibility, not this type's.** When accrued leave is
- * taken, the employee is still paid through the normal payroll run -
- * but that portion of pay must be charged against [utilizeLeave]
- * (drawing down the already-accrued liability), not `Payslip.post()`'s
- * ordinary `earningsAccountId` line, or the cost is recognized twice:
- * once as it accrued, again as "worked" pay. Splitting a pay period's
- * money into worked vs. leave-funded portions is a Payroll
- * service-layer concern - the Ledger only needs the money amount for
- * each, not which calendar days were worked vs. on leave.
+ * taken, the employee is still paid through the normal pay run - but
+ * that portion of pay must be charged against [utilizeLeave] (drawing
+ * down the already-accrued liability), not folded into `PayRun.totalWages`/
+ * `totalSalaries` again, or the cost is recognized twice: once as it
+ * accrued, again as "worked" pay. Splitting a pay period's money into
+ * worked vs. leave-funded portions is HR/Payroll's own concern - the
+ * Ledger only needs the money amount for each, not which employee or
+ * calendar days were on leave.
  */
 class LeaveAccrual private constructor(
     val id: LeaveAccrualId,
