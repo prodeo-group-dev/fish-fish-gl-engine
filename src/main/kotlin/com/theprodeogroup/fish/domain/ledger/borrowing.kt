@@ -42,9 +42,9 @@ import java.time.LocalDate
  * happens afterward.
  *
  * Interest accrual/payment and principal repayment are deliberately
- * **three separate methods, each producing its own `JournalEntry`**,
- * not one compound entry combining principal and interest in a single
- * payment - a real loan repayment often *does* combine both in one bank
+ * **separate methods, each producing its own `JournalEntry`**, not one
+ * compound entry combining principal and interest in a single payment -
+ * a real loan repayment often *does* combine both in one bank
  * transaction, but bundling them into one cash line would make it
  * impossible to correctly tag that line with a single
  * `CashFlowActivity` (principal repayment is IAS 7 Financing; interest
@@ -52,6 +52,12 @@ import java.time.LocalDate
  * `StatementOfCashFlows`'s categorization - the whole reason
  * `DimensionType.CASH_FLOW_ACTIVITY` tags the cash line itself, not a
  * counter-account.
+ *
+ * [capitaliseInterest] (added 2026-08-14) is [recordInterestAccrual]'s
+ * IAS 23 sibling - identical interest computation, only the debit side
+ * differs (a qualifying asset under construction, instead of Expense).
+ * The caller chooses which to call for a given period; this type has
+ * no commencement/suspension/cessation state of its own.
  */
 class Borrowing private constructor(
     val id: BorrowingId,
@@ -96,6 +102,54 @@ class Borrowing private constructor(
         return JournalEntry.create(
             periodId, date, lines, JournalSource.SYSTEM,
             "Interest accrual - $lenderName ($id)", journalEntryId
+        )
+    }
+
+    /**
+     * IAS 23's core rule: borrowing costs directly attributable to
+     * constructing a *qualifying asset* (one that necessarily takes a
+     * substantial period to get ready for its intended use - a
+     * factory, a production line) are capitalised into that asset's
+     * cost, not expensed. Same interest computation as
+     * [recordInterestAccrual] (`outstandingPrincipal * annualInterestRate`,
+     * one call = one year, same "callers decide their own cadence"
+     * discipline) and the same effect on [accruedInterestPayable] - the
+     * liability owed to the lender doesn't care whether the debit side
+     * lands on an Expense or an Asset account. Only the debit side
+     * differs: [qualifyingAssetAccountId] instead of an Expense account.
+     *
+     * **Deliberately does not implement IAS 23's commencement/
+     * suspension/cessation rules or the specific-vs-general-borrowings
+     * weighted-average capitalisation rate** - confirmed scope: the
+     * caller decides entirely when capitalisation should apply (i.e.
+     * while construction is actively underway) by choosing to call
+     * this method instead of [recordInterestAccrual] for a given
+     * period; call one or the other, not both, for the same interest
+     * charge.
+     *
+     * Returns `null` under the same conditions as [recordInterestAccrual]
+     * (fully repaid, or zero computed interest).
+     */
+    fun capitaliseInterest(
+        qualifyingAssetAccountId: AccountId,
+        accruedInterestPayableAccountId: AccountId,
+        periodId: PeriodId,
+        date: LocalDate,
+        journalEntryId: JournalEntryId = JournalEntryId.generate()
+    ): JournalEntry? {
+        if (outstandingPrincipal.amount.signum() <= 0) return null
+        val interest = outstandingPrincipal * annualInterestRate
+        if (interest.amount.signum() <= 0) return null
+
+        accruedInterestPayable = accruedInterestPayable + interest
+
+        val lines = listOf(
+            JournalLine(qualifyingAssetAccountId, interest, TransactionSide.DEBIT),
+            JournalLine(accruedInterestPayableAccountId, interest, TransactionSide.CREDIT)
+        )
+        return JournalEntry.create(
+            periodId, date, lines, JournalSource.SYSTEM,
+            "Capitalised interest - $lenderName ($id)", journalEntryId
         )
     }
 
