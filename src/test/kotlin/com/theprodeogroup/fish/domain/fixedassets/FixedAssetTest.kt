@@ -248,6 +248,148 @@ class FixedAssetTest {
         result shouldBe null
     }
 
+    @Test
+    fun `given recoverable amount falls below net book value, when impairment is assessed, then it posts a loss and reduces carrying amount`() {
+        val expenseAccountId = AccountId.generate()
+        val accumulatedImpairmentAccountId = AccountId.generate()
+        val asset = machine()
+        asset.recordDepreciation(AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY)
+        // netBookValue is now 750.00
+
+        val entry = requireNotNull(
+            asset.assessImpairment(
+                Money(BigDecimal("600.00"), GBP), expenseAccountId, accumulatedImpairmentAccountId, PeriodId.generate(), TODAY
+            )
+        )
+
+        JournalEntry.validateLines(entry.lines).isValid shouldBe true
+        val expenseLine = entry.lines.first { it.accountId == expenseAccountId }
+        expenseLine.side shouldBe TransactionSide.DEBIT
+        expenseLine.amount shouldBe Money(BigDecimal("150.00"), GBP)
+        val impairmentLine = entry.lines.first { it.accountId == accumulatedImpairmentAccountId }
+        impairmentLine.side shouldBe TransactionSide.CREDIT
+        impairmentLine.amount shouldBe Money(BigDecimal("150.00"), GBP)
+        asset.accumulatedImpairmentLoss shouldBe Money(BigDecimal("150.00"), GBP)
+        asset.carryingAmount shouldBe Money(BigDecimal("600.00"), GBP)
+    }
+
+    @Test
+    fun `given recoverable amount at or above net book value, when impairment is assessed, then it returns null`() {
+        val asset = machine()
+
+        val result = asset.assessImpairment(
+            Money(BigDecimal("1200.00"), GBP), AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY
+        )
+
+        result shouldBe null
+        asset.accumulatedImpairmentLoss shouldBe Money(BigDecimal.ZERO, GBP)
+    }
+
+    @Test
+    fun `given an existing impairment, when recoverable amount partially recovers, then it posts a reversal for the delta only`() {
+        val expenseAccountId = AccountId.generate()
+        val accumulatedImpairmentAccountId = AccountId.generate()
+        val asset = machine()
+        asset.recordDepreciation(AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY)
+        asset.assessImpairment(Money(BigDecimal("600.00"), GBP), expenseAccountId, accumulatedImpairmentAccountId, PeriodId.generate(), TODAY)
+
+        val entry = requireNotNull(
+            asset.assessImpairment(
+                Money(BigDecimal("700.00"), GBP), expenseAccountId, accumulatedImpairmentAccountId, PeriodId.generate(), TODAY
+            )
+        )
+
+        val impairmentLine = entry.lines.first { it.accountId == accumulatedImpairmentAccountId }
+        impairmentLine.side shouldBe TransactionSide.DEBIT
+        impairmentLine.amount shouldBe Money(BigDecimal("100.00"), GBP)
+        asset.accumulatedImpairmentLoss shouldBe Money(BigDecimal("50.00"), GBP)
+        asset.carryingAmount shouldBe Money(BigDecimal("700.00"), GBP)
+    }
+
+    @Test
+    fun `given an existing impairment, when recoverable amount recovers above net book value, then the reversal is capped at net book value`() {
+        val expenseAccountId = AccountId.generate()
+        val accumulatedImpairmentAccountId = AccountId.generate()
+        val asset = machine()
+        asset.recordDepreciation(AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY)
+        asset.assessImpairment(Money(BigDecimal("600.00"), GBP), expenseAccountId, accumulatedImpairmentAccountId, PeriodId.generate(), TODAY)
+
+        val entry = requireNotNull(
+            asset.assessImpairment(
+                Money(BigDecimal("900.00"), GBP), expenseAccountId, accumulatedImpairmentAccountId, PeriodId.generate(), TODAY
+            )
+        )
+
+        entry.lines.first { it.side == TransactionSide.DEBIT }.amount shouldBe Money(BigDecimal("150.00"), GBP)
+        asset.accumulatedImpairmentLoss shouldBe Money(BigDecimal.ZERO, GBP)
+        asset.carryingAmount shouldBe Money(BigDecimal("750.00"), GBP)
+        asset.carryingAmount shouldBe asset.netBookValue
+    }
+
+    @Test
+    fun `given a disposed asset, when impairment is assessed, then it returns null`() {
+        val asset = machine()
+        asset.dispose(
+            Money(BigDecimal("750.00"), GBP), AccountId.generate(), AccountId.generate(),
+            AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY
+        )
+
+        val result = asset.assessImpairment(
+            Money(BigDecimal("100.00"), GBP), AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY
+        )
+
+        result shouldBe null
+    }
+
+    @Test
+    fun `given an impaired asset, when disposed with proceeds equal to carrying amount, then the Sale of Fixed Asset account nets to zero`() {
+        val cashAccountId = AccountId.generate()
+        val fixedAssetAccountId = AccountId.generate()
+        val accumulatedDepreciationAccountId = AccountId.generate()
+        val accumulatedImpairmentAccountId = AccountId.generate()
+        val saleOfFixedAssetAccountId = AccountId.generate()
+        val asset = machine()
+        asset.recordDepreciation(AccountId.generate(), accumulatedDepreciationAccountId, PeriodId.generate(), TODAY)
+        asset.assessImpairment(Money(BigDecimal("600.00"), GBP), AccountId.generate(), accumulatedImpairmentAccountId, PeriodId.generate(), TODAY)
+        // carryingAmount is now 600.00
+
+        val entry = requireNotNull(
+            asset.dispose(
+                Money(BigDecimal("600.00"), GBP), cashAccountId, fixedAssetAccountId,
+                accumulatedDepreciationAccountId, saleOfFixedAssetAccountId, PeriodId.generate(), TODAY,
+                accumulatedImpairmentAccountId
+            )
+        )
+
+        JournalEntry.validateLines(entry.lines).isValid shouldBe true
+        val impairmentLine = entry.lines.first { it.accountId == accumulatedImpairmentAccountId }
+        impairmentLine.side shouldBe TransactionSide.DEBIT
+        impairmentLine.amount shouldBe Money(BigDecimal("150.00"), GBP)
+        val saleLines = entry.lines.filter { it.accountId == saleOfFixedAssetAccountId }
+        val netSaleBalance = saleLines.fold(Money(BigDecimal.ZERO, GBP)) { sum, line ->
+            if (line.side == TransactionSide.CREDIT) sum + line.amount else sum - line.amount
+        }
+        netSaleBalance shouldBe Money(BigDecimal.ZERO, GBP)
+    }
+
+    @Test
+    fun `given an impaired asset, when disposed without an accumulated impairment account, then it returns null`() {
+        val asset = machine()
+        asset.assessImpairment(Money(BigDecimal("600.00"), GBP), AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY)
+
+        val result = asset.dispose(
+            Money(BigDecimal("600.00"), GBP), AccountId.generate(), AccountId.generate(),
+            AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY
+        )
+
+        result shouldBe null
+    }
+
+    private fun machine(): FixedAsset = FixedAsset.create(
+        CompanyId.generate(), "Factory Machine", AssetCategory.EQUIPMENT,
+        Money(BigDecimal("1000.00"), GBP), TODAY, 4
+    )
+
     private fun equipment(): FixedAsset = FixedAsset.create(
         CompanyId.generate(), "Office Equipment", AssetCategory.EQUIPMENT,
         Money(BigDecimal("1000.00"), GBP), TODAY, 5
