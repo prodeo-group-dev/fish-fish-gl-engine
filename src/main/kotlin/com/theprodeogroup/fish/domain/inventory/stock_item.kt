@@ -1,9 +1,17 @@
 package com.theprodeogroup.fish.domain.inventory
 
+import com.theprodeogroup.fish.domain.common.JournalSource
+import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.common.ValidationResult
+import com.theprodeogroup.fish.domain.ledger.AccountId
+import com.theprodeogroup.fish.domain.ledger.JournalEntry
+import com.theprodeogroup.fish.domain.ledger.JournalEntryId
+import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import java.math.BigDecimal
+import java.time.LocalDate
 import java.util.Currency
 
 /**
@@ -30,6 +38,18 @@ import java.util.Currency
  * `ProductionOrder`/job-costing aggregate exists to orchestrate this -
  * deliberately out of scope, a caller must call these methods directly
  * in the right sequence.
+ *
+ * [assessNetRealisableValue] (added 2026-08-14) is IAS 2.9's "lower of
+ * cost and net realisable value" measurement rule, the last real gap
+ * left from the original Inventory IFRS grounding. [nrvWriteDownPerUnit]
+ * is a *separate* contra-value, same relationship `FixedAsset.accumulatedDepreciation`
+ * has to `cost` - [unitCost]/[totalValue] stay pure historical
+ * weighted-average cost, unaffected, still the correct basis for the
+ * next [recordReceipt]'s blend; [carryingValuePerUnit]/[totalCarryingValue]
+ * are the derived lower-of-cost-and-NRV figures a Balance Sheet actually
+ * needs. Tracked per-unit rather than as a running total specifically so
+ * [recordIssue] never needs to touch it - exactly the same reason
+ * [unitCost] itself is per-unit, not a total.
  */
 class StockItem private constructor(
     val id: StockItemId,
@@ -46,6 +66,17 @@ class StockItem private constructor(
 
     val totalValue: Money
         get() = unitCost * quantityOnHand
+
+    var nrvWriteDownPerUnit: Money = Money(BigDecimal.ZERO, currency)
+        private set
+
+    /** Cost less any NRV write-down - IAS 2.9's "lower of cost and net realisable value," per unit. */
+    val carryingValuePerUnit: Money
+        get() = unitCost - nrvWriteDownPerUnit
+
+    /** [carryingValuePerUnit] times [quantityOnHand] - the Balance Sheet figure, distinct from the pure-cost [totalValue]. */
+    val totalCarryingValue: Money
+        get() = carryingValuePerUnit * quantityOnHand
 
     /**
      * Blends [quantityReceived] at [costReceived] into the running
@@ -150,6 +181,66 @@ class StockItem private constructor(
             sourceStageLabel = "Work in Progress",
             destinationStageLabel = "Finished Goods"
         )
+
+    /**
+     * Re-assesses the lower-of-cost-and-NRV write-down to
+     * [netRealisableValuePerUnit] - IAS 2.9's core measurement rule.
+     * If NRV falls below [unitCost], the shortfall (`unitCost -
+     * netRealisableValuePerUnit`) becomes the target per-unit
+     * write-down; if NRV is at or above [unitCost], the target is
+     * zero - inventory is never written *up* above its own cost (IAS
+     * 2.34's reversal cap), it simply isn't written down at all.
+     *
+     * Deliberately mirrors `Customer.assessExpectedCreditLoss()`'s
+     * target-and-delta shape (re-assess to a target each call, post
+     * only the difference) rather than `FixedAsset.recordDepreciation()`'s
+     * pure accumulation - IAS 2.34 explicitly requires reversals when
+     * NRV recovers, capped so the reversal never exceeds the original
+     * write-down (the carrying amount never exceeds cost). A top-up
+     * debits [writeDownExpenseAccountId]/credits [inventoryAssetAccountId];
+     * a reversal does the opposite, per IAS 2.34's requirement that a
+     * reversal reduce the period's inventory expense rather than create
+     * separate income. `JournalSource.SYSTEM`, matching the same
+     * automated-period-end-review precedent.
+     *
+     * Returns `null` if there's no [quantityOnHand] to carry a value at
+     * all, or if the delta is exactly zero - nothing to post.
+     */
+    fun assessNetRealisableValue(
+        netRealisableValuePerUnit: Money,
+        writeDownExpenseAccountId: AccountId,
+        inventoryAssetAccountId: AccountId,
+        periodId: PeriodId,
+        date: LocalDate,
+        journalEntryId: JournalEntryId = JournalEntryId.generate()
+    ): JournalEntry? {
+        if (quantityOnHand.signum() <= 0) return null
+        if (netRealisableValuePerUnit.currency != currency) return null
+
+        val zero = Money(BigDecimal.ZERO, currency)
+        val targetPerUnit = if (netRealisableValuePerUnit < unitCost) unitCost - netRealisableValuePerUnit else zero
+        val delta = (targetPerUnit - nrvWriteDownPerUnit) * quantityOnHand
+        if (delta.amount.signum() == 0) return null
+
+        val lines = if (delta.amount.signum() > 0) {
+            listOf(
+                JournalLine(writeDownExpenseAccountId, delta, TransactionSide.DEBIT),
+                JournalLine(inventoryAssetAccountId, delta, TransactionSide.CREDIT)
+            )
+        } else {
+            val reversalAmount = zero - delta
+            listOf(
+                JournalLine(inventoryAssetAccountId, reversalAmount, TransactionSide.DEBIT),
+                JournalLine(writeDownExpenseAccountId, reversalAmount, TransactionSide.CREDIT)
+            )
+        }
+
+        nrvWriteDownPerUnit = targetPerUnit
+        return JournalEntry.create(
+            periodId, date, lines, JournalSource.SYSTEM,
+            "Net realisable value assessment - $name ($id)", journalEntryId
+        )
+    }
 
     /**
      * Shared shape behind [consumeInto]/[completeInto] - both are
