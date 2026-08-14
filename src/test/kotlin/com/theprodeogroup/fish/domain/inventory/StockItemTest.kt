@@ -101,6 +101,132 @@ class StockItemTest {
         item.quantityOnHand shouldBe BigDecimal("10")
     }
 
+    @Test
+    fun `given no stage is specified, when a StockItem is created, then it defaults to Finished Goods`() {
+        val item = readyItem()
+
+        item.stage shouldBe InventoryStage.FINISHED_GOODS
+    }
+
+    @Test
+    fun `given Raw Material stock, when consumed into a Work in Progress item, then the source decreases and the destination blends in the consumed cost`() {
+        val companyId = CompanyId.generate()
+        val steel = StockItem.create(companyId, "Steel Sheet", GBP, InventoryStage.RAW_MATERIAL)
+        steel.recordReceipt(BigDecimal("100"), Money(BigDecimal("5.00"), GBP))
+        val frame = StockItem.create(companyId, "Steel Frame", GBP, InventoryStage.WORK_IN_PROGRESS)
+
+        val result = steel.consumeInto(frame, BigDecimal("30"))
+
+        result.isValid shouldBe true
+        steel.quantityOnHand shouldBe BigDecimal("70")
+        frame.quantityOnHand shouldBe BigDecimal("30")
+        frame.unitCost shouldBe Money(BigDecimal("5.00"), GBP)
+        frame.totalValue shouldBe Money(BigDecimal("150.00"), GBP)
+    }
+
+    @Test
+    fun `given the source is not Raw Material, when consumeInto is called, then it fails and nothing changes`() {
+        val companyId = CompanyId.generate()
+        val finishedItem = StockItem.create(companyId, "Widget", GBP, InventoryStage.FINISHED_GOODS)
+        finishedItem.recordReceipt(BigDecimal("10"), Money(BigDecimal("2.00"), GBP))
+        val wip = StockItem.create(companyId, "In Progress", GBP, InventoryStage.WORK_IN_PROGRESS)
+
+        val result = finishedItem.consumeInto(wip, BigDecimal("5"))
+
+        result.isValid shouldBe false
+        finishedItem.quantityOnHand shouldBe BigDecimal("10")
+        wip.quantityOnHand shouldBe BigDecimal.ZERO
+    }
+
+    @Test
+    fun `given the destination is not Work in Progress, when consumeInto is called, then it fails and nothing changes`() {
+        val companyId = CompanyId.generate()
+        val steel = StockItem.create(companyId, "Steel Sheet", GBP, InventoryStage.RAW_MATERIAL)
+        steel.recordReceipt(BigDecimal("10"), Money(BigDecimal("2.00"), GBP))
+        val finishedItem = StockItem.create(companyId, "Widget", GBP, InventoryStage.FINISHED_GOODS)
+
+        val result = steel.consumeInto(finishedItem, BigDecimal("5"))
+
+        result.isValid shouldBe false
+        steel.quantityOnHand shouldBe BigDecimal("10")
+    }
+
+    @Test
+    fun `given Raw Material and Work in Progress in different currencies, when consumeInto is called, then it fails and neither side changes`() {
+        val companyId = CompanyId.generate()
+        val steel = StockItem.create(companyId, "Steel Sheet", GBP, InventoryStage.RAW_MATERIAL)
+        steel.recordReceipt(BigDecimal("10"), Money(BigDecimal("2.00"), GBP))
+        val frame = StockItem.create(companyId, "Steel Frame", Currency.getInstance("USD"), InventoryStage.WORK_IN_PROGRESS)
+
+        val result = steel.consumeInto(frame, BigDecimal("5"))
+
+        result.isValid shouldBe false
+        steel.quantityOnHand shouldBe BigDecimal("10")
+        frame.quantityOnHand shouldBe BigDecimal.ZERO
+    }
+
+    @Test
+    fun `given Work in Progress with units in production, when production cost is added, then quantity is unchanged and unit cost rises`() {
+        val companyId = CompanyId.generate()
+        val frame = StockItem.create(companyId, "Steel Frame", GBP, InventoryStage.WORK_IN_PROGRESS)
+        frame.recordReceipt(BigDecimal("30"), Money(BigDecimal("5.00"), GBP))
+
+        val result = frame.addProductionCost(Money(BigDecimal("150.00"), GBP))
+
+        result.isValid shouldBe true
+        frame.quantityOnHand shouldBe BigDecimal("30")
+        frame.unitCost shouldBe Money(BigDecimal("10.00"), GBP)
+        frame.totalValue shouldBe Money(BigDecimal("300.00"), GBP)
+    }
+
+    @Test
+    fun `given a non-Work-in-Progress item, when production cost is added, then it fails`() {
+        val item = readyItem()
+
+        val result = item.addProductionCost(Money(BigDecimal("100.00"), GBP))
+
+        result.isValid shouldBe false
+    }
+
+    @Test
+    fun `given Work in Progress with no quantity, when production cost is added, then it fails`() {
+        val wip = StockItem.create(CompanyId.generate(), "In Progress", GBP, InventoryStage.WORK_IN_PROGRESS)
+
+        val result = wip.addProductionCost(Money(BigDecimal("100.00"), GBP))
+
+        result.isValid shouldBe false
+    }
+
+    @Test
+    fun `given Work in Progress, when completed into Finished Goods, then the source decreases and the destination blends in the completed cost`() {
+        val companyId = CompanyId.generate()
+        val frame = StockItem.create(companyId, "Steel Frame", GBP, InventoryStage.WORK_IN_PROGRESS)
+        frame.recordReceipt(BigDecimal("30"), Money(BigDecimal("5.00"), GBP))
+        frame.addProductionCost(Money(BigDecimal("150.00"), GBP))
+        val finishedFrame = StockItem.create(companyId, "Finished Steel Frame", GBP, InventoryStage.FINISHED_GOODS)
+
+        val result = frame.completeInto(finishedFrame, BigDecimal("20"))
+
+        result.isValid shouldBe true
+        frame.quantityOnHand shouldBe BigDecimal("10")
+        finishedFrame.quantityOnHand shouldBe BigDecimal("20")
+        finishedFrame.unitCost shouldBe Money(BigDecimal("10.00"), GBP)
+        finishedFrame.totalValue shouldBe Money(BigDecimal("200.00"), GBP)
+    }
+
+    @Test
+    fun `given the destination is not Finished Goods, when completeInto is called, then it fails and nothing changes`() {
+        val companyId = CompanyId.generate()
+        val frame = StockItem.create(companyId, "Steel Frame", GBP, InventoryStage.WORK_IN_PROGRESS)
+        frame.recordReceipt(BigDecimal("10"), Money(BigDecimal("5.00"), GBP))
+        val otherWip = StockItem.create(companyId, "Other WIP", GBP, InventoryStage.WORK_IN_PROGRESS)
+
+        val result = frame.completeInto(otherWip, BigDecimal("5"))
+
+        result.isValid shouldBe false
+        frame.quantityOnHand shouldBe BigDecimal("10")
+    }
+
     private fun readyItem(): StockItem =
         StockItem.create(CompanyId.generate(), "Widget", GBP)
 }
