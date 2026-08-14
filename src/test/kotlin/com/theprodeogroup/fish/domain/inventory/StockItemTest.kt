@@ -1,13 +1,19 @@
 package com.theprodeogroup.fish.domain.inventory
 
+import com.theprodeogroup.fish.domain.common.TransactionSide
+import com.theprodeogroup.fish.domain.ledger.AccountId
+import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
+import java.time.LocalDate
 import java.util.Currency
 
 private val GBP: Currency = Currency.getInstance("GBP")
+private val TODAY = LocalDate.of(2026, 2, 15)
 
 class StockItemTest {
 
@@ -225,6 +231,135 @@ class StockItemTest {
 
         result.isValid shouldBe false
         frame.quantityOnHand shouldBe BigDecimal("10")
+    }
+
+    @Test
+    fun `given no NRV assessment has been made, when checked, then carrying value equals cost`() {
+        val item = readyItem()
+        item.recordReceipt(BigDecimal("100"), Money(BigDecimal("5.00"), GBP))
+
+        item.nrvWriteDownPerUnit shouldBe Money(BigDecimal.ZERO, GBP)
+        item.carryingValuePerUnit shouldBe Money(BigDecimal("5.00"), GBP)
+        item.totalCarryingValue shouldBe item.totalValue
+    }
+
+    @Test
+    fun `given net realisable value falls below cost, when assessed, then it posts a write-down and reduces carrying value`() {
+        val expenseAccountId = AccountId.generate()
+        val inventoryAssetAccountId = AccountId.generate()
+        val item = readyItem()
+        item.recordReceipt(BigDecimal("100"), Money(BigDecimal("5.00"), GBP))
+
+        val entry = requireNotNull(
+            item.assessNetRealisableValue(
+                Money(BigDecimal("3.00"), GBP), expenseAccountId, inventoryAssetAccountId, PeriodId.generate(), TODAY
+            )
+        )
+
+        JournalEntry.validateLines(entry.lines).isValid shouldBe true
+        val expenseLine = entry.lines.first { it.accountId == expenseAccountId }
+        expenseLine.side shouldBe TransactionSide.DEBIT
+        expenseLine.amount shouldBe Money(BigDecimal("200.00"), GBP)
+        val inventoryLine = entry.lines.first { it.accountId == inventoryAssetAccountId }
+        inventoryLine.side shouldBe TransactionSide.CREDIT
+        inventoryLine.amount shouldBe Money(BigDecimal("200.00"), GBP)
+        item.nrvWriteDownPerUnit shouldBe Money(BigDecimal("2.00"), GBP)
+        item.carryingValuePerUnit shouldBe Money(BigDecimal("3.00"), GBP)
+        item.totalCarryingValue shouldBe Money(BigDecimal("300.00"), GBP)
+    }
+
+    @Test
+    fun `given net realisable value at or above cost with no prior write-down, when assessed, then it returns null`() {
+        val item = readyItem()
+        item.recordReceipt(BigDecimal("100"), Money(BigDecimal("5.00"), GBP))
+
+        val result = item.assessNetRealisableValue(
+            Money(BigDecimal("6.00"), GBP), AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY
+        )
+
+        result shouldBe null
+        item.nrvWriteDownPerUnit shouldBe Money(BigDecimal.ZERO, GBP)
+    }
+
+    @Test
+    fun `given an existing write-down, when net realisable value partially recovers, then it posts a reversal for the delta only`() {
+        val expenseAccountId = AccountId.generate()
+        val inventoryAssetAccountId = AccountId.generate()
+        val item = readyItem()
+        item.recordReceipt(BigDecimal("100"), Money(BigDecimal("5.00"), GBP))
+        item.assessNetRealisableValue(Money(BigDecimal("3.00"), GBP), expenseAccountId, inventoryAssetAccountId, PeriodId.generate(), TODAY)
+
+        val entry = requireNotNull(
+            item.assessNetRealisableValue(
+                Money(BigDecimal("4.00"), GBP), expenseAccountId, inventoryAssetAccountId, PeriodId.generate(), TODAY
+            )
+        )
+
+        val inventoryLine = entry.lines.first { it.accountId == inventoryAssetAccountId }
+        inventoryLine.side shouldBe TransactionSide.DEBIT
+        inventoryLine.amount shouldBe Money(BigDecimal("100.00"), GBP)
+        val expenseLine = entry.lines.first { it.accountId == expenseAccountId }
+        expenseLine.side shouldBe TransactionSide.CREDIT
+        item.nrvWriteDownPerUnit shouldBe Money(BigDecimal("1.00"), GBP)
+        item.carryingValuePerUnit shouldBe Money(BigDecimal("4.00"), GBP)
+    }
+
+    @Test
+    fun `given an existing write-down, when net realisable value recovers above cost, then the write-down fully reverses and never exceeds cost`() {
+        val expenseAccountId = AccountId.generate()
+        val inventoryAssetAccountId = AccountId.generate()
+        val item = readyItem()
+        item.recordReceipt(BigDecimal("100"), Money(BigDecimal("5.00"), GBP))
+        item.assessNetRealisableValue(Money(BigDecimal("3.00"), GBP), expenseAccountId, inventoryAssetAccountId, PeriodId.generate(), TODAY)
+
+        val entry = requireNotNull(
+            item.assessNetRealisableValue(
+                Money(BigDecimal("9.00"), GBP), expenseAccountId, inventoryAssetAccountId, PeriodId.generate(), TODAY
+            )
+        )
+
+        entry.lines.first { it.side == TransactionSide.DEBIT }.amount shouldBe Money(BigDecimal("200.00"), GBP)
+        item.nrvWriteDownPerUnit shouldBe Money(BigDecimal.ZERO, GBP)
+        item.carryingValuePerUnit shouldBe Money(BigDecimal("5.00"), GBP)
+        item.carryingValuePerUnit shouldBe item.unitCost
+    }
+
+    @Test
+    fun `given the same net realisable value re-assessed, when computed, then it returns null - nothing changed`() {
+        val item = readyItem()
+        item.recordReceipt(BigDecimal("100"), Money(BigDecimal("5.00"), GBP))
+        item.assessNetRealisableValue(
+            Money(BigDecimal("3.00"), GBP), AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY
+        )
+
+        val result = item.assessNetRealisableValue(
+            Money(BigDecimal("3.00"), GBP), AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY
+        )
+
+        result shouldBe null
+    }
+
+    @Test
+    fun `given zero quantity on hand, when net realisable value is assessed, then it returns null`() {
+        val item = readyItem()
+
+        val result = item.assessNetRealisableValue(
+            Money(BigDecimal("3.00"), GBP), AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY
+        )
+
+        result shouldBe null
+    }
+
+    @Test
+    fun `given a net realisable value in a different currency, when assessed, then it returns null`() {
+        val item = readyItem()
+        item.recordReceipt(BigDecimal("100"), Money(BigDecimal("5.00"), GBP))
+
+        val result = item.assessNetRealisableValue(
+            Money(BigDecimal("3.00"), Currency.getInstance("USD")), AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY
+        )
+
+        result shouldBe null
     }
 
     private fun readyItem(): StockItem =
