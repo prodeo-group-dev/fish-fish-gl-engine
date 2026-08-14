@@ -175,6 +175,45 @@ class BorrowingTest {
         result shouldBe null
     }
 
+    @Test
+    fun `given a Borrowing funding construction, when interest is capitalised, then it debits the qualifying asset instead of an expense`() {
+        val qualifyingAssetAccountId = AccountId.generate()
+        val payableAccountId = AccountId.generate()
+        val borrowing = wholesaleLoan()
+
+        val entry = requireNotNull(borrowing.capitaliseInterest(qualifyingAssetAccountId, payableAccountId, PeriodId.generate(), TODAY))
+
+        JournalEntry.validateLines(entry.lines).isValid shouldBe true
+        val assetLine = entry.lines.first { it.accountId == qualifyingAssetAccountId }
+        assetLine.side shouldBe TransactionSide.DEBIT
+        assetLine.amount shouldBe Money(BigDecimal("500.00"), GBP)
+        val payableLine = entry.lines.first { it.accountId == payableAccountId }
+        payableLine.side shouldBe TransactionSide.CREDIT
+        payableLine.amount shouldBe Money(BigDecimal("500.00"), GBP)
+        borrowing.accruedInterestPayable shouldBe Money(BigDecimal("500.00"), GBP)
+    }
+
+    @Test
+    fun `given a fully repaid Borrowing, when interest is capitalised, then it returns null`() {
+        val borrowing = wholesaleLoan()
+        borrowing.recordPrincipalRepayment(
+            Money(BigDecimal("10000.00"), GBP), AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY
+        )
+
+        val result = borrowing.capitaliseInterest(AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY)
+
+        result shouldBe null
+    }
+
+    @Test
+    fun `given a zero-interest Borrowing, when interest is capitalised, then it returns null`() {
+        val borrowing = Borrowing.create(CompanyId.generate(), "Directors Loan", Money(BigDecimal("5000.00"), GBP), BigDecimal.ZERO, TODAY)
+
+        val result = borrowing.capitaliseInterest(AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY)
+
+        result shouldBe null
+    }
+
     private fun wholesaleLoan(): Borrowing = Borrowing.create(
         CompanyId.generate(), "Community Bank", Money(BigDecimal("10000.00"), GBP), BigDecimal("0.05"), TODAY
     )
