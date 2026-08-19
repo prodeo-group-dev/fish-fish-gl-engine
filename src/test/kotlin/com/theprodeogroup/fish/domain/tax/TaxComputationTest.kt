@@ -41,7 +41,7 @@ class TaxComputationTest {
                 JournalLine(AccountId.generate(), Money(BigDecimal("400.00"), GBP), TransactionSide.CREDIT)
             )
         )
-        val taxRule = TaxRule("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
+        val taxRule = TaxRule.create("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
 
         val computation = TaxComputation.of(taxRule, listOf(revenue, expense), entries, periodId, GBP)
 
@@ -59,7 +59,7 @@ class TaxComputationTest {
             JournalLine(expense.id, Money(BigDecimal("500.00"), GBP), TransactionSide.DEBIT),
             JournalLine(AccountId.generate(), Money(BigDecimal("500.00"), GBP), TransactionSide.CREDIT)
         )
-        val taxRule = TaxRule("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
+        val taxRule = TaxRule.create("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
 
         val computation = TaxComputation.of(taxRule, listOf(expense), listOf(entry), periodId, GBP)
 
@@ -77,7 +77,7 @@ class TaxComputationTest {
             JournalLine(AccountId.generate(), Money(BigDecimal("1000.00"), GBP), TransactionSide.DEBIT),
             JournalLine(revenue.id, Money(BigDecimal("1000.00"), GBP), TransactionSide.CREDIT)
         )
-        val taxRule = TaxRule("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal.ZERO)
+        val taxRule = TaxRule.create("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal.ZERO)
 
         val computation = TaxComputation.of(taxRule, listOf(revenue), listOf(entry), periodId, GBP)
 
@@ -88,7 +88,7 @@ class TaxComputationTest {
     fun `given Accounts from two different Companies, when computed, then it fails - delegated to ProfitAndLoss's own validation`() {
         val revenueA = account(CompanyId.generate(), AccountType.REVENUE)
         val revenueB = account(CompanyId.generate(), AccountType.REVENUE)
-        val taxRule = TaxRule("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
+        val taxRule = TaxRule.create("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
 
         shouldThrow<IllegalArgumentException> {
             TaxComputation.of(taxRule, listOf(revenueA, revenueB), emptyList(), PeriodId.generate(), GBP)
@@ -96,17 +96,17 @@ class TaxComputationTest {
     }
 
     @Test
-    fun `given the computation succeeds, then it carries the same TaxRule and companyId used`() {
+    fun `given the computation succeeds, then it carries the same TaxRule id and companyId used`() {
         val companyId = CompanyId.generate()
         val periodId = PeriodId.generate()
         val revenue = account(companyId, AccountType.REVENUE)
-        val taxRule = TaxRule("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
+        val taxRule = TaxRule.create("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
 
         val computation = TaxComputation.of(taxRule, listOf(revenue), emptyList(), periodId, GBP)
 
         computation.companyId shouldBe companyId
         computation.periodId shouldBe periodId
-        computation.taxRule shouldBe taxRule
+        computation.taxRuleId shouldBe taxRule.id
     }
 
     private fun account(companyId: CompanyId, type: AccountType): Account {

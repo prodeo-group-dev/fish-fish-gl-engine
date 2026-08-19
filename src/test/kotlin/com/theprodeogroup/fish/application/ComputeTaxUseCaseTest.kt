@@ -15,6 +15,7 @@ import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.tax.TaxRule
 import com.theprodeogroup.fish.domain.tax.TaxType
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.junit.jupiter.api.Test
@@ -25,16 +26,17 @@ import java.util.Currency
 private val GBP: Currency = Currency.getInstance("GBP")
 private val TODAY = LocalDate.of(2026, 8, 20)
 
-/** Fakes shared across this package's tests live in `LedgerRepositoryFakes.kt`/`TenancyRepositoryFakes.kt`. */
+/** Fakes shared across this package's tests live in `LedgerRepositoryFakes.kt`/`TenancyRepositoryFakes.kt`/`TaxRepositoryFakes.kt`. */
 class ComputeTaxUseCaseTest {
 
     private val periodRepository = FakePeriodRepository()
     private val accountRepository = FakeAccountRepository()
     private val journalEntryRepository = FakeJournalEntryRepository()
-    private val useCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository)
+    private val taxComputationRepository = FakeTaxComputationRepository()
+    private val useCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
 
     private val companyId = CompanyId.generate()
-    private val taxRule = TaxRule("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
+    private val taxRule = TaxRule.create("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
 
     private fun period(): Period {
         val period = Period.create(companyId, PeriodType.MONTH, TODAY, TODAY.plusDays(30))
@@ -74,6 +76,18 @@ class ComputeTaxUseCaseTest {
         val success = result.shouldBeInstanceOf<ComputeTaxResult.Success>()
         success.computation.taxableProfit shouldBe Money(BigDecimal("600.00"), GBP)
         success.computation.taxDue shouldBe Money(BigDecimal("180.00"), GBP)
+    }
+
+    @Test
+    fun `given a successful computation, then it is persisted via TaxComputationRepository`() {
+        val period = period()
+        account(AccountType.REVENUE)
+
+        val result = useCase.execute(ComputeTaxUseCase.Request(companyId, period.id, taxRule, GBP))
+
+        val success = result.shouldBeInstanceOf<ComputeTaxResult.Success>()
+        taxComputationRepository.saveCalls shouldContain success.computation.id
+        taxComputationRepository.findById(success.computation.id)?.taxRuleId shouldBe taxRule.id
     }
 
     @Test
