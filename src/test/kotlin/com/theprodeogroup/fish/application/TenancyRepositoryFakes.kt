@@ -39,6 +39,7 @@ class FakeTenantRepository : TenantRepository {
         store[tenant.id] = tenant
     }
     override fun findById(id: TenantId): Tenant? = store[id]
+    override fun findAllActive(): List<Tenant> = store.values.filter { it.status == TenantStatus.ACTIVE }
 }
 
 class FakeCompanyRepository : CompanyRepository {

@@ -13,6 +13,18 @@ package com.theprodeogroup.fish.domain.tenancy
 interface TenantRepository {
     fun save(tenant: Tenant)
     fun findById(id: TenantId): Tenant?
+
+    /**
+     * Every `Active` Tenant, regardless of Company/Membership - the query
+     * `KybGracePeriodSweep` (Section 9.4/10.7) needs to find candidates
+     * whose `kybVerificationDeadline` may have lapsed. Only `Active`
+     * Tenants can have an expired grace period in the first place
+     * (`Tenant.isKybGracePeriodExpired()` already requires `status ==
+     * ACTIVE`), so filtering here at the query level - not loading every
+     * Tenant regardless of status - is a real, not premature,
+     * optimization.
+     */
+    fun findAllActive(): List<Tenant>
 }
 
 interface CompanyRepository {
