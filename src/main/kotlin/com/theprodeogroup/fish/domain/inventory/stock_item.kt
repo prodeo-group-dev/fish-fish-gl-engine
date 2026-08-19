@@ -288,5 +288,28 @@ class StockItem private constructor(
             stage: InventoryStage = InventoryStage.FINISHED_GOODS,
             id: StockItemId = StockItemId.generate()
         ): StockItem = StockItem(id, companyId, name, currency, stage)
+
+        /**
+         * Rebuilds an already-valid StockItem from persisted state
+         * (docs/DDD_Design.md Section 10.4) - `internal`, matches the
+         * repository-only visibility of every other aggregate's
+         * `reconstitute()`.
+         */
+        internal fun reconstitute(
+            id: StockItemId,
+            companyId: CompanyId,
+            name: String,
+            currency: Currency,
+            stage: InventoryStage,
+            quantityOnHand: BigDecimal,
+            unitCost: Money,
+            nrvWriteDownPerUnit: Money
+        ): StockItem {
+            val stockItem = StockItem(id, companyId, name, currency, stage)
+            stockItem.quantityOnHand = quantityOnHand
+            stockItem.unitCost = unitCost
+            stockItem.nrvWriteDownPerUnit = nrvWriteDownPerUnit
+            return stockItem
+        }
     }
 }

@@ -116,5 +116,26 @@ class PurchaseOrder private constructor(
             require(lines.isNotEmpty()) { "A PurchaseOrder must have at least one line" }
             return PurchaseOrder(id, companyId, creditorId, date, lines)
         }
+
+        /**
+         * Rebuilds an already-valid PurchaseOrder from persisted state
+         * (docs/DDD_Design.md Section 10.4) - bypasses [create]'s
+         * always-Draft starting point, same reason
+         * `Account`/`Period`/`JournalEntry.reconstitute()` bypass their
+         * own `create()` validation. `internal`, matches the
+         * repository-only visibility precedent.
+         */
+        internal fun reconstitute(
+            id: PurchaseOrderId,
+            companyId: CompanyId,
+            creditorId: CreditorId,
+            date: LocalDate,
+            lines: List<PurchaseOrderLine>,
+            status: PurchaseOrderStatus
+        ): PurchaseOrder {
+            val purchaseOrder = PurchaseOrder(id, companyId, creditorId, date, lines)
+            purchaseOrder.status = status
+            return purchaseOrder
+        }
     }
 }

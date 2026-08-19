@@ -107,5 +107,23 @@ class Creditor private constructor(
             currency: Currency,
             id: CreditorId = CreditorId.generate()
         ): Creditor = Creditor(id, companyId, name, currency)
+
+        /**
+         * Rebuilds an already-valid Creditor from persisted state
+         * (docs/DDD_Design.md Section 10.4) - `internal`, matches the
+         * repository-only visibility of every other aggregate's
+         * `reconstitute()`.
+         */
+        internal fun reconstitute(
+            id: CreditorId,
+            companyId: CompanyId,
+            name: String,
+            currency: Currency,
+            balance: Money
+        ): Creditor {
+            val creditor = Creditor(id, companyId, name, currency)
+            creditor.balance = balance
+            return creditor
+        }
     }
 }

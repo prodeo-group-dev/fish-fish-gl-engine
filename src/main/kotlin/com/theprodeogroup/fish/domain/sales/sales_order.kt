@@ -131,6 +131,16 @@ class SalesOrder private constructor(
         return entry
     }
 
+    /**
+     * A snapshot of which line indices have been delivered - needed only
+     * for persistence (docs/DDD_Design.md Section 10.4): [status] is
+     * computed from [deliveredLineIndices], but that set itself has no
+     * public accessor (deliberately - callers should read [status], not
+     * poke at line-level delivery bookkeeping). `internal`, matches the
+     * repository-only visibility of [reconstitute].
+     */
+    internal fun deliveredLineIndicesSnapshot(): Set<Int> = deliveredLineIndices.toSet()
+
     companion object {
         fun create(
             companyId: CompanyId,
@@ -141,6 +151,27 @@ class SalesOrder private constructor(
         ): SalesOrder {
             require(lines.isNotEmpty()) { "A SalesOrder must have at least one line" }
             return SalesOrder(id, companyId, customerId, date, lines)
+        }
+
+        /**
+         * Rebuilds an already-valid SalesOrder from persisted state
+         * (docs/DDD_Design.md Section 10.4) - [deliveredLineIndices]
+         * repopulates the private mutable set directly, since [status]
+         * is *computed* from it (see the class KDoc), not a field of its
+         * own - there's nothing else to set. `internal`, matches the
+         * repository-only visibility precedent.
+         */
+        internal fun reconstitute(
+            id: SalesOrderId,
+            companyId: CompanyId,
+            customerId: CustomerId,
+            date: LocalDate,
+            lines: List<SalesOrderLine>,
+            deliveredLineIndices: Set<Int>
+        ): SalesOrder {
+            val salesOrder = SalesOrder(id, companyId, customerId, date, lines)
+            salesOrder.deliveredLineIndices.addAll(deliveredLineIndices)
+            return salesOrder
         }
     }
 }
