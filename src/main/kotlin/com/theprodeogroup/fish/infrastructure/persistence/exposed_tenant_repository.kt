@@ -70,6 +70,11 @@ class ExposedTenantRepository : TenantRepository {
             ?.toTenant(id)
     }
 
+    override fun findAllActive(): List<Tenant> = transaction {
+        TenantsTable.selectAll().where { TenantsTable.status eq TenantStatus.ACTIVE.name }
+            .map { row -> row.toTenant(TenantId(row[TenantsTable.id])) }
+    }
+
     private fun loadCompanyIds(tenantId: TenantId): Set<CompanyId> =
         TenantCompaniesTable.selectAll().where { TenantCompaniesTable.tenantId eq tenantId.value }
             .map { CompanyId(it[TenantCompaniesTable.companyId]) }
