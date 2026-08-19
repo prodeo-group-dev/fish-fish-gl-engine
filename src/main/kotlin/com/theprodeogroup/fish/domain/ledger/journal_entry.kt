@@ -139,5 +139,26 @@ class JournalEntry private constructor(
             require(validation.isValid) { validation.errors.joinToString("; ") }
             return JournalEntry(id, periodId, date, lines, source, description, PostingStatus.DRAFT, null)
         }
+
+        /**
+         * Rebuilds a `JournalEntry` from persisted data, bypassing
+         * [create]'s balance validation - a row that was already saved
+         * was already valid (or, for a system-generated [reverse] entry,
+         * constructed to balance by mirroring the original). `internal`,
+         * for `JournalEntryRepository` implementations only. Doesn't
+         * replay any domain event - a loaded entry's `JournalEntryPosted`
+         * event, if any, already fired in whatever process originally
+         * posted it.
+         */
+        internal fun reconstitute(
+            id: JournalEntryId,
+            periodId: PeriodId,
+            date: LocalDate,
+            lines: List<JournalLine>,
+            source: JournalSource,
+            description: String?,
+            status: PostingStatus,
+            reversalOfEntryId: JournalEntryId?
+        ): JournalEntry = JournalEntry(id, periodId, date, lines, source, description, status, reversalOfEntryId)
     }
 }

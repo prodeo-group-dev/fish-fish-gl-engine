@@ -58,5 +58,23 @@ class Period private constructor(
             }
             return Period(id, companyId, periodType, startDate, endDate)
         }
+
+        /**
+         * Rebuilds a `Period` from persisted data, bypassing [create]'s
+         * validation - same reasoning as `Account.reconstitute()`.
+         * `internal`, for `PeriodRepository` implementations only.
+         */
+        internal fun reconstitute(
+            id: PeriodId,
+            companyId: CompanyId,
+            periodType: PeriodType,
+            startDate: LocalDate,
+            endDate: LocalDate,
+            status: PeriodStatus
+        ): Period {
+            val period = Period(id, companyId, periodType, startDate, endDate)
+            period.status = status
+            return period
+        }
     }
 }

@@ -44,7 +44,16 @@ class Account private constructor(
     var active: Boolean = true
         private set
 
-    private var hasPostedActivity: Boolean = false
+    /**
+     * `internal`, not `private` (added 2026-08-19) - `AccountRepository`
+     * implementations need to read this to persist it, the same
+     * "shared within the module, not part of the public domain API"
+     * reasoning as `reconstitute()`. The setter stays `private` -
+     * [recordActivity] (or `reconstitute()`, via companion-object
+     * access) are still the only way to change it.
+     */
+    internal var hasPostedActivity: Boolean = false
+        private set
 
     /** Called by the application service when a JournalEntry posts against this Account. */
     fun recordActivity() {
@@ -105,6 +114,34 @@ class Account private constructor(
                 "An Account cannot be its own parent"
             }
             return Account(id, companyId, type, classification, code, name, expenseClassification, parentId)
+        }
+
+        /**
+         * Rebuilds an `Account` from persisted data, bypassing [create]'s
+         * validation - a row that was already saved was already valid
+         * when it was saved, so re-validating on every load is pure
+         * overhead. `internal`, not public - only `AccountRepository`
+         * implementations should call this, matching the `internal`
+         * visibility already used for `hasHistoricalEffect()`
+         * (`account_balances.kt`) for the same "shared within the
+         * module, not part of the public domain API" reasoning.
+         */
+        internal fun reconstitute(
+            id: AccountId,
+            companyId: CompanyId,
+            type: AccountType,
+            classification: AccountClassification?,
+            code: String,
+            name: String,
+            expenseClassification: ExpenseClassification?,
+            parentId: AccountId?,
+            active: Boolean,
+            hasPostedActivity: Boolean
+        ): Account {
+            val account = Account(id, companyId, type, classification, code, name, expenseClassification, parentId)
+            account.active = active
+            account.hasPostedActivity = hasPostedActivity
+            return account
         }
     }
 }
