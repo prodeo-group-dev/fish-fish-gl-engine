@@ -9,6 +9,12 @@ import com.theprodeogroup.fish.domain.purchasing.CreditorRepository
 import com.theprodeogroup.fish.domain.purchasing.PurchaseOrder
 import com.theprodeogroup.fish.domain.purchasing.PurchaseOrderId
 import com.theprodeogroup.fish.domain.purchasing.PurchaseOrderRepository
+import com.theprodeogroup.fish.domain.sales.Customer
+import com.theprodeogroup.fish.domain.sales.CustomerId
+import com.theprodeogroup.fish.domain.sales.CustomerRepository
+import com.theprodeogroup.fish.domain.sales.SalesOrder
+import com.theprodeogroup.fish.domain.sales.SalesOrderId
+import com.theprodeogroup.fish.domain.sales.SalesOrderRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 
 /**
@@ -48,4 +54,26 @@ class FakeStockItemRepository : StockItemRepository {
     }
     override fun findById(id: StockItemId): StockItem? = store[id]
     override fun findAllByCompany(companyId: CompanyId): List<StockItem> = store.values.filter { it.companyId == companyId }
+}
+
+class FakeCustomerRepository : CustomerRepository {
+    val saveCalls = mutableListOf<CustomerId>()
+    private val store = mutableMapOf<CustomerId, Customer>()
+    override fun save(customer: Customer) {
+        saveCalls.add(customer.id)
+        store[customer.id] = customer
+    }
+    override fun findById(id: CustomerId): Customer? = store[id]
+    override fun findAllByCompany(companyId: CompanyId): List<Customer> = store.values.filter { it.companyId == companyId }
+}
+
+class FakeSalesOrderRepository : SalesOrderRepository {
+    val saveCalls = mutableListOf<SalesOrderId>()
+    private val store = mutableMapOf<SalesOrderId, SalesOrder>()
+    override fun save(salesOrder: SalesOrder) {
+        saveCalls.add(salesOrder.id)
+        store[salesOrder.id] = salesOrder
+    }
+    override fun findById(id: SalesOrderId): SalesOrder? = store[id]
+    override fun findAllByCompany(companyId: CompanyId): List<SalesOrder> = store.values.filter { it.companyId == companyId }
 }
