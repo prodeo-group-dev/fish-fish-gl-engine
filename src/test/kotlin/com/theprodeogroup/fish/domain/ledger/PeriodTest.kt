@@ -109,6 +109,49 @@ class PeriodTest {
         period.status shouldBe PeriodStatus.DRAFT
     }
 
+    @Test
+    fun `given an Open Period, when closed, then a PeriodClosed event is raised`() {
+        val period = readyPeriod()
+        period.open()
+
+        period.close()
+
+        val events = period.pullDomainEvents()
+        events.map { it::class } shouldBe listOf(PeriodClosed::class)
+    }
+
+    @Test
+    fun `given a Draft Period, when close is rejected, then no event is raised`() {
+        val period = readyPeriod()
+
+        period.close()
+
+        period.pullDomainEvents() shouldBe emptyList()
+    }
+
+    @Test
+    fun `given a Closed Period, when locked, then a PeriodLocked event is raised`() {
+        val period = readyPeriod()
+        period.open()
+        period.close()
+        period.pullDomainEvents() // drain the PeriodClosed event from above - this test is only about lock()
+
+        period.lock()
+
+        val events = period.pullDomainEvents()
+        events.map { it::class } shouldBe listOf(PeriodLocked::class)
+    }
+
+    @Test
+    fun `given events were already pulled, when pulled again, then it returns empty`() {
+        val period = readyPeriod()
+        period.open()
+        period.close()
+        period.pullDomainEvents()
+
+        period.pullDomainEvents() shouldBe emptyList()
+    }
+
     private fun readyPeriod(): Period = Period.create(
         companyId = CompanyId.generate(),
         periodType = PeriodType.MONTH,
