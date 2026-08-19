@@ -54,5 +54,24 @@ class Company private constructor(
             baseCurrency: Currency,
             id: CompanyId = CompanyId.generate()
         ): Company = Company(id, tenantId, name, clientType, jurisdiction, baseCurrency)
+
+        /**
+         * Rebuilds an already-valid Company from persisted state (Section 10) -
+         * `internal`, matches the repository-only visibility of every other
+         * aggregate's `reconstitute()`.
+         */
+        internal fun reconstitute(
+            id: CompanyId,
+            tenantId: TenantId,
+            name: String,
+            clientType: ClientType,
+            jurisdiction: String,
+            baseCurrency: Currency,
+            goingConcernStatus: GoingConcernStatus
+        ): Company {
+            val company = Company(id, tenantId, name, clientType, jurisdiction, baseCurrency)
+            company.goingConcernStatus = goingConcernStatus
+            return company
+        }
     }
 }

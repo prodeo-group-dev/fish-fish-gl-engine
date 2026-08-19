@@ -220,5 +220,37 @@ class Tenant private constructor(
             baseCurrency: Currency,
             id: TenantId = TenantId.generate()
         ): Tenant = Tenant(id, name, segment, baseCurrency)
+
+        /**
+         * Rebuilds an already-valid Tenant from persisted state (Section 10) -
+         * bypasses [onboard]'s Draft-only starting point the same way
+         * `Account`/`Period`/`JournalEntry.reconstitute()` bypass their own
+         * `create()` validation. `internal` visibility only - a repository
+         * concern, not part of the aggregate's public API. [companyIds] and
+         * [adminMembershipIds] repopulate the private sets directly, since
+         * they're genuinely part of Tenant's own state (Section 9.2 steps
+         * 3-4), not derived from Company/Membership's own `tenantId`.
+         */
+        internal fun reconstitute(
+            id: TenantId,
+            name: String,
+            segment: TenantSegment,
+            baseCurrency: Currency,
+            status: TenantStatus,
+            kybStatus: VerificationStatus,
+            adminKycStatus: VerificationStatus,
+            kybVerificationDeadline: Instant?,
+            companyIds: Set<CompanyId>,
+            adminMembershipIds: Set<MembershipId>
+        ): Tenant {
+            val tenant = Tenant(id, name, segment, baseCurrency)
+            tenant.status = status
+            tenant.kybStatus = kybStatus
+            tenant.adminKycStatus = adminKycStatus
+            tenant.kybVerificationDeadline = kybVerificationDeadline
+            tenant._companyIds.addAll(companyIds)
+            tenant._adminMembershipIds.addAll(adminMembershipIds)
+            return tenant
+        }
     }
 }

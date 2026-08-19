@@ -15,9 +15,20 @@ import javax.sql.DataSource
  * these are secrets. [FISH_DB_USER]/[FISH_DB_PASSWORD] have **no
  * default** and throw if missing - there's no safe default for a
  * credential, unlike a hostname.
+ *
+ * [dataSource] is memoized (`by lazy`) - a `HikariDataSource` eagerly
+ * opens its own connection pool the moment it's constructed, so calling
+ * this repeatedly without caching opens a fresh, never-closed pool every
+ * time. Invisible with a single integration test class (comfortably
+ * under Postgres's default `max_connections`), but surfaced as real
+ * "sorry, too many clients already" failures the moment a second
+ * integration test class's `@BeforeEach` also calls it in the same JVM
+ * run (docs/DDD_Design.md Section 10.3) - one pool per process, matching
+ * how `HikariDataSource` is meant to be used, fixes it at the source
+ * rather than papering over it per-test.
  */
 object DatabaseConfig {
-    fun dataSource(): DataSource {
+    private val cachedDataSource: DataSource by lazy {
         val host = System.getenv("FISH_DB_HOST") ?: "localhost"
         val port = System.getenv("FISH_DB_PORT") ?: "5432"
         val database = System.getenv("FISH_DB_NAME") ?: "fish_dev"
@@ -33,8 +44,10 @@ object DatabaseConfig {
             maximumPoolSize = System.getenv("FISH_DB_POOL_SIZE")?.toIntOrNull() ?: 10
             driverClassName = "org.postgresql.Driver"
         }
-        return HikariDataSource(config)
+        HikariDataSource(config)
     }
+
+    fun dataSource(): DataSource = cachedDataSource
 
     /** Connects Exposed to [dataSource] - call once per process, typically at startup. */
     fun connectExposed(dataSource: DataSource = dataSource()): Database =

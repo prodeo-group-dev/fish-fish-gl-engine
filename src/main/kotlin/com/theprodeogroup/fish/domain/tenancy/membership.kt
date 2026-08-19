@@ -42,5 +42,23 @@ class Membership private constructor(
             role: Role,
             id: MembershipId = MembershipId.generate()
         ): Membership = Membership(id, userId, tenantId, role)
+
+        /**
+         * Rebuilds an already-valid Membership from persisted state
+         * (Section 10) - needed because [grant] always starts a Membership
+         * at ACTIVE; a reloaded REVOKED Membership has to bypass that.
+         * `internal`, matches the repository-only visibility precedent.
+         */
+        internal fun reconstitute(
+            id: MembershipId,
+            userId: UserId,
+            tenantId: TenantId,
+            role: Role,
+            status: MembershipStatus
+        ): Membership {
+            val membership = Membership(id, userId, tenantId, role)
+            membership.status = status
+            return membership
+        }
     }
 }
