@@ -184,5 +184,25 @@ class Customer private constructor(
             currency: Currency,
             id: CustomerId = CustomerId.generate()
         ): Customer = Customer(id, companyId, name, currency)
+
+        /**
+         * Rebuilds an already-valid Customer from persisted state
+         * (docs/DDD_Design.md Section 10.4) - `internal`, matches the
+         * repository-only visibility of every other aggregate's
+         * `reconstitute()`.
+         */
+        internal fun reconstitute(
+            id: CustomerId,
+            companyId: CompanyId,
+            name: String,
+            currency: Currency,
+            balance: Money,
+            allowanceForExpectedCreditLoss: Money
+        ): Customer {
+            val customer = Customer(id, companyId, name, currency)
+            customer.balance = balance
+            customer.allowanceForExpectedCreditLoss = allowanceForExpectedCreditLoss
+            return customer
+        }
     }
 }
