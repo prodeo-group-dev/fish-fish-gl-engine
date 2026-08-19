@@ -1,9 +1,11 @@
 package com.theprodeogroup.fish.domain.ledger
 
+import com.theprodeogroup.fish.domain.common.DomainEvent
 import com.theprodeogroup.fish.domain.common.PeriodStatus
 import com.theprodeogroup.fish.domain.common.PeriodType
 import com.theprodeogroup.fish.domain.common.ValidationResult
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
+import java.time.Instant
 import java.time.LocalDate
 
 /**
@@ -27,15 +29,38 @@ class Period private constructor(
     var status: PeriodStatus = PeriodStatus.DRAFT
         private set
 
+    private val _domainEvents = mutableListOf<DomainEvent>()
+
+    /** Drains and returns events raised since the last call - same pattern as `Tenant`/`JournalEntry`. */
+    fun pullDomainEvents(): List<DomainEvent> {
+        val events = _domainEvents.toList()
+        _domainEvents.clear()
+        return events
+    }
+
     fun allowsPosting(): Boolean = status.allowsPosting()
 
     fun open(): ValidationResult = transitionTo(PeriodStatus.OPEN)
 
-    fun close(): ValidationResult = transitionTo(PeriodStatus.CLOSED)
+    /** Section 4: raises `PeriodClosed` on a successful Open -> Closed transition. */
+    fun close(now: Instant = Instant.now()): ValidationResult {
+        val result = transitionTo(PeriodStatus.CLOSED)
+        if (result.isValid) {
+            _domainEvents.add(PeriodClosed(id, now))
+        }
+        return result
+    }
 
     fun reopen(): ValidationResult = transitionTo(PeriodStatus.OPEN)
 
-    fun lock(): ValidationResult = transitionTo(PeriodStatus.LOCKED)
+    /** Section 4: raises `PeriodLocked` on a successful Closed -> Locked transition. */
+    fun lock(now: Instant = Instant.now()): ValidationResult {
+        val result = transitionTo(PeriodStatus.LOCKED)
+        if (result.isValid) {
+            _domainEvents.add(PeriodLocked(id, now))
+        }
+        return result
+    }
 
     private fun transitionTo(newStatus: PeriodStatus): ValidationResult {
         if (!status.canTransitionTo(newStatus)) {
