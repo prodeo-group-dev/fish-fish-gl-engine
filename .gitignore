@@ -4,3 +4,7 @@ build/
 *.iml
 .idea/
 out/
+
+# Local database credentials (docs/DDD_Design.md Section 10) - never committed
+.env
+.env.local
