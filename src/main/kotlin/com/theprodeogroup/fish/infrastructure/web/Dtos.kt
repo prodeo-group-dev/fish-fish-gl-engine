@@ -148,3 +148,26 @@ data class StockItemJournalEntryResponseDto(
     val journalEntryId: String,
     val journalEntryStatus: String
 )
+
+/**
+ * `PostSalesOrderUseCase`'s wire shape (docs/DDD_Design.md Section
+ * 10.22) - completes the "ecosystem" HTTP surface: Purchase Order and
+ * Inventory Management were already open, Sales Order Processing was
+ * the one remaining gap. [cogsExpenseAccountId]/[inventoryAssetAccountId]
+ * are only required for a GOODS line, matching `PostSalesOrderUseCase.Request`.
+ */
+@Serializable
+data class PostSalesOrderRequestDto(
+    val lineIndex: Int,
+    val periodId: String,
+    val arControlAccountId: String,
+    val cogsExpenseAccountId: String? = null,
+    val inventoryAssetAccountId: String? = null
+)
+
+@Serializable
+data class PostSalesOrderResponseDto(
+    val salesOrderId: String,
+    val status: String,
+    val journalEntryId: String
+)

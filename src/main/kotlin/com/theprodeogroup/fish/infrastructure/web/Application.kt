@@ -6,6 +6,7 @@ import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
+import com.theprodeogroup.fish.application.PostSalesOrderUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.inventory.StockItemRepository
@@ -13,6 +14,7 @@ import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.payroll.LeaveAccrualRepository
 import com.theprodeogroup.fish.domain.payroll.PayRunRepository
 import com.theprodeogroup.fish.domain.purchasing.PurchaseOrderRepository
+import com.theprodeogroup.fish.domain.sales.SalesOrderRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
 import com.theprodeogroup.fish.domain.tenancy.UserRepository
@@ -21,12 +23,14 @@ import com.theprodeogroup.fish.infrastructure.persistence.DatabaseMigrator
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedAccountRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCompanyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCreditorRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedCustomerRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedJournalEntryRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedLeaveAccrualRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedMembershipRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedPayRunRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedPeriodRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedPurchaseOrderRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedSalesOrderRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedStockItemRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedUserRepository
 import io.ktor.http.HttpStatusCode
@@ -87,6 +91,8 @@ fun Application.productionModule() {
     val purchaseOrderRepository = ExposedPurchaseOrderRepository()
     val payRunRepository = ExposedPayRunRepository()
     val leaveAccrualRepository = ExposedLeaveAccrualRepository()
+    val salesOrderRepository = ExposedSalesOrderRepository()
+    val customerRepository = ExposedCustomerRepository()
 
     val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
     val postPurchaseOrderUseCase = PostPurchaseOrderUseCase(
@@ -97,6 +103,9 @@ fun Application.productionModule() {
     val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
     val postInventoryReceiptUseCase = PostInventoryReceiptUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
     val postInventoryIssueUseCase = PostInventoryIssueUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
+    val postSalesOrderUseCase = PostSalesOrderUseCase(
+        salesOrderRepository, customerRepository, stockItemRepository, periodRepository, accountRepository, journalEntryRepository
+    )
 
     fishModule(
         verifier = buildJwksVerifier(),
@@ -114,7 +123,9 @@ fun Application.productionModule() {
         utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase,
         stockItemRepository = stockItemRepository,
         postInventoryReceiptUseCase = postInventoryReceiptUseCase,
-        postInventoryIssueUseCase = postInventoryIssueUseCase
+        postInventoryIssueUseCase = postInventoryIssueUseCase,
+        salesOrderRepository = salesOrderRepository,
+        postSalesOrderUseCase = postSalesOrderUseCase
     )
 }
 
@@ -143,7 +154,9 @@ fun Application.fishModule(
     utilizeLeaveAccrualUseCase: UtilizeLeaveAccrualUseCase,
     stockItemRepository: StockItemRepository,
     postInventoryReceiptUseCase: PostInventoryReceiptUseCase,
-    postInventoryIssueUseCase: PostInventoryIssueUseCase
+    postInventoryIssueUseCase: PostInventoryIssueUseCase,
+    salesOrderRepository: SalesOrderRepository,
+    postSalesOrderUseCase: PostSalesOrderUseCase
 ) {
     install(ContentNegotiation) { json() }
     install(CallLogging) { level = Level.INFO }
@@ -165,6 +178,7 @@ fun Application.fishModule(
                 companyRepository
             )
             inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, stockItemRepository, companyRepository)
+            salesOrderRoutes(postSalesOrderUseCase, salesOrderRepository, companyRepository)
         }
     }
 }
