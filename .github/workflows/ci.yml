@@ -1,0 +1,70 @@
+name: CI
+
+# docs/DDD_Design.md Section 10.19 - the standing gap flagged in the
+# AWS-readiness assessment ("GitHub Actions is a real, standing gap").
+# Runs on every PR and on every push to master, so a broken build is
+# caught before merge, not discovered later.
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  test:
+    name: Unit tests (gradle test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+      - name: Run hermetic domain tests
+        run: ./gradlew test --console=plain
+
+  integration-test:
+    name: Integration tests (gradle integrationTest, real Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fish_ci
+          POSTGRES_PASSWORD: fish_ci_password
+          POSTGRES_DB: fish_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+      - name: Run integration tests against the Postgres service container
+        env:
+          FISH_DB_HOST: localhost
+          FISH_DB_PORT: 5432
+          FISH_DB_NAME: fish_dev
+          FISH_DB_USER: fish_ci
+          FISH_DB_PASSWORD: fish_ci_password
+        run: ./gradlew integrationTest --console=plain
+
+  docker-build:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the container image (not pushed anywhere - just confirms the Dockerfile is valid)
+        run: docker build -t fish-gl-engine:ci .
