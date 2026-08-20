@@ -94,6 +94,17 @@ class LeaveAccrual private constructor(
         amount, cashAccountId, accruedLeaveLiabilityAccountId, periodId, date, journalEntryId
     )
 
+    /**
+     * The embedded `Provision`, for persistence only (docs/DDD_Design.md
+     * Section 10.18) - `internal`, matches the repository-only visibility
+     * precedent already used for `SalesOrder.deliveredLineIndicesSnapshot()`.
+     * Callers outside this module should use [balance]/[remeasure]/
+     * [utilizeLeave] - `Provision` itself isn't part of `LeaveAccrual`'s
+     * public API, matching the "callers shouldn't poke at internal
+     * bookkeeping" reasoning already applied there.
+     */
+    internal fun provisionSnapshot(): Provision = provision
+
     companion object {
         fun create(
             companyId: CompanyId,
@@ -104,5 +115,21 @@ class LeaveAccrual private constructor(
             id, companyId, employeeId,
             Provision.create(companyId, "Accrued leave - $employeeId", currency)
         )
+
+        /**
+         * Rebuilds an already-valid LeaveAccrual from persisted state
+         * (docs/DDD_Design.md Section 10.18) - `internal`, matches the
+         * repository-only visibility precedent every other aggregate's
+         * `reconstitute()` already uses. Takes an already-reconstructed
+         * [provision] rather than raw fields, since `ExposedLeaveAccrualRepository`
+         * needs `Provision.reconstitute()` (also `internal`, same module)
+         * to rebuild the embedded delegate first.
+         */
+        internal fun reconstitute(
+            id: LeaveAccrualId,
+            companyId: CompanyId,
+            employeeId: EmployeeId,
+            provision: Provision
+        ): LeaveAccrual = LeaveAccrual(id, companyId, employeeId, provision)
     }
 }

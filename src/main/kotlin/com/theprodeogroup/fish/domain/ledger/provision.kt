@@ -146,5 +146,28 @@ class Provision private constructor(
             currency: Currency,
             id: ProvisionId = ProvisionId.generate()
         ): Provision = Provision(id, companyId, description, currency)
+
+        /**
+         * Rebuilds an already-valid Provision from persisted state
+         * (docs/DDD_Design.md Section 10.18) - `internal`, matches the
+         * repository-only visibility precedent every other aggregate's
+         * `reconstitute()` already uses. Currently only called from
+         * `LeaveAccrual.reconstitute()` - Provision has no repository of
+         * its own (confirmed 2026-08-24: it's only ever used as
+         * `LeaveAccrual`'s private embedded delegate, so its persisted
+         * state is inlined into `leave_accruals` rather than getting a
+         * standalone `provisions` table).
+         */
+        internal fun reconstitute(
+            id: ProvisionId,
+            companyId: CompanyId,
+            description: String,
+            currency: Currency,
+            balance: Money
+        ): Provision {
+            val provision = Provision(id, companyId, description, currency)
+            provision.balance = balance
+            return provision
+        }
     }
 }
