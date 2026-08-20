@@ -14,6 +14,12 @@ WORKDIR /workspace
 COPY gradlew gradlew.bat ./
 COPY gradle ./gradle
 COPY build.gradle.kts settings.gradle.kts ./
+# Belt-and-suspenders alongside the git-tracked executable bit on
+# `gradlew` itself (a real, caught-in-CI bug this session: git on
+# Windows doesn't reliably preserve the Unix executable bit, so a
+# checkout on a Linux runner/image can silently lose it) - explicit
+# here so a Docker build never depends on that bit surviving intact.
+RUN chmod +x gradlew
 RUN ./gradlew --version
 
 COPY src ./src
