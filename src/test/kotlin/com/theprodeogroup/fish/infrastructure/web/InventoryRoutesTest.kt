@@ -20,14 +20,11 @@ import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.common.PeriodType
+import com.theprodeogroup.fish.domain.inventory.StockItem
 import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountType
-import com.theprodeogroup.fish.domain.ledger.Money
 import com.theprodeogroup.fish.domain.ledger.Period
-import com.theprodeogroup.fish.domain.payroll.EmployeeId
-import com.theprodeogroup.fish.domain.payroll.LeaveAccrual
-import com.theprodeogroup.fish.domain.payroll.PayRun
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
@@ -47,23 +44,20 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.testing.testApplication
 import org.junit.jupiter.api.Test
-import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.Currency
 
 private val GBP: Currency = Currency.getInstance("GBP")
-private val TODAY = LocalDate.of(2026, 8, 26)
-private const val TEST_EMAIL = "payroll-caller@example.com"
+private val TODAY = LocalDate.of(2026, 8, 27)
+private const val TEST_EMAIL = "inventory-caller@example.com"
 
 /**
- * The HR/Payroll posting interface's HTTP surface (docs/DDD_Design.md
- * Section 10.20) via Ktor's `testApplication` - mirrors
- * [JournalEntryRoutesTest]/[PurchaseOrderRoutesTest]'s structure,
- * covering `POST /pay-runs/{id}/post`,
- * `POST /leave-accruals/{id}/remeasure`, and
- * `POST /leave-accruals/{id}/utilize`.
+ * Inventory Management's standalone posting interface's HTTP surface
+ * (docs/DDD_Design.md Section 10.21) via Ktor's `testApplication` -
+ * mirrors [PayrollRoutesTest]'s structure, covering
+ * `POST /stock-items/{id}/receipts` and `POST /stock-items/{id}/issues`.
  */
-class PayrollRoutesTest {
+class InventoryRoutesTest {
 
     private class Fixture(role: Role = Role.ACCOUNTANT) {
         val userRepository = FakeUserRepository()
@@ -74,8 +68,9 @@ class PayrollRoutesTest {
         val journalEntryRepository = FakeJournalEntryRepository()
         val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
         val purchaseOrderRepository = FakePurchaseOrderRepository()
+        val stockItemRepository = FakeStockItemRepository()
         val postPurchaseOrderUseCase = PostPurchaseOrderUseCase(
-            purchaseOrderRepository, FakeCreditorRepository(), FakeStockItemRepository(),
+            purchaseOrderRepository, FakeCreditorRepository(), stockItemRepository,
             periodRepository, accountRepository, journalEntryRepository
         )
         val payRunRepository = FakePayRunRepository()
@@ -83,28 +78,21 @@ class PayrollRoutesTest {
         val leaveAccrualRepository = FakeLeaveAccrualRepository()
         val remeasureLeaveAccrualUseCase = RemeasureLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
         val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
-        val stockItemRepository = FakeStockItemRepository()
         val postInventoryReceiptUseCase = PostInventoryReceiptUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
         val postInventoryIssueUseCase = PostInventoryIssueUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
 
         val tenantId = TenantId.generate()
-        val user = User.create(TEST_EMAIL, "Test Payroll Caller").also { userRepository.save(it) }
+        val user = User.create(TEST_EMAIL, "Test Inventory Caller").also { userRepository.save(it) }
         val membership = Membership.grant(user.id, tenantId, role).also { membershipRepository.save(it) }
         val company = Company.create(tenantId, "Test Co", ClientType.NON_PROFIT, "GB", GBP).also { companyRepository.save(it) }
         val period = Period.create(company.id, PeriodType.MONTH, TODAY, TODAY.plusDays(30)).also {
             it.open()
             periodRepository.save(it)
         }
-        val wagesExpenseAccount = Account.create(company.id, AccountType.EXPENSE, null, "6000", "Wages Expense").also { accountRepository.save(it) }
-        val salariesExpenseAccount = Account.create(company.id, AccountType.EXPENSE, null, "6010", "Salaries Expense").also { accountRepository.save(it) }
-        val cashAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1000", "Cash").also { accountRepository.save(it) }
-        val accruedLeaveLiabilityAccount = Account.create(company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2200", "Accrued Leave Liability").also { accountRepository.save(it) }
-        val leaveExpenseAccount = Account.create(company.id, AccountType.EXPENSE, null, "6020", "Leave Expense").also { accountRepository.save(it) }
+        val inventoryAssetAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1200", "Inventory").also { accountRepository.save(it) }
+        val contraAccount = Account.create(company.id, AccountType.EQUITY, null, "3900", "Opening Balance Equity").also { accountRepository.save(it) }
 
-        val payRun = PayRun.create(company.id, TODAY, Money(BigDecimal("1000.00"), GBP), Money(BigDecimal("500.00"), GBP))
-            .also { payRunRepository.save(it) }
-        val leaveAccrual = LeaveAccrual.create(company.id, EmployeeId.generate(), GBP)
-            .also { leaveAccrualRepository.save(it) }
+        val stockItem = StockItem.create(company.id, "Test Widget", GBP).also { stockItemRepository.save(it) }
 
         fun installInto(app: Application) {
             app.fishModule(
@@ -128,41 +116,44 @@ class PayrollRoutesTest {
         }
     }
 
-    // -- POST /pay-runs/{id}/post --
+    // -- POST /stock-items/{id}/receipts --
 
     @Test
-    fun `given a valid PayRun post request with a bearer token, when posted, then it returns 200 with the JournalEntry id`() = testApplication {
+    fun `given a valid standalone receipt, when posted, then it returns 200 with the increased quantity`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/pay-runs/${fixture.payRun.id.value}/post") {
+        val response = client.post("/stock-items/${fixture.stockItem.id.value}/receipts") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(
-                """{"periodId": "${fixture.period.id.value}", "wagesExpenseAccountId": "${fixture.wagesExpenseAccount.id.value}",
-                    |"salariesExpenseAccountId": "${fixture.salariesExpenseAccount.id.value}", "cashAccountId": "${fixture.cashAccount.id.value}"}""".trimMargin()
+                """{"quantityReceived": "10", "costReceived": "5.00", "costCurrency": "GBP",
+                    |"inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}", "contraAccountId": "${fixture.contraAccount.id.value}",
+                    |"periodId": "${fixture.period.id.value}", "date": "$TODAY"}""".trimMargin()
             )
         }
 
         response.status shouldBe HttpStatusCode.OK
-        val body: PostPayRunResponseDto = response.body()
+        val body: StockItemJournalEntryResponseDto = response.body()
+        body.quantityOnHand shouldBe "10"
         body.journalEntryStatus shouldBe "POSTED"
     }
 
     @Test
-    fun `given no bearer token, when a PayRun is posted, then it returns 401`() = testApplication {
+    fun `given no bearer token, when a receipt is posted, then it returns 401`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/pay-runs/${fixture.payRun.id.value}/post") {
+        val response = client.post("/stock-items/${fixture.stockItem.id.value}/receipts") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(
-                """{"periodId": "${fixture.period.id.value}", "wagesExpenseAccountId": "${fixture.wagesExpenseAccount.id.value}",
-                    |"salariesExpenseAccountId": "${fixture.salariesExpenseAccount.id.value}", "cashAccountId": "${fixture.cashAccount.id.value}"}""".trimMargin()
+                """{"quantityReceived": "10", "costReceived": "5.00", "costCurrency": "GBP",
+                    |"inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}", "contraAccountId": "${fixture.contraAccount.id.value}",
+                    |"periodId": "${fixture.period.id.value}", "date": "$TODAY"}""".trimMargin()
             )
         }
 
@@ -170,133 +161,93 @@ class PayrollRoutesTest {
     }
 
     @Test
-    fun `given a nonexistent PayRun id, when posted, then it returns 404`() = testApplication {
+    fun `given a claimed X-Tenant-Id that does not own the StockItem, when a receipt is posted, then it returns 403`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/pay-runs/${java.util.UUID.randomUUID()}/post") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody(
-                """{"periodId": "${fixture.period.id.value}", "wagesExpenseAccountId": "${fixture.wagesExpenseAccount.id.value}",
-                    |"salariesExpenseAccountId": "${fixture.salariesExpenseAccount.id.value}", "cashAccountId": "${fixture.cashAccount.id.value}"}""".trimMargin()
-            )
-        }
-
-        response.status shouldBe HttpStatusCode.NotFound
-    }
-
-    // -- POST /leave-accruals/{id}/remeasure --
-
-    @Test
-    fun `given a target amount above the current balance, when remeasured, then it returns 200 with a posted JournalEntry`() = testApplication {
-        val fixture = Fixture()
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody(
-                """{"targetAmount": "300.00", "currency": "GBP", "leaveExpenseAccountId": "${fixture.leaveExpenseAccount.id.value}",
-                    |"accruedLeaveLiabilityAccountId": "${fixture.accruedLeaveLiabilityAccount.id.value}", "periodId": "${fixture.period.id.value}", "date": "$TODAY"}""".trimMargin()
-            )
-        }
-
-        response.status shouldBe HttpStatusCode.OK
-        val body: LeaveAccrualResponseDto = response.body()
-        body.balanceAmount shouldBe "300.00"
-        body.journalEntryStatus shouldBe "POSTED"
-    }
-
-    @Test
-    fun `given a target amount equal to the current zero balance, when remeasured, then it returns 200 with no JournalEntry posted`() = testApplication {
-        val fixture = Fixture()
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody(
-                """{"targetAmount": "0.00", "currency": "GBP", "leaveExpenseAccountId": "${fixture.leaveExpenseAccount.id.value}",
-                    |"accruedLeaveLiabilityAccountId": "${fixture.accruedLeaveLiabilityAccount.id.value}", "periodId": "${fixture.period.id.value}", "date": "$TODAY"}""".trimMargin()
-            )
-        }
-
-        response.status shouldBe HttpStatusCode.OK
-        val body: LeaveAccrualResponseDto = response.body()
-        body.journalEntryId shouldBe null
-    }
-
-    @Test
-    fun `given a claimed X-Tenant-Id that does not own the LeaveAccrual, when remeasured, then it returns 403`() = testApplication {
-        val fixture = Fixture()
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
+        val response = client.post("/stock-items/${fixture.stockItem.id.value}/receipts") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", TenantId.generate().value.toString())
             contentType(ContentType.Application.Json)
             setBody(
-                """{"targetAmount": "300.00", "currency": "GBP", "leaveExpenseAccountId": "${fixture.leaveExpenseAccount.id.value}",
-                    |"accruedLeaveLiabilityAccountId": "${fixture.accruedLeaveLiabilityAccount.id.value}", "periodId": "${fixture.period.id.value}", "date": "$TODAY"}""".trimMargin()
+                """{"quantityReceived": "10", "costReceived": "5.00", "costCurrency": "GBP",
+                    |"inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}", "contraAccountId": "${fixture.contraAccount.id.value}",
+                    |"periodId": "${fixture.period.id.value}", "date": "$TODAY"}""".trimMargin()
             )
         }
 
         response.status shouldBe HttpStatusCode.Forbidden
     }
 
-    // -- POST /leave-accruals/{id}/utilize --
-
     @Test
-    fun `given leave taken against a positive balance, when utilized, then it returns 200 with a reduced balance`() = testApplication {
+    fun `given a nonexistent StockItem id, when a receipt is posted, then it returns 404`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
-        client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
+
+        val response = client.post("/stock-items/${java.util.UUID.randomUUID()}/receipts") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(
-                """{"targetAmount": "300.00", "currency": "GBP", "leaveExpenseAccountId": "${fixture.leaveExpenseAccount.id.value}",
-                    |"accruedLeaveLiabilityAccountId": "${fixture.accruedLeaveLiabilityAccount.id.value}", "periodId": "${fixture.period.id.value}", "date": "$TODAY"}""".trimMargin()
+                """{"quantityReceived": "10", "costReceived": "5.00", "costCurrency": "GBP",
+                    |"inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}", "contraAccountId": "${fixture.contraAccount.id.value}",
+                    |"periodId": "${fixture.period.id.value}", "date": "$TODAY"}""".trimMargin()
             )
         }
 
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/utilize") {
+        response.status shouldBe HttpStatusCode.NotFound
+    }
+
+    // -- POST /stock-items/{id}/issues --
+
+    @Test
+    fun `given an issue against a positive quantity on hand, when posted, then it returns 200 with the reduced quantity`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        client.post("/stock-items/${fixture.stockItem.id.value}/receipts") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(
-                """{"amount": "100.00", "currency": "GBP", "cashAccountId": "${fixture.cashAccount.id.value}",
-                    |"accruedLeaveLiabilityAccountId": "${fixture.accruedLeaveLiabilityAccount.id.value}", "periodId": "${fixture.period.id.value}", "date": "$TODAY"}""".trimMargin()
+                """{"quantityReceived": "10", "costReceived": "5.00", "costCurrency": "GBP",
+                    |"inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}", "contraAccountId": "${fixture.contraAccount.id.value}",
+                    |"periodId": "${fixture.period.id.value}", "date": "$TODAY"}""".trimMargin()
+            )
+        }
+
+        val response = client.post("/stock-items/${fixture.stockItem.id.value}/issues") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"quantityIssued": "4",
+                    |"inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}", "contraAccountId": "${fixture.contraAccount.id.value}",
+                    |"periodId": "${fixture.period.id.value}", "date": "$TODAY"}""".trimMargin()
             )
         }
 
         response.status shouldBe HttpStatusCode.OK
-        val body: LeaveAccrualResponseDto = response.body()
-        body.balanceAmount shouldBe "200.00"
+        val body: StockItemJournalEntryResponseDto = response.body()
+        body.quantityOnHand shouldBe "6"
     }
 
     @Test
-    fun `given a non-positive utilize amount, when utilized, then it returns 400`() = testApplication {
+    fun `given an issue quantity greater than what's on hand, when posted, then it returns 400`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/utilize") {
+        val response = client.post("/stock-items/${fixture.stockItem.id.value}/issues") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(
-                """{"amount": "0.00", "currency": "GBP", "cashAccountId": "${fixture.cashAccount.id.value}",
-                    |"accruedLeaveLiabilityAccountId": "${fixture.accruedLeaveLiabilityAccount.id.value}", "periodId": "${fixture.period.id.value}", "date": "$TODAY"}""".trimMargin()
+                """{"quantityIssued": "4",
+                    |"inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}", "contraAccountId": "${fixture.contraAccount.id.value}",
+                    |"periodId": "${fixture.period.id.value}", "date": "$TODAY"}""".trimMargin()
             )
         }
 
@@ -304,21 +255,22 @@ class PayrollRoutesTest {
     }
 
     @Test
-    fun `given leave taken against a zero balance, when utilized, then it returns 409`() = testApplication {
-        val fixture = Fixture()
+    fun `given a caller with a READ_ONLY Membership, when an issue is posted, then it returns 403`() = testApplication {
+        val fixture = Fixture(Role.READ_ONLY)
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/utilize") {
+        val response = client.post("/stock-items/${fixture.stockItem.id.value}/issues") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(
-                """{"amount": "100.00", "currency": "GBP", "cashAccountId": "${fixture.cashAccount.id.value}",
-                    |"accruedLeaveLiabilityAccountId": "${fixture.accruedLeaveLiabilityAccount.id.value}", "periodId": "${fixture.period.id.value}", "date": "$TODAY"}""".trimMargin()
+                """{"quantityIssued": "1",
+                    |"inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}", "contraAccountId": "${fixture.contraAccount.id.value}",
+                    |"periodId": "${fixture.period.id.value}", "date": "$TODAY"}""".trimMargin()
             )
         }
 
-        response.status shouldBe HttpStatusCode.Conflict
+        response.status shouldBe HttpStatusCode.Forbidden
     }
 }

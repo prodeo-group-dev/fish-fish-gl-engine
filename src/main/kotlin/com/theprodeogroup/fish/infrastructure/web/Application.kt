@@ -1,11 +1,14 @@
 package com.theprodeogroup.fish.infrastructure.web
 
 import com.auth0.jwt.interfaces.JWTVerifier
+import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
+import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
+import com.theprodeogroup.fish.domain.inventory.StockItemRepository
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.payroll.LeaveAccrualRepository
 import com.theprodeogroup.fish.domain.payroll.PayRunRepository
@@ -92,6 +95,8 @@ fun Application.productionModule() {
     val postPayRunUseCase = PostPayRunUseCase(payRunRepository, periodRepository, accountRepository, journalEntryRepository)
     val remeasureLeaveAccrualUseCase = RemeasureLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
     val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
+    val postInventoryReceiptUseCase = PostInventoryReceiptUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
+    val postInventoryIssueUseCase = PostInventoryIssueUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
 
     fishModule(
         verifier = buildJwksVerifier(),
@@ -106,7 +111,10 @@ fun Application.productionModule() {
         postPayRunUseCase = postPayRunUseCase,
         leaveAccrualRepository = leaveAccrualRepository,
         remeasureLeaveAccrualUseCase = remeasureLeaveAccrualUseCase,
-        utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase
+        utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase,
+        stockItemRepository = stockItemRepository,
+        postInventoryReceiptUseCase = postInventoryReceiptUseCase,
+        postInventoryIssueUseCase = postInventoryIssueUseCase
     )
 }
 
@@ -132,7 +140,10 @@ fun Application.fishModule(
     postPayRunUseCase: PostPayRunUseCase,
     leaveAccrualRepository: LeaveAccrualRepository,
     remeasureLeaveAccrualUseCase: RemeasureLeaveAccrualUseCase,
-    utilizeLeaveAccrualUseCase: UtilizeLeaveAccrualUseCase
+    utilizeLeaveAccrualUseCase: UtilizeLeaveAccrualUseCase,
+    stockItemRepository: StockItemRepository,
+    postInventoryReceiptUseCase: PostInventoryReceiptUseCase,
+    postInventoryIssueUseCase: PostInventoryIssueUseCase
 ) {
     install(ContentNegotiation) { json() }
     install(CallLogging) { level = Level.INFO }
@@ -153,6 +164,7 @@ fun Application.fishModule(
                 remeasureLeaveAccrualUseCase, utilizeLeaveAccrualUseCase, leaveAccrualRepository,
                 companyRepository
             )
+            inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, stockItemRepository, companyRepository)
         }
     }
 }

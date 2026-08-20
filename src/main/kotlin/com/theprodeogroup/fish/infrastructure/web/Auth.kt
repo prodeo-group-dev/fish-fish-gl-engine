@@ -21,6 +21,7 @@ import io.ktor.server.auth.Authentication
 import io.ktor.server.auth.authenticate
 import io.ktor.server.auth.jwt.jwt
 import io.ktor.server.auth.principal
+import io.ktor.server.request.header
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.Routing
@@ -194,4 +195,30 @@ suspend fun ApplicationCall.resolveTenantForCompany(companyId: CompanyId, compan
         return null
     }
     return company.tenantId
+}
+
+/**
+ * Checks the caller-supplied `X-Tenant-Id` header against
+ * [actualTenantId] (already resolved from the targeted resource's real
+ * owner via [resolveTenantForCompany]) - the real multi-tenancy-leak
+ * check Section 10.19 introduced, extracted here (Section 10.21) once
+ * a third route file (`InventoryRoutes`, after `PayrollRoutes`) needed
+ * the identical check - previously inlined separately in
+ * `journalEntryRoutes`/`purchaseOrderRoutes` and duplicated once more
+ * as a private helper in `PayrollRoutes`; this is the shared version
+ * every route in `infrastructure.web` should call from here on.
+ * Responds 400/403 and returns `false` on failure.
+ */
+suspend fun ApplicationCall.verifyClaimedTenant(actualTenantId: TenantId): Boolean {
+    val claimedTenantIdRaw = request.header("X-Tenant-Id")
+    if (claimedTenantIdRaw == null) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "X-Tenant-Id header is required"))
+        return false
+    }
+    val claimedTenantId = parseUuid(claimedTenantIdRaw) ?: return false
+    if (claimedTenantId != actualTenantId.value) {
+        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "X-Tenant-Id does not own the requested resource"))
+        return false
+    }
+    return true
 }

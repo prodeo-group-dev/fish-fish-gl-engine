@@ -109,3 +109,42 @@ data class LeaveAccrualResponseDto(
     val journalEntryId: String? = null,
     val journalEntryStatus: String? = null
 )
+
+/**
+ * Inventory Management's standalone posting interface's wire shapes
+ * (docs/DDD_Design.md Section 10.21) - `PostInventoryReceipt`/
+ * `PostInventoryIssue` are the fixed contract the separate Inventory
+ * Management system calls into, the same treatment given HR/Payroll's
+ * `PostPayRun`/`RemeasureLeaveAccrual`/`UtilizeLeaveAccrual` in Section
+ * 10.20.
+ */
+@Serializable
+data class PostInventoryReceiptRequestDto(
+    val quantityReceived: String,
+    val costReceived: String,
+    val costCurrency: String,
+    val inventoryAssetAccountId: String,
+    val contraAccountId: String,
+    val periodId: String,
+    val date: String
+)
+
+@Serializable
+data class PostInventoryIssueRequestDto(
+    val quantityIssued: String,
+    val inventoryAssetAccountId: String,
+    val contraAccountId: String,
+    val periodId: String,
+    val date: String
+)
+
+/** Shared response shape for both inventory posting endpoints. */
+@Serializable
+data class StockItemJournalEntryResponseDto(
+    val stockItemId: String,
+    val quantityOnHand: String,
+    val unitCost: String,
+    val unitCostCurrency: String,
+    val journalEntryId: String,
+    val journalEntryStatus: String
+)

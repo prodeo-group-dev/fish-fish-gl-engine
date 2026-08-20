@@ -15,11 +15,9 @@ import com.theprodeogroup.fish.domain.payroll.LeaveAccrualRepository
 import com.theprodeogroup.fish.domain.payroll.PayRunId
 import com.theprodeogroup.fish.domain.payroll.PayRunRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
-import com.theprodeogroup.fish.domain.tenancy.TenantId
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
-import io.ktor.server.request.header
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -189,27 +187,6 @@ private suspend fun ApplicationCall.loadLeaveAccrual(leaveAccrualRepository: Lea
         }
         leaveAccrual
     }
-
-/**
- * Checks the caller-supplied `X-Tenant-Id` header against [actualTenantId]
- * (already resolved from the targeted resource's real owner) - shared
- * by every route in this file, the same real multi-tenancy check
- * `journalEntryRoutes`/`purchaseOrderRoutes` already established
- * (Section 10.19). Responds 400/403 and returns `false` on failure.
- */
-private suspend fun ApplicationCall.verifyClaimedTenant(actualTenantId: TenantId): Boolean {
-    val claimedTenantIdRaw = request.header("X-Tenant-Id")
-    if (claimedTenantIdRaw == null) {
-        respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "X-Tenant-Id header is required"))
-        return false
-    }
-    val claimedTenantId = parseUuid(claimedTenantIdRaw) ?: return false
-    if (claimedTenantId != actualTenantId.value) {
-        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "X-Tenant-Id does not own the requested resource"))
-        return false
-    }
-    return true
-}
 
 /** Parses an amount+currency pair into a domain [Money], responding 400 and returning `null` on failure. */
 private suspend fun ApplicationCall.parseMoney(amount: String, currency: String): Money? {

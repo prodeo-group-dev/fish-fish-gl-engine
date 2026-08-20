@@ -1,0 +1,179 @@
+package com.theprodeogroup.fish.infrastructure.web
+
+import com.theprodeogroup.fish.application.PostInventoryIssueResult
+import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
+import com.theprodeogroup.fish.application.PostInventoryReceiptResult
+import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
+import com.theprodeogroup.fish.domain.inventory.StockItem
+import com.theprodeogroup.fish.domain.inventory.StockItemId
+import com.theprodeogroup.fish.domain.inventory.StockItemRepository
+import com.theprodeogroup.fish.domain.ledger.AccountId
+import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.fish.domain.ledger.PeriodId
+import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.call
+import io.ktor.server.request.receive
+import io.ktor.server.response.respond
+import io.ktor.server.routing.Route
+import io.ktor.server.routing.post
+import java.time.LocalDate
+import java.time.format.DateTimeParseException
+import java.util.Currency
+
+/**
+ * Inventory Management's standalone posting interface, opened up over
+ * HTTP (docs/DDD_Design.md Section 10.21) - the user confirmed both
+ * Inventory Management and HR/Payroll must interface with the GL Engine
+ * through the API, not any in-process call - `PostInventoryReceiptUseCase`/
+ * `PostInventoryIssueUseCase` (Section 10.15/10.16) are Inventory
+ * Management's half of that same contract shape `PayrollRoutes`
+ * (Section 10.20) already opened for HR/Payroll. Identical auth ->
+ * tenant-ownership -> use-case -> `Result`-to-HTTP pattern, applied
+ * mechanically now that it's proven across two prior builds.
+ *
+ * **Two routes, not one** - `PostInventoryReceiptUseCase`/
+ * `PostInventoryIssueUseCase` are separate use cases in `application`
+ * (mirror images of each other, Section 10.16's own KDoc), so they get
+ * separate routes rather than one with a direction flag, the same
+ * reasoning already applied to `LeaveAccrual`'s pair.
+ */
+fun Route.inventoryRoutes(
+    postInventoryReceiptUseCase: PostInventoryReceiptUseCase,
+    postInventoryIssueUseCase: PostInventoryIssueUseCase,
+    stockItemRepository: StockItemRepository,
+    companyRepository: CompanyRepository
+) {
+    post("/stock-items/{stockItemId}/receipts") {
+        val stockItem = call.loadStockItem(stockItemRepository) ?: return@post
+        val tenantId = call.resolveTenantForCompany(stockItem.companyId, companyRepository) ?: return@post
+        if (!call.verifyClaimedTenant(tenantId)) return@post
+        call.authorizeTenantForWrite(tenantId) ?: return@post
+
+        val request = call.receive<PostInventoryReceiptRequestDto>()
+        val quantityReceived = call.parseBigDecimal(request.quantityReceived, "quantityReceived") ?: return@post
+        val costReceived = call.parseMoneyDto(request.costReceived, request.costCurrency, "costReceived") ?: return@post
+        val periodUuid = call.parseUuid(request.periodId) ?: return@post
+        val inventoryAssetAccountUuid = call.parseUuid(request.inventoryAssetAccountId) ?: return@post
+        val contraAccountUuid = call.parseUuid(request.contraAccountId) ?: return@post
+        val date = call.parseInventoryDate(request.date) ?: return@post
+
+        val result = postInventoryReceiptUseCase.execute(
+            PostInventoryReceiptUseCase.Request(
+                stockItem.id, quantityReceived, costReceived,
+                AccountId(inventoryAssetAccountUuid), AccountId(contraAccountUuid), PeriodId(periodUuid), date
+            )
+        )
+
+        when (result) {
+            is PostInventoryReceiptResult.Success ->
+                call.respond(HttpStatusCode.OK, result.stockItem.toDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name))
+            is PostInventoryReceiptResult.StockItemNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("stock_item_not_found"))
+            is PostInventoryReceiptResult.PeriodNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("period_not_found"))
+            is PostInventoryReceiptResult.PeriodNotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("period_not_open"))
+            is PostInventoryReceiptResult.InventoryAssetAccountNotFound ->
+                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("inventory_asset_account_not_found", result.accountId.value.toString()))
+            is PostInventoryReceiptResult.ContraAccountNotFound ->
+                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("contra_account_not_found", result.accountId.value.toString()))
+            is PostInventoryReceiptResult.InvalidReceipt ->
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_receipt", result.errors.joinToString("; ")))
+        }
+    }
+
+    post("/stock-items/{stockItemId}/issues") {
+        val stockItem = call.loadStockItem(stockItemRepository) ?: return@post
+        val tenantId = call.resolveTenantForCompany(stockItem.companyId, companyRepository) ?: return@post
+        if (!call.verifyClaimedTenant(tenantId)) return@post
+        call.authorizeTenantForWrite(tenantId) ?: return@post
+
+        val request = call.receive<PostInventoryIssueRequestDto>()
+        val quantityIssued = call.parseBigDecimal(request.quantityIssued, "quantityIssued") ?: return@post
+        val periodUuid = call.parseUuid(request.periodId) ?: return@post
+        val inventoryAssetAccountUuid = call.parseUuid(request.inventoryAssetAccountId) ?: return@post
+        val contraAccountUuid = call.parseUuid(request.contraAccountId) ?: return@post
+        val date = call.parseInventoryDate(request.date) ?: return@post
+
+        val result = postInventoryIssueUseCase.execute(
+            PostInventoryIssueUseCase.Request(
+                stockItem.id, quantityIssued,
+                AccountId(inventoryAssetAccountUuid), AccountId(contraAccountUuid), PeriodId(periodUuid), date
+            )
+        )
+
+        when (result) {
+            is PostInventoryIssueResult.Success ->
+                call.respond(HttpStatusCode.OK, result.stockItem.toDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name))
+            is PostInventoryIssueResult.StockItemNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("stock_item_not_found"))
+            is PostInventoryIssueResult.PeriodNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("period_not_found"))
+            is PostInventoryIssueResult.PeriodNotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("period_not_open"))
+            is PostInventoryIssueResult.InventoryAssetAccountNotFound ->
+                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("inventory_asset_account_not_found", result.accountId.value.toString()))
+            is PostInventoryIssueResult.ContraAccountNotFound ->
+                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("contra_account_not_found", result.accountId.value.toString()))
+            is PostInventoryIssueResult.InvalidIssue ->
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_issue", result.errors.joinToString("; ")))
+        }
+    }
+}
+
+/** Loads the `StockItem` named by the `stockItemId` path parameter, or responds 400/404 and returns `null`. */
+private suspend fun ApplicationCall.loadStockItem(stockItemRepository: StockItemRepository): StockItem? {
+    val stockItemIdRaw = parameters["stockItemId"]
+    if (stockItemIdRaw == null) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "stockItemId path parameter is required"))
+        return null
+    }
+    val stockItemUuid = parseUuid(stockItemIdRaw) ?: return null
+    val stockItem = stockItemRepository.findById(StockItemId(stockItemUuid))
+    if (stockItem == null) {
+        respond(HttpStatusCode.NotFound, ErrorResponseDto("not_found", "StockItem not found"))
+        return null
+    }
+    return stockItem
+}
+
+/** Parses a decimal quantity, responding 400 and returning `null` on failure. */
+private suspend fun ApplicationCall.parseBigDecimal(value: String, fieldName: String): java.math.BigDecimal? {
+    val parsed = value.toBigDecimalOrNull()
+    if (parsed == null) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "$fieldName is not a valid decimal"))
+        return null
+    }
+    return parsed
+}
+
+/** Parses an amount+currency pair into a domain [Money], responding 400 and returning `null` on failure. */
+private suspend fun ApplicationCall.parseMoneyDto(amount: String, currency: String, fieldName: String): Money? {
+    val amountValue = amount.toBigDecimalOrNull()
+    if (amountValue == null) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "$fieldName is not a valid decimal"))
+        return null
+    }
+    val currencyValue = try {
+        Currency.getInstance(currency)
+    } catch (e: IllegalArgumentException) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "currency is not a valid ISO currency code"))
+        return null
+    }
+    return Money(amountValue, currencyValue)
+}
+
+/** Parses an ISO-8601 date string, responding 400 and returning `null` on failure. */
+private suspend fun ApplicationCall.parseInventoryDate(value: String): LocalDate? =
+    try {
+        LocalDate.parse(value)
+    } catch (e: DateTimeParseException) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "date must be ISO-8601 (YYYY-MM-DD)"))
+        null
+    }
+
+private fun StockItem.toDto(journalEntryId: String, journalEntryStatus: String) =
+    StockItemJournalEntryResponseDto(
+        stockItemId = id.value.toString(),
+        quantityOnHand = quantityOnHand.toString(),
+        unitCost = unitCost.amount.toString(),
+        unitCostCurrency = unitCost.currency.currencyCode,
+        journalEntryId = journalEntryId,
+        journalEntryStatus = journalEntryStatus
+    )

@@ -11,6 +11,8 @@ import com.theprodeogroup.fish.application.FakePeriodRepository
 import com.theprodeogroup.fish.application.FakePurchaseOrderRepository
 import com.theprodeogroup.fish.application.FakeStockItemRepository
 import com.theprodeogroup.fish.application.FakeUserRepository
+import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
+import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
@@ -80,6 +82,8 @@ class PurchaseOrderRoutesTest {
         val leaveAccrualRepository = FakeLeaveAccrualRepository()
         val remeasureLeaveAccrualUseCase = RemeasureLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
         val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
+        val postInventoryReceiptUseCase = PostInventoryReceiptUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
+        val postInventoryIssueUseCase = PostInventoryIssueUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
 
         val tenantId = TenantId.generate()
         val user = User.create(TEST_EMAIL, "Test Accountant").also { userRepository.save(it) }
@@ -111,7 +115,10 @@ class PurchaseOrderRoutesTest {
                 postPayRunUseCase = postPayRunUseCase,
                 leaveAccrualRepository = leaveAccrualRepository,
                 remeasureLeaveAccrualUseCase = remeasureLeaveAccrualUseCase,
-                utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase
+                utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase,
+                stockItemRepository = stockItemRepository,
+                postInventoryReceiptUseCase = postInventoryReceiptUseCase,
+                postInventoryIssueUseCase = postInventoryIssueUseCase
             )
         }
     }
