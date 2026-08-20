@@ -2,8 +2,13 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.auth0.jwt.interfaces.JWTVerifier
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
+import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
+import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
+import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
+import com.theprodeogroup.fish.domain.payroll.LeaveAccrualRepository
+import com.theprodeogroup.fish.domain.payroll.PayRunRepository
 import com.theprodeogroup.fish.domain.purchasing.PurchaseOrderRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
@@ -14,7 +19,9 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedAccountReposito
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCompanyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCreditorRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedJournalEntryRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedLeaveAccrualRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedMembershipRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedPayRunRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedPeriodRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedPurchaseOrderRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedStockItemRepository
@@ -33,21 +40,22 @@ import io.ktor.server.routing.routing
 import org.slf4j.event.Level
 
 /**
- * The GL Engine's HTTP entry point (docs/DDD_Design.md Section 10.19) -
+ * The GL Engine's HTTP entry point (docs/DDD_Design.md Section 10.19/10.20) -
  * the first web/API layer this codebase has had; every prior increment
  * exposed use cases only as plain Kotlin classes with no way for an
  * external client to actually call them. Ktor + Netty, chosen as the
  * natural fit given this project's existing Kotlin/Gradle toolchain -
  * no new language/ecosystem to introduce.
  *
- * **Deliberately a skeleton + two representative endpoints, not a full
- * REST surface for all 14 use cases** - confirmed with the user before
- * building: `PostJournalEntryUseCase` (a core-Ledger use case building
- * its own `JournalLine`s from raw request input) and
- * `PostPurchaseOrderUseCase` (an "ecosystem" use case wrapping a domain
- * aggregate) cover both shapes of use case this codebase has, so the
- * auth/routing/error-mapping pattern is reviewable before it gets
- * mechanically repeated across the other 12.
+ * **Section 10.19 opened a skeleton + two representative endpoints
+ * (`PostJournalEntryUseCase`/`PostPurchaseOrderUseCase`), confirmed
+ * scope before building - covering both shapes of use case this
+ * codebase has, so the pattern was reviewable before being repeated.**
+ * **Section 10.20 applies that now-proven pattern to the HR/Payroll
+ * posting interface** (`PostPayRunUseCase`/`RemeasureLeaveAccrualUseCase`/
+ * `UtilizeLeaveAccrualUseCase`) - the fixed contract the separate,
+ * not-built-here HR/Payroll system calls into, confirmed with the user
+ * directly.
  *
  * Wires real `Exposed*Repository` implementations directly - unlike the
  * use cases themselves (framework-agnostic, `domain`-only dependencies),
@@ -74,11 +82,16 @@ fun Application.productionModule() {
     val creditorRepository = ExposedCreditorRepository()
     val stockItemRepository = ExposedStockItemRepository()
     val purchaseOrderRepository = ExposedPurchaseOrderRepository()
+    val payRunRepository = ExposedPayRunRepository()
+    val leaveAccrualRepository = ExposedLeaveAccrualRepository()
 
     val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
     val postPurchaseOrderUseCase = PostPurchaseOrderUseCase(
         purchaseOrderRepository, creditorRepository, stockItemRepository, periodRepository, accountRepository, journalEntryRepository
     )
+    val postPayRunUseCase = PostPayRunUseCase(payRunRepository, periodRepository, accountRepository, journalEntryRepository)
+    val remeasureLeaveAccrualUseCase = RemeasureLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
+    val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
 
     fishModule(
         verifier = buildJwksVerifier(),
@@ -88,7 +101,12 @@ fun Application.productionModule() {
         periodRepository = periodRepository,
         postJournalEntryUseCase = postJournalEntryUseCase,
         purchaseOrderRepository = purchaseOrderRepository,
-        postPurchaseOrderUseCase = postPurchaseOrderUseCase
+        postPurchaseOrderUseCase = postPurchaseOrderUseCase,
+        payRunRepository = payRunRepository,
+        postPayRunUseCase = postPayRunUseCase,
+        leaveAccrualRepository = leaveAccrualRepository,
+        remeasureLeaveAccrualUseCase = remeasureLeaveAccrualUseCase,
+        utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase
     )
 }
 
@@ -109,7 +127,12 @@ fun Application.fishModule(
     periodRepository: PeriodRepository,
     postJournalEntryUseCase: PostJournalEntryUseCase,
     purchaseOrderRepository: PurchaseOrderRepository,
-    postPurchaseOrderUseCase: PostPurchaseOrderUseCase
+    postPurchaseOrderUseCase: PostPurchaseOrderUseCase,
+    payRunRepository: PayRunRepository,
+    postPayRunUseCase: PostPayRunUseCase,
+    leaveAccrualRepository: LeaveAccrualRepository,
+    remeasureLeaveAccrualUseCase: RemeasureLeaveAccrualUseCase,
+    utilizeLeaveAccrualUseCase: UtilizeLeaveAccrualUseCase
 ) {
     install(ContentNegotiation) { json() }
     install(CallLogging) { level = Level.INFO }
@@ -125,6 +148,11 @@ fun Application.fishModule(
         fishAuthenticated {
             journalEntryRoutes(postJournalEntryUseCase, periodRepository, companyRepository)
             purchaseOrderRoutes(postPurchaseOrderUseCase, purchaseOrderRepository, companyRepository)
+            payrollRoutes(
+                postPayRunUseCase, payRunRepository,
+                remeasureLeaveAccrualUseCase, utilizeLeaveAccrualUseCase, leaveAccrualRepository,
+                companyRepository
+            )
         }
     }
 }
