@@ -3,12 +3,14 @@ package com.theprodeogroup.fish.infrastructure.web
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeCompanyRepository
 import com.theprodeogroup.fish.application.FakeCreditorRepository
+import com.theprodeogroup.fish.application.FakeCustomerRepository
 import com.theprodeogroup.fish.application.FakeJournalEntryRepository
 import com.theprodeogroup.fish.application.FakeLeaveAccrualRepository
 import com.theprodeogroup.fish.application.FakeMembershipRepository
 import com.theprodeogroup.fish.application.FakePayRunRepository
 import com.theprodeogroup.fish.application.FakePeriodRepository
 import com.theprodeogroup.fish.application.FakePurchaseOrderRepository
+import com.theprodeogroup.fish.application.FakeSalesOrderRepository
 import com.theprodeogroup.fish.application.FakeStockItemRepository
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
@@ -16,6 +18,7 @@ import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
+import com.theprodeogroup.fish.application.PostSalesOrderUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
@@ -86,6 +89,10 @@ class PayrollRoutesTest {
         val stockItemRepository = FakeStockItemRepository()
         val postInventoryReceiptUseCase = PostInventoryReceiptUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
         val postInventoryIssueUseCase = PostInventoryIssueUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
+        val salesOrderRepository = FakeSalesOrderRepository()
+        val postSalesOrderUseCase = PostSalesOrderUseCase(
+            salesOrderRepository, FakeCustomerRepository(), stockItemRepository, periodRepository, accountRepository, journalEntryRepository
+        )
 
         val tenantId = TenantId.generate()
         val user = User.create(TEST_EMAIL, "Test Payroll Caller").also { userRepository.save(it) }
@@ -123,7 +130,9 @@ class PayrollRoutesTest {
                 utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase,
                 stockItemRepository = stockItemRepository,
                 postInventoryReceiptUseCase = postInventoryReceiptUseCase,
-                postInventoryIssueUseCase = postInventoryIssueUseCase
+                postInventoryIssueUseCase = postInventoryIssueUseCase,
+                salesOrderRepository = salesOrderRepository,
+                postSalesOrderUseCase = postSalesOrderUseCase
             )
         }
     }
