@@ -58,6 +58,26 @@ enum class DimensionType {
     VENDOR,
 
     /**
+     * Employee identifier - tagged on the Salary Advances control
+     * account's JournalLines by the HR/Payroll system
+     * (fish-hr-payroll, docs/HR_Payroll_DDD_Design.md Section 3.2),
+     * same control-account + dimension-tagging pattern already
+     * established for CUSTOMER/VENDOR (`AccountsReceivableAging`/
+     * `AccountsPayableAging`). Value is the raw `EmployeeId` UUID
+     * string, matching `creditorId.value.toString()`'s existing
+     * convention - no `Employee` aggregate exists in this repo at all
+     * (HR/Payroll owns that entirely, per Section 0's "no Employee
+     * reference crosses into the GL Engine" contract for `PayRun`);
+     * this tag is the one deliberate, narrow exception, the same way
+     * `LeaveAccrual` is `EmployeeId`-scoped because the liability is
+     * inherently per-employee - a Salary Advances receivable is too.
+     * Example: a Salary Advance disbursement debits the Salary
+     * Advances control account tagged `EMPLOYEE` to the advanced
+     * Employee's UUID; recovery credits the same account/tag.
+     */
+    EMPLOYEE,
+
+    /**
      * IAS 7 cash-flow activity classification, tagged on the cash/bank
      * side of a JournalLine (not the counter-account side). Value is a
      * `CashFlowActivity` enum name (`domain.ledger`) - kept in `common`
