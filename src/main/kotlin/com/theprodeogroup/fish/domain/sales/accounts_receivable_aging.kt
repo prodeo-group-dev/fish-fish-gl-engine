@@ -6,7 +6,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AgingBucketAmount
 import com.theprodeogroup.fish.domain.ledger.AgingBucketLabel
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.hasHistoricalEffect
 import java.math.BigDecimal
 import java.time.LocalDate

@@ -13,7 +13,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountType
 import com.theprodeogroup.fish.domain.ledger.AgingBucketLabel
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalLine
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.payroll.PayRun
 import com.theprodeogroup.fish.domain.purchasing.Creditor
 import com.theprodeogroup.fish.domain.purchasing.PurchaseOrder

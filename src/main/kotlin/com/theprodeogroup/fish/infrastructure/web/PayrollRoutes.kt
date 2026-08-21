@@ -7,7 +7,7 @@ import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualResult
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.ledger.AccountId
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.payroll.LeaveAccrual
 import com.theprodeogroup.fish.domain.payroll.LeaveAccrualId

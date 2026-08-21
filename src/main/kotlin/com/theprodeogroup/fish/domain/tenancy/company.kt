@@ -1,7 +1,7 @@
 package com.theprodeogroup.fish.domain.tenancy
 
 import com.theprodeogroup.fish.domain.common.ClientType
-import com.theprodeogroup.fish.domain.common.ValidationResult
+import com.theprodeogroup.common.ValidationResult
 import java.util.Currency
 
 /**

@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.domain.ledger
 
-import com.theprodeogroup.fish.domain.common.ValidationResult
+import com.theprodeogroup.common.Money
+import com.theprodeogroup.common.ValidationResult
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 
 /**

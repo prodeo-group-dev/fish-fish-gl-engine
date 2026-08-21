@@ -27,6 +27,12 @@ val ktorVersion = "2.3.12"
 // Run explicitly with `gradle integrationTest`. See docs/DDD_Design.md
 // Section 10.
 sourceSets {
+    main {
+        // `common/` is the fish-common submodule (Money/ValidationResult) -
+        // its Kotlin source is compiled directly into this project, not
+        // consumed as a published artifact. See common/README.md.
+        kotlin.srcDir("common/src/main/kotlin")
+    }
     create("integrationTest") {
         kotlin.srcDir("src/integrationTest/kotlin")
         compileClasspath += sourceSets.main.get().output + sourceSets.test.get().output

@@ -10,7 +10,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountType
 import com.theprodeogroup.fish.domain.ledger.ExpenseClassification
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalLine
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import io.kotest.matchers.collections.shouldContainExactly

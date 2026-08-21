@@ -1,5 +1,7 @@
 package com.theprodeogroup.fish.domain.ledger
 
+import com.theprodeogroup.common.Money
+
 /**
  * Standard aging buckets, shared by `AccountsReceivableAging` (AR,
  * `domain.sales`) and `AccountsPayableAging` (AP, `domain.purchasing`) -

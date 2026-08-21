@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.domain.ledger
 
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.common.PostingStatus
 import java.math.BigDecimal
 import java.util.Currency

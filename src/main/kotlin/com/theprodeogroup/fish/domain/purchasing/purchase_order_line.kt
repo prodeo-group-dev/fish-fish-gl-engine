@@ -3,7 +3,7 @@ package com.theprodeogroup.fish.domain.purchasing
 import com.theprodeogroup.fish.domain.common.LineItemType
 import com.theprodeogroup.fish.domain.inventory.StockItemId
 import com.theprodeogroup.fish.domain.ledger.AccountId
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import java.math.BigDecimal
 
 /**

@@ -6,7 +6,7 @@ import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountType
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.payroll.PayRun

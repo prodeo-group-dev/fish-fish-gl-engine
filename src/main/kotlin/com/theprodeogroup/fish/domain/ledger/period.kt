@@ -3,7 +3,7 @@ package com.theprodeogroup.fish.domain.ledger
 import com.theprodeogroup.fish.domain.common.DomainEvent
 import com.theprodeogroup.fish.domain.common.PeriodStatus
 import com.theprodeogroup.fish.domain.common.PeriodType
-import com.theprodeogroup.fish.domain.common.ValidationResult
+import com.theprodeogroup.common.ValidationResult
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import java.time.Instant
 import java.time.LocalDate

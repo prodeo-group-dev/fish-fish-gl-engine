@@ -1,6 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.persistence
 
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.sales.Customer
 import com.theprodeogroup.fish.domain.sales.CustomerId
 import com.theprodeogroup.fish.domain.sales.CustomerRepository

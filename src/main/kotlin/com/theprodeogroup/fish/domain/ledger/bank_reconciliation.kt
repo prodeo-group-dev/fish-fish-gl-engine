@@ -1,7 +1,8 @@
 package com.theprodeogroup.fish.domain.ledger
 
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.common.TransactionSide
-import com.theprodeogroup.fish.domain.common.ValidationResult
+import com.theprodeogroup.common.ValidationResult
 import java.time.LocalDate
 import java.util.Currency
 import java.util.UUID

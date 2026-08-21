@@ -5,7 +5,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.payroll.LeaveAccrual

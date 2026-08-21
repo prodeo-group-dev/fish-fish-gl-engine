@@ -5,7 +5,7 @@ import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordSaleResult
 import com.theprodeogroup.fish.application.RecordSaleUseCase
 import com.theprodeogroup.fish.domain.ledger.AccountId
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.sales.CustomerId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
