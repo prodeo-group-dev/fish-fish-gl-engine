@@ -21,6 +21,8 @@ import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
+import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
+import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
@@ -95,6 +97,8 @@ class PurchaseOrderRoutesTest {
         )
         val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
 
         val tenantId = TenantId.generate()
         val user = User.create(TEST_EMAIL, "Test Accountant").also { userRepository.save(it) }
@@ -133,7 +137,9 @@ class PurchaseOrderRoutesTest {
                 salesOrderRepository = salesOrderRepository,
                 postSalesOrderUseCase = postSalesOrderUseCase,
                 recordSaleUseCase = recordSaleUseCase,
-                recordCollectionUseCase = recordCollectionUseCase
+                recordCollectionUseCase = recordCollectionUseCase,
+                recordVendorObligationUseCase = recordVendorObligationUseCase,
+                recordVendorPaymentUseCase = recordVendorPaymentUseCase
             )
         }
     }

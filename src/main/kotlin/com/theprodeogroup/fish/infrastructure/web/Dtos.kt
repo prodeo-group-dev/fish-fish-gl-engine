@@ -219,3 +219,50 @@ data class RecordCollectionResponseDto(
     val journalEntryId: String,
     val status: String
 )
+
+/**
+ * Wire shapes for `RecordVendorObligationUseCase`/`RecordVendorPaymentUseCase`
+ * (docs/Purchase_Order_Processing_DDD_Design.md Section 0) - the
+ * Purchasing mirror of `RecordSaleRequestDto`/`RecordCollectionRequestDto`
+ * above, for the separate, not-built-here `fish-purchase-order-
+ * processing` (POP) system. Same reasoning: `companyId` is included
+ * directly since neither use case has an owning aggregate in this repo
+ * to resolve tenant scoping from.
+ */
+@Serializable
+data class RecordVendorObligationRequestDto(
+    val companyId: String,
+    val periodId: String,
+    val date: String,
+    val expenseOrAssetAccountId: String,
+    val apControlAccountId: String,
+    val amount: String,
+    val currency: String,
+    val vendorId: String,
+    val description: String? = null
+)
+
+@Serializable
+data class RecordVendorObligationResponseDto(
+    val journalEntryId: String,
+    val status: String
+)
+
+@Serializable
+data class RecordVendorPaymentRequestDto(
+    val companyId: String,
+    val periodId: String,
+    val date: String,
+    val apControlAccountId: String,
+    val settlementAccountId: String,
+    val amount: String,
+    val currency: String,
+    val vendorId: String,
+    val description: String? = null
+)
+
+@Serializable
+data class RecordVendorPaymentResponseDto(
+    val journalEntryId: String,
+    val status: String
+)
