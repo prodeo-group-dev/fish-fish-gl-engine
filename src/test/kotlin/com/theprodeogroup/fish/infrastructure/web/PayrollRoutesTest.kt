@@ -22,8 +22,12 @@ import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
+import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
+import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.RecordPayRunUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
+import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
+import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
@@ -100,6 +104,10 @@ class PayrollRoutesTest {
         )
         val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
         val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
         val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
         val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
@@ -145,6 +153,10 @@ class PayrollRoutesTest {
                 postSalesOrderUseCase = postSalesOrderUseCase,
                 recordSaleUseCase = recordSaleUseCase,
                 recordCollectionUseCase = recordCollectionUseCase,
+                recordVendorObligationUseCase = recordVendorObligationUseCase,
+                recordVendorPaymentUseCase = recordVendorPaymentUseCase,
+                recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,
+                recordInventoryIssueUseCase = recordInventoryIssueUseCase,
                 recordPayRunUseCase = recordPayRunUseCase,
                 getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
                 idempotencyKeyRepository = idempotencyKeyRepository

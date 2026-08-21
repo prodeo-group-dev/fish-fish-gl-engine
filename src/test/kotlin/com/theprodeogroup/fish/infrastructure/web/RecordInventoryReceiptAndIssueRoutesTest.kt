@@ -19,11 +19,11 @@ import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
-import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
-import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
+import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
+import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.RecordPayRunUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
 import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
@@ -31,16 +31,11 @@ import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
-import com.theprodeogroup.fish.domain.common.LineItemType
 import com.theprodeogroup.fish.domain.common.PeriodType
 import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountType
-import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.Period
-import com.theprodeogroup.fish.domain.sales.Customer
-import com.theprodeogroup.fish.domain.sales.SalesOrder
-import com.theprodeogroup.fish.domain.sales.SalesOrderLine
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
@@ -60,21 +55,24 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.testing.testApplication
 import org.junit.jupiter.api.Test
-import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.Currency
+import java.util.UUID
 
 private val GBP: Currency = Currency.getInstance("GBP")
-private val TODAY = LocalDate.of(2026, 8, 27)
-private const val TEST_EMAIL = "sales-caller@example.com"
+private val TODAY = LocalDate.of(2026, 8, 21)
+private const val TEST_EMAIL = "im-caller@example.com"
 
 /**
- * `POST /sales-orders/{id}/post` via Ktor's `testApplication`
- * (docs/DDD_Design.md Section 10.22) - mirrors [PurchaseOrderRoutesTest]'s
- * structure, the last of the four "ecosystem" posting use cases to get
- * an HTTP route.
+ * `POST /inventory/record-receipt` and `POST /inventory/record-issue`
+ * via Ktor's `testApplication`
+ * (`docs/Ecosystem_Extraction_DDD_Design.md` Section 1.3's Option B
+ * resolution) - unlike [InventoryRoutesTest] (the old, still-coexisting
+ * `Post*` pair), there's no `StockItem` lookup to derive tenant scoping
+ * from, so every request body carries `companyId` directly, same
+ * pattern as [RecordSaleAndCollectionRoutesTest].
  */
-class SalesOrderRoutesTest {
+class RecordInventoryReceiptAndIssueRoutesTest {
 
     private class Fixture(role: Role = Role.ACCOUNTANT) {
         val userRepository = FakeUserRepository()
@@ -112,21 +110,16 @@ class SalesOrderRoutesTest {
         val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
 
         val tenantId = TenantId.generate()
-        val user = User.create(TEST_EMAIL, "Test Sales Caller").also { userRepository.save(it) }
+        val user = User.create(TEST_EMAIL, "Test IM Caller").also { userRepository.save(it) }
         val membership = Membership.grant(user.id, tenantId, role).also { membershipRepository.save(it) }
         val company = Company.create(tenantId, "Test Co", ClientType.NON_PROFIT, "GB", GBP).also { companyRepository.save(it) }
         val period = Period.create(company.id, PeriodType.MONTH, TODAY, TODAY.plusDays(30)).also {
             it.open()
             periodRepository.save(it)
         }
-        val revenueAccount = Account.create(company.id, AccountType.REVENUE, null, "4000", "Consulting Revenue").also { accountRepository.save(it) }
-        val arControlAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1100", "Accounts Receivable").also { accountRepository.save(it) }
-
-        val customer = Customer.create(company.id, "Test Customer", GBP).also { customerRepository.save(it) }
-        val order = SalesOrder.create(
-            company.id, customer.id, TODAY,
-            listOf(SalesOrderLine("Consulting", revenueAccount.id, Money(BigDecimal("500.00"), GBP), LineItemType.SERVICE))
-        ).also { salesOrderRepository.save(it) }
+        val inventoryAssetAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1300", "Inventory").also { accountRepository.save(it) }
+        val apControlAccount = Account.create(company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2100", "Accounts Payable").also { accountRepository.save(it) }
+        val cogsAccount = Account.create(company.id, AccountType.EXPENSE, null, "5000", "Cost of Goods Sold").also { accountRepository.save(it) }
 
         fun installInto(app: Application) {
             app.fishModule(
@@ -162,106 +155,173 @@ class SalesOrderRoutesTest {
     }
 
     @Test
-    fun `given a valid request with a bearer token and matching X-Tenant-Id, when posted, then it returns 200 with FULFILLED status`() = testApplication {
+    fun `given a valid record-receipt request with a bearer token and matching X-Tenant-Id, when posted, then it returns 200 Posted`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales-orders/${fixture.order.id.value}/post") {
+        val response = client.post("/inventory/record-receipt") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
-            setBody("""{"lineIndex": 0, "periodId": "${fixture.period.id.value}", "arControlAccountId": "${fixture.arControlAccount.id.value}"}""")
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}",
+                    |"contraAccountId": "${fixture.apControlAccount.id.value}", "committedCost": "18500.00",
+                    |"committedCostCurrency": "GBP", "itemId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
         }
 
         response.status shouldBe HttpStatusCode.OK
-        val body: PostSalesOrderResponseDto = response.body()
-        body.status shouldBe "FULFILLED"
+        val body: RecordInventoryReceiptResponseDto = response.body()
+        body.status shouldBe "POSTED"
     }
 
     @Test
-    fun `given no bearer token, when posted, then it returns 401`() = testApplication {
+    fun `given no bearer token, when record-receipt is posted, then it returns 401`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales-orders/${fixture.order.id.value}/post") {
+        val response = client.post("/inventory/record-receipt") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
-            setBody("""{"lineIndex": 0, "periodId": "${fixture.period.id.value}", "arControlAccountId": "${fixture.arControlAccount.id.value}"}""")
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}",
+                    |"contraAccountId": "${fixture.apControlAccount.id.value}", "committedCost": "18500.00",
+                    |"committedCostCurrency": "GBP", "itemId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
         }
 
         response.status shouldBe HttpStatusCode.Unauthorized
     }
 
     @Test
-    fun `given a claimed X-Tenant-Id that does not own the SalesOrder, when posted, then it returns 403`() = testApplication {
+    fun `given a claimed X-Tenant-Id that does not own the companyId, when record-receipt is posted, then it returns 403`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales-orders/${fixture.order.id.value}/post") {
+        val response = client.post("/inventory/record-receipt") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", TenantId.generate().value.toString())
             contentType(ContentType.Application.Json)
-            setBody("""{"lineIndex": 0, "periodId": "${fixture.period.id.value}", "arControlAccountId": "${fixture.arControlAccount.id.value}"}""")
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}",
+                    |"contraAccountId": "${fixture.apControlAccount.id.value}", "committedCost": "18500.00",
+                    |"committedCostCurrency": "GBP", "itemId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
         }
 
         response.status shouldBe HttpStatusCode.Forbidden
     }
 
     @Test
-    fun `given a nonexistent SalesOrder id, when posted, then it returns 404`() = testApplication {
+    fun `given a nonexistent companyId, when record-receipt is posted, then it returns 404`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales-orders/${java.util.UUID.randomUUID()}/post") {
+        val response = client.post("/inventory/record-receipt") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
-            setBody("""{"lineIndex": 0, "periodId": "${fixture.period.id.value}", "arControlAccountId": "${fixture.arControlAccount.id.value}"}""")
+            setBody(
+                """{"companyId": "${UUID.randomUUID()}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}",
+                    |"contraAccountId": "${fixture.apControlAccount.id.value}", "committedCost": "18500.00",
+                    |"committedCostCurrency": "GBP", "itemId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
         }
 
         response.status shouldBe HttpStatusCode.NotFound
     }
 
     @Test
-    fun `given the line already delivered, when posted again, then it returns 409`() = testApplication {
-        val fixture = Fixture()
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-        val requestBody = """{"lineIndex": 0, "periodId": "${fixture.period.id.value}", "arControlAccountId": "${fixture.arControlAccount.id.value}"}"""
-        client.post("/sales-orders/${fixture.order.id.value}/post") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody(requestBody)
-        }
-
-        val response = client.post("/sales-orders/${fixture.order.id.value}/post") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody(requestBody)
-        }
-
-        response.status shouldBe HttpStatusCode.Conflict
-    }
-
-    @Test
-    fun `given a caller with a READ_ONLY Membership, when posted, then it returns 403`() = testApplication {
+    fun `given a caller with a READ_ONLY Membership, when record-receipt is posted, then it returns 403`() = testApplication {
         val fixture = Fixture(Role.READ_ONLY)
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales-orders/${fixture.order.id.value}/post") {
+        val response = client.post("/inventory/record-receipt") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
-            setBody("""{"lineIndex": 0, "periodId": "${fixture.period.id.value}", "arControlAccountId": "${fixture.arControlAccount.id.value}"}""")
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}",
+                    |"contraAccountId": "${fixture.apControlAccount.id.value}", "committedCost": "18500.00",
+                    |"committedCostCurrency": "GBP", "itemId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
         }
 
         response.status shouldBe HttpStatusCode.Forbidden
+    }
+
+    @Test
+    fun `given a non-positive committed cost, when record-receipt is posted, then it returns 400`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/inventory/record-receipt") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}",
+                    |"contraAccountId": "${fixture.apControlAccount.id.value}", "committedCost": "0.00",
+                    |"committedCostCurrency": "GBP", "itemId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.BadRequest
+    }
+
+    @Test
+    fun `given a valid record-issue request, when posted, then it returns 200 Posted`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/inventory/record-issue") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "contraAccountId": "${fixture.cogsAccount.id.value}",
+                    |"inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}", "committedCost": "9200.00",
+                    |"committedCostCurrency": "GBP", "itemId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: RecordInventoryIssueResponseDto = response.body()
+        body.status shouldBe "POSTED"
+    }
+
+    @Test
+    fun `given an Inventory Asset Account that does not exist, when record-issue is posted, then it returns 404`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/inventory/record-issue") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "contraAccountId": "${fixture.cogsAccount.id.value}",
+                    |"inventoryAssetAccountId": "${UUID.randomUUID()}", "committedCost": "9200.00",
+                    |"committedCostCurrency": "GBP", "itemId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.NotFound
     }
 }

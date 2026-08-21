@@ -22,8 +22,12 @@ import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
+import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
+import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.RecordPayRunUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
+import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
+import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import io.kotest.matchers.shouldBe
@@ -79,6 +83,10 @@ class StatusPagesTest {
         val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
         val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
         val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
+        val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
 
         fun installInto(app: Application) {
             app.fishModule(
@@ -104,7 +112,11 @@ class StatusPagesTest {
                 recordCollectionUseCase = recordCollectionUseCase,
                 recordPayRunUseCase = recordPayRunUseCase,
                 getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
-                idempotencyKeyRepository = idempotencyKeyRepository
+                idempotencyKeyRepository = idempotencyKeyRepository,
+                recordVendorObligationUseCase = recordVendorObligationUseCase,
+                recordVendorPaymentUseCase = recordVendorPaymentUseCase,
+                recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,
+                recordInventoryIssueUseCase = recordInventoryIssueUseCase
             )
         }
     }

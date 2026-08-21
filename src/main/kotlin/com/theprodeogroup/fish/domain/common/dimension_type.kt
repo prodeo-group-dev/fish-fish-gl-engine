@@ -58,6 +58,18 @@ enum class DimensionType {
     VENDOR,
 
     /**
+     * Inventory item/SKU identifier - tagged on the Inventory Asset
+     * line by `RecordInventoryReceiptUseCase`/`RecordInventoryIssueUseCase`
+     * with a caller-supplied, non-authoritative item reference (Option
+     * B, `docs/Ecosystem_Extraction_DDD_Design.md` Section 1.3: `IM/`
+     * owns item identity, the GL Engine only tags it). Same "dimension
+     * tagged on a specific control line to make Ledger-derived
+     * reporting possible without retrofitting an aggregate" reasoning
+     * as CUSTOMER/VENDOR.
+     */
+    ITEM,
+
+    /**
      * Employee identifier - tagged on the Salary Advances control
      * account's JournalLines by the HR/Payroll system
      * (fish-hr-payroll, docs/HR_Payroll_DDD_Design.md Section 3.2),
