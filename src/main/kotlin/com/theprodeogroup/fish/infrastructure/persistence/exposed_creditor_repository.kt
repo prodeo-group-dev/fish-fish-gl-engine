@@ -1,6 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.persistence
 
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.purchasing.Creditor
 import com.theprodeogroup.fish.domain.purchasing.CreditorId
 import com.theprodeogroup.fish.domain.purchasing.CreditorRepository

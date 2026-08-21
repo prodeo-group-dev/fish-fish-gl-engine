@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.domain.ledger
 
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.PeriodType
 import com.theprodeogroup.fish.domain.common.TransactionSide

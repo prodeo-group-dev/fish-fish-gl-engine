@@ -7,7 +7,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AgingBucketLabel
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalLine
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test

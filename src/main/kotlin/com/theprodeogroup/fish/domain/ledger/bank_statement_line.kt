@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.domain.ledger
 
+import com.theprodeogroup.common.Money
 import java.time.LocalDate
 import java.util.UUID
 

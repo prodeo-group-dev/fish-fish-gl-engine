@@ -6,10 +6,11 @@ import com.theprodeogroup.fish.application.RecordInventoryReceiptResult
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
 import com.theprodeogroup.fish.domain.inventory.StockItemId
 import com.theprodeogroup.fish.domain.ledger.AccountId
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
+import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
@@ -17,6 +18,7 @@ import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.post
+import kotlinx.serialization.json.Json
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import java.util.Currency
@@ -37,11 +39,17 @@ import java.util.Currency
  * `companyId` from the way `inventoryRoutes` (the old, still-coexisting
  * `Post*` pair) does via `stockItem.companyId`. The request body
  * carries `companyId` directly instead.
+ *
+ * **Idempotency-Key support** (docs/GL_Production_Readiness_Plan.md) -
+ * both routes route their final execute-and-respond step through
+ * [respondIdempotently], the same treatment every other financial-
+ * posting endpoint in this package now gets.
  */
 fun Route.recordInventoryReceiptAndIssueRoutes(
     recordInventoryReceiptUseCase: RecordInventoryReceiptUseCase,
     recordInventoryIssueUseCase: RecordInventoryIssueUseCase,
-    companyRepository: CompanyRepository
+    companyRepository: CompanyRepository,
+    idempotencyKeyRepository: IdempotencyKeyRepository
 ) {
     post("/inventory/record-receipt") {
         val request = call.receive<RecordInventoryReceiptRequestDto>()
@@ -57,26 +65,31 @@ fun Route.recordInventoryReceiptAndIssueRoutes(
         val committedCost = call.parseInventoryMoney(request.committedCost, request.committedCostCurrency) ?: return@post
         val date = call.parseInventoryRecordDate(request.date) ?: return@post
 
-        val result = recordInventoryReceiptUseCase.execute(
-            RecordInventoryReceiptUseCase.Request(
-                PeriodId(periodUuid), date, AccountId(inventoryAssetAccountUuid), AccountId(contraAccountUuid),
-                committedCost, StockItemId(itemUuid), request.description
-            )
-        )
-
-        when (result) {
-            is RecordInventoryReceiptResult.Success ->
-                call.respond(
-                    HttpStatusCode.OK,
-                    RecordInventoryReceiptResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+        call.respondIdempotently(
+            idempotencyKeyRepository, tenantId, "record-inventory-receipt",
+            Json.encodeToString(RecordInventoryReceiptRequestDto.serializer(), request)
+        ) {
+            val result = recordInventoryReceiptUseCase.execute(
+                RecordInventoryReceiptUseCase.Request(
+                    PeriodId(periodUuid), date, AccountId(inventoryAssetAccountUuid), AccountId(contraAccountUuid),
+                    committedCost, StockItemId(itemUuid), request.description
                 )
-            is RecordInventoryReceiptResult.InvalidAmount -> call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_amount"))
-            is RecordInventoryReceiptResult.PeriodNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("period_not_found"))
-            is RecordInventoryReceiptResult.PeriodNotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("period_not_open"))
-            is RecordInventoryReceiptResult.InventoryAssetAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("inventory_asset_account_not_found", result.accountId.value.toString()))
-            is RecordInventoryReceiptResult.ContraAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("contra_account_not_found", result.accountId.value.toString()))
+            )
+
+            when (result) {
+                is RecordInventoryReceiptResult.Success ->
+                    HttpStatusCode.OK to Json.encodeToString(
+                        RecordInventoryReceiptResponseDto.serializer(),
+                        RecordInventoryReceiptResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+                    )
+                is RecordInventoryReceiptResult.InvalidAmount -> HttpStatusCode.BadRequest to errorResponseJson("invalid_amount")
+                is RecordInventoryReceiptResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
+                is RecordInventoryReceiptResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
+                is RecordInventoryReceiptResult.InventoryAssetAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("inventory_asset_account_not_found", result.accountId.value.toString())
+                is RecordInventoryReceiptResult.ContraAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("contra_account_not_found", result.accountId.value.toString())
+            }
         }
     }
 
@@ -94,26 +107,31 @@ fun Route.recordInventoryReceiptAndIssueRoutes(
         val committedCost = call.parseInventoryMoney(request.committedCost, request.committedCostCurrency) ?: return@post
         val date = call.parseInventoryRecordDate(request.date) ?: return@post
 
-        val result = recordInventoryIssueUseCase.execute(
-            RecordInventoryIssueUseCase.Request(
-                PeriodId(periodUuid), date, AccountId(contraAccountUuid), AccountId(inventoryAssetAccountUuid),
-                committedCost, StockItemId(itemUuid), request.description
-            )
-        )
-
-        when (result) {
-            is RecordInventoryIssueResult.Success ->
-                call.respond(
-                    HttpStatusCode.OK,
-                    RecordInventoryIssueResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+        call.respondIdempotently(
+            idempotencyKeyRepository, tenantId, "record-inventory-issue",
+            Json.encodeToString(RecordInventoryIssueRequestDto.serializer(), request)
+        ) {
+            val result = recordInventoryIssueUseCase.execute(
+                RecordInventoryIssueUseCase.Request(
+                    PeriodId(periodUuid), date, AccountId(contraAccountUuid), AccountId(inventoryAssetAccountUuid),
+                    committedCost, StockItemId(itemUuid), request.description
                 )
-            is RecordInventoryIssueResult.InvalidAmount -> call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_amount"))
-            is RecordInventoryIssueResult.PeriodNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("period_not_found"))
-            is RecordInventoryIssueResult.PeriodNotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("period_not_open"))
-            is RecordInventoryIssueResult.ContraAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("contra_account_not_found", result.accountId.value.toString()))
-            is RecordInventoryIssueResult.InventoryAssetAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("inventory_asset_account_not_found", result.accountId.value.toString()))
+            )
+
+            when (result) {
+                is RecordInventoryIssueResult.Success ->
+                    HttpStatusCode.OK to Json.encodeToString(
+                        RecordInventoryIssueResponseDto.serializer(),
+                        RecordInventoryIssueResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+                    )
+                is RecordInventoryIssueResult.InvalidAmount -> HttpStatusCode.BadRequest to errorResponseJson("invalid_amount")
+                is RecordInventoryIssueResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
+                is RecordInventoryIssueResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
+                is RecordInventoryIssueResult.ContraAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("contra_account_not_found", result.accountId.value.toString())
+                is RecordInventoryIssueResult.InventoryAssetAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("inventory_asset_account_not_found", result.accountId.value.toString())
+            }
         }
     }
 }

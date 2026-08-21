@@ -4,7 +4,7 @@ import com.theprodeogroup.fish.domain.inventory.InventoryStage
 import com.theprodeogroup.fish.domain.inventory.StockItem
 import com.theprodeogroup.fish.domain.inventory.StockItemId
 import com.theprodeogroup.fish.domain.inventory.StockItemRepository
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.insert

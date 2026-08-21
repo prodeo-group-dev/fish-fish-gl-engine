@@ -19,9 +19,12 @@ import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
+import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
+import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
+import com.theprodeogroup.fish.application.RecordPayRunUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
 import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
 import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
@@ -100,6 +103,9 @@ class RecordSaleAndCollectionRoutesTest {
         val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
+        val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
 
         val tenantId = TenantId.generate()
         val user = User.create(TEST_EMAIL, "Test SOP Caller").also { userRepository.save(it) }
@@ -138,7 +144,10 @@ class RecordSaleAndCollectionRoutesTest {
                 recordVendorObligationUseCase = recordVendorObligationUseCase,
                 recordVendorPaymentUseCase = recordVendorPaymentUseCase,
                 recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,
-                recordInventoryIssueUseCase = recordInventoryIssueUseCase
+                recordInventoryIssueUseCase = recordInventoryIssueUseCase,
+                recordPayRunUseCase = recordPayRunUseCase,
+                getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
+                idempotencyKeyRepository = idempotencyKeyRepository
             )
         }
     }
@@ -312,5 +321,103 @@ class RecordSaleAndCollectionRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.NotFound
+    }
+
+    // -- Idempotency-Key (docs/GL_Production_Readiness_Plan.md) --
+
+    @Test
+    fun `given the same Idempotency-Key and body posted twice, when record-sale is posted, then the second call replays the first response without posting a second JournalEntry`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val idempotencyKey = UUID.randomUUID().toString()
+        val requestBody = """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+            |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
+            |"revenueAccountId": "${fixture.revenueAccount.id.value}", "amount": "45000.00", "currency": "GBP",
+            |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
+
+        val first = client.post("/sales/record-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            header("Idempotency-Key", idempotencyKey)
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+        val second = client.post("/sales/record-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            header("Idempotency-Key", idempotencyKey)
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+
+        second.status shouldBe HttpStatusCode.OK
+        val firstBody: RecordSaleResponseDto = first.body()
+        val secondBody: RecordSaleResponseDto = second.body()
+        secondBody.journalEntryId shouldBe firstBody.journalEntryId
+        fixture.journalEntryRepository.saveCalls.size shouldBe 1
+    }
+
+    @Test
+    fun `given the same Idempotency-Key reused with a different body, when record-sale is posted, then it returns 422`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val idempotencyKey = UUID.randomUUID().toString()
+
+        client.post("/sales/record-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            header("Idempotency-Key", idempotencyKey)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
+                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "amount": "45000.00", "currency": "GBP",
+                    |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
+        }
+        val response = client.post("/sales/record-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            header("Idempotency-Key", idempotencyKey)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
+                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "amount": "99999.00", "currency": "GBP",
+                    |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.UnprocessableEntity
+        val body: ErrorResponseDto = response.body()
+        body.error shouldBe "idempotency_key_reused"
+    }
+
+    @Test
+    fun `given no Idempotency-Key header, when the same record-sale request is posted twice, then both calls post separately`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val requestBody = """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+            |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
+            |"revenueAccountId": "${fixture.revenueAccount.id.value}", "amount": "45000.00", "currency": "GBP",
+            |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
+
+        client.post("/sales/record-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+        client.post("/sales/record-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+
+        fixture.journalEntryRepository.saveCalls.size shouldBe 2
     }
 }

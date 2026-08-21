@@ -19,9 +19,12 @@ import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
+import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
+import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
+import com.theprodeogroup.fish.application.RecordPayRunUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
 import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
 import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
@@ -99,6 +102,9 @@ class InventoryRoutesTest {
         val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
+        val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
 
         val tenantId = TenantId.generate()
         val user = User.create(TEST_EMAIL, "Test Inventory Caller").also { userRepository.save(it) }
@@ -138,7 +144,10 @@ class InventoryRoutesTest {
                 recordVendorObligationUseCase = recordVendorObligationUseCase,
                 recordVendorPaymentUseCase = recordVendorPaymentUseCase,
                 recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,
-                recordInventoryIssueUseCase = recordInventoryIssueUseCase
+                recordInventoryIssueUseCase = recordInventoryIssueUseCase,
+                recordPayRunUseCase = recordPayRunUseCase,
+                getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
+                idempotencyKeyRepository = idempotencyKeyRepository
             )
         }
     }

@@ -13,6 +13,8 @@ import com.theprodeogroup.fish.application.FakePurchaseOrderRepository
 import com.theprodeogroup.fish.application.FakeSalesOrderRepository
 import com.theprodeogroup.fish.application.FakeStockItemRepository
 import com.theprodeogroup.fish.application.FakeUserRepository
+import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
+import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
 import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
@@ -22,6 +24,7 @@ import com.theprodeogroup.fish.application.PostSalesOrderUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
+import com.theprodeogroup.fish.application.RecordPayRunUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
 import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
 import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
@@ -32,7 +35,7 @@ import com.theprodeogroup.fish.domain.common.PeriodType
 import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountType
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.payroll.EmployeeId
 import com.theprodeogroup.fish.domain.payroll.LeaveAccrual
@@ -105,6 +108,9 @@ class PayrollRoutesTest {
         val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
+        val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
 
         val tenantId = TenantId.generate()
         val user = User.create(TEST_EMAIL, "Test Payroll Caller").also { userRepository.save(it) }
@@ -150,7 +156,10 @@ class PayrollRoutesTest {
                 recordVendorObligationUseCase = recordVendorObligationUseCase,
                 recordVendorPaymentUseCase = recordVendorPaymentUseCase,
                 recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,
-                recordInventoryIssueUseCase = recordInventoryIssueUseCase
+                recordInventoryIssueUseCase = recordInventoryIssueUseCase,
+                recordPayRunUseCase = recordPayRunUseCase,
+                getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
+                idempotencyKeyRepository = idempotencyKeyRepository
             )
         }
     }
@@ -213,6 +222,40 @@ class PayrollRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.NotFound
+    }
+
+    @Test
+    fun `given the same Idempotency-Key and body posted twice, when a PayRun is posted, then the second call replays the first response instead of posting a second JournalEntry`() = testApplication {
+        // PayRun has no double-post guard of its own (unlike PurchaseOrder's
+        // PurchaseOrderNotDraft) - an Idempotency-Key is the *only*
+        // protection here against a retried request posting twice.
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val idempotencyKey = java.util.UUID.randomUUID().toString()
+        val requestBody = """{"periodId": "${fixture.period.id.value}", "wagesExpenseAccountId": "${fixture.wagesExpenseAccount.id.value}",
+            |"salariesExpenseAccountId": "${fixture.salariesExpenseAccount.id.value}", "cashAccountId": "${fixture.cashAccount.id.value}"}""".trimMargin()
+
+        val first = client.post("/pay-runs/${fixture.payRun.id.value}/post") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            header("Idempotency-Key", idempotencyKey)
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+        val second = client.post("/pay-runs/${fixture.payRun.id.value}/post") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            header("Idempotency-Key", idempotencyKey)
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+
+        second.status shouldBe HttpStatusCode.OK
+        val firstBody: PostPayRunResponseDto = first.body()
+        val secondBody: PostPayRunResponseDto = second.body()
+        secondBody.journalEntryId shouldBe firstBody.journalEntryId
+        fixture.journalEntryRepository.saveCalls.size shouldBe 1
     }
 
     // -- POST /leave-accruals/{id}/remeasure --
@@ -347,5 +390,155 @@ class PayrollRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.Conflict
+    }
+
+    // -- POST /payroll/record-pay-run --
+
+    @Test
+    fun `given a valid record-pay-run request, when posted, then it returns 200 with a posted JournalEntry`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/payroll/record-pay-run") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}", "date": "$TODAY",
+                    |"totalWages": "5000.00", "totalSalaries": "8000.00", "currency": "GBP",
+                    |"wagesExpenseAccountId": "${fixture.wagesExpenseAccount.id.value}",
+                    |"salariesExpenseAccountId": "${fixture.salariesExpenseAccount.id.value}", "cashAccountId": "${fixture.cashAccount.id.value}"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: RecordPayRunResponseDto = response.body()
+        body.status shouldBe "POSTED"
+    }
+
+    @Test
+    fun `given no bearer token, when a pay run is recorded, then it returns 401`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/payroll/record-pay-run") {
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}", "date": "$TODAY",
+                    |"totalWages": "5000.00", "totalSalaries": "8000.00", "currency": "GBP",
+                    |"wagesExpenseAccountId": "${fixture.wagesExpenseAccount.id.value}",
+                    |"salariesExpenseAccountId": "${fixture.salariesExpenseAccount.id.value}", "cashAccountId": "${fixture.cashAccount.id.value}"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.Unauthorized
+    }
+
+    @Test
+    fun `given both totals are zero, when a pay run is recorded, then it returns 400`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/payroll/record-pay-run") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}", "date": "$TODAY",
+                    |"totalWages": "0.00", "totalSalaries": "0.00", "currency": "GBP",
+                    |"wagesExpenseAccountId": "${fixture.wagesExpenseAccount.id.value}",
+                    |"salariesExpenseAccountId": "${fixture.salariesExpenseAccount.id.value}", "cashAccountId": "${fixture.cashAccount.id.value}"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.BadRequest
+    }
+
+    @Test
+    fun `given a claimed X-Tenant-Id that does not own the Company, when a pay run is recorded, then it returns 403`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/payroll/record-pay-run") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", TenantId.generate().value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}", "date": "$TODAY",
+                    |"totalWages": "5000.00", "totalSalaries": "8000.00", "currency": "GBP",
+                    |"wagesExpenseAccountId": "${fixture.wagesExpenseAccount.id.value}",
+                    |"salariesExpenseAccountId": "${fixture.salariesExpenseAccount.id.value}", "cashAccountId": "${fixture.cashAccount.id.value}"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.Forbidden
+    }
+
+    // -- POST /leave-accruals --
+
+    @Test
+    fun `given no existing LeaveAccrual for this Employee, when posted, then it returns 200 with a new zero-balance LeaveAccrual`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val employeeId = EmployeeId.generate()
+
+        val response = client.post("/leave-accruals") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody("""{"companyId": "${fixture.company.id.value}", "employeeId": "${employeeId.value}", "currency": "GBP"}""")
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: LeaveAccrualResponseDto = response.body()
+        body.balanceAmount shouldBe "0.00"
+        body.journalEntryId shouldBe null
+    }
+
+    @Test
+    fun `given an existing LeaveAccrual for this Employee, when posted again, then it returns 200 with the same LeaveAccrual id`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val employeeId = EmployeeId.generate()
+        val requestBody = """{"companyId": "${fixture.company.id.value}", "employeeId": "${employeeId.value}", "currency": "GBP"}"""
+
+        val first = client.post("/leave-accruals") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+        val second = client.post("/leave-accruals") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+
+        val firstBody: LeaveAccrualResponseDto = first.body()
+        val secondBody: LeaveAccrualResponseDto = second.body()
+        secondBody.leaveAccrualId shouldBe firstBody.leaveAccrualId
+    }
+
+    @Test
+    fun `given no bearer token, when a LeaveAccrual is requested, then it returns 401`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/leave-accruals") {
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody("""{"companyId": "${fixture.company.id.value}", "employeeId": "${EmployeeId.generate().value}", "currency": "GBP"}""")
+        }
+
+        response.status shouldBe HttpStatusCode.Unauthorized
     }
 }

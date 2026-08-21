@@ -1,6 +1,6 @@
 package com.theprodeogroup.fish.domain.tenancy
 
-import com.theprodeogroup.fish.domain.common.ValidationResult
+import com.theprodeogroup.common.ValidationResult
 
 /**
  * The join of User x Tenant x Role (docs/DDD_Design.md Section 3.2,

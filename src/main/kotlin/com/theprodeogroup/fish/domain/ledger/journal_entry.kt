@@ -1,10 +1,11 @@
 package com.theprodeogroup.fish.domain.ledger
 
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.common.DomainEvent
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.PostingStatus
 import com.theprodeogroup.fish.domain.common.TransactionSide
-import com.theprodeogroup.fish.domain.common.ValidationResult
+import com.theprodeogroup.common.ValidationResult
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate

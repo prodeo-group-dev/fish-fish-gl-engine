@@ -6,10 +6,11 @@ import com.theprodeogroup.fish.application.RecordVendorPaymentResult
 import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.PeriodId
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.purchasing.CreditorId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
+import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
@@ -17,6 +18,7 @@ import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.post
+import kotlinx.serialization.json.Json
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import java.util.Currency
@@ -32,11 +34,17 @@ import java.util.Currency
  * an owning aggregate in this repo, so the request body carries
  * `companyId` directly, and everything downstream reuses the same
  * shared auth helpers unchanged.
+ *
+ * **Idempotency-Key support** (docs/GL_Production_Readiness_Plan.md) -
+ * both routes route their final execute-and-respond step through
+ * [respondIdempotently], the same treatment every other financial-
+ * posting endpoint in this package now gets.
  */
 fun Route.recordVendorObligationAndPaymentRoutes(
     recordVendorObligationUseCase: RecordVendorObligationUseCase,
     recordVendorPaymentUseCase: RecordVendorPaymentUseCase,
-    companyRepository: CompanyRepository
+    companyRepository: CompanyRepository,
+    idempotencyKeyRepository: IdempotencyKeyRepository
 ) {
     post("/purchasing/record-obligation") {
         val request = call.receive<RecordVendorObligationRequestDto>()
@@ -52,26 +60,31 @@ fun Route.recordVendorObligationAndPaymentRoutes(
         val amount = call.parseMoney(request.amount, request.currency) ?: return@post
         val date = call.parseLocalDate(request.date) ?: return@post
 
-        val result = recordVendorObligationUseCase.execute(
-            RecordVendorObligationUseCase.Request(
-                PeriodId(periodUuid), date, AccountId(expenseOrAssetAccountUuid), AccountId(apControlAccountUuid),
-                amount, CreditorId(vendorUuid), request.description
-            )
-        )
-
-        when (result) {
-            is RecordVendorObligationResult.Success ->
-                call.respond(
-                    HttpStatusCode.OK,
-                    RecordVendorObligationResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+        call.respondIdempotently(
+            idempotencyKeyRepository, tenantId, "record-vendor-obligation",
+            Json.encodeToString(RecordVendorObligationRequestDto.serializer(), request)
+        ) {
+            val result = recordVendorObligationUseCase.execute(
+                RecordVendorObligationUseCase.Request(
+                    PeriodId(periodUuid), date, AccountId(expenseOrAssetAccountUuid), AccountId(apControlAccountUuid),
+                    amount, CreditorId(vendorUuid), request.description
                 )
-            is RecordVendorObligationResult.InvalidAmount -> call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_amount"))
-            is RecordVendorObligationResult.PeriodNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("period_not_found"))
-            is RecordVendorObligationResult.PeriodNotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("period_not_open"))
-            is RecordVendorObligationResult.ExpenseOrAssetAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("expense_or_asset_account_not_found", result.accountId.value.toString()))
-            is RecordVendorObligationResult.ApControlAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("ap_control_account_not_found", result.accountId.value.toString()))
+            )
+
+            when (result) {
+                is RecordVendorObligationResult.Success ->
+                    HttpStatusCode.OK to Json.encodeToString(
+                        RecordVendorObligationResponseDto.serializer(),
+                        RecordVendorObligationResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+                    )
+                is RecordVendorObligationResult.InvalidAmount -> HttpStatusCode.BadRequest to errorResponseJson("invalid_amount")
+                is RecordVendorObligationResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
+                is RecordVendorObligationResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
+                is RecordVendorObligationResult.ExpenseOrAssetAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("expense_or_asset_account_not_found", result.accountId.value.toString())
+                is RecordVendorObligationResult.ApControlAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("ap_control_account_not_found", result.accountId.value.toString())
+            }
         }
     }
 
@@ -89,26 +102,31 @@ fun Route.recordVendorObligationAndPaymentRoutes(
         val amount = call.parseMoney(request.amount, request.currency) ?: return@post
         val date = call.parseLocalDate(request.date) ?: return@post
 
-        val result = recordVendorPaymentUseCase.execute(
-            RecordVendorPaymentUseCase.Request(
-                PeriodId(periodUuid), date, AccountId(apControlAccountUuid), AccountId(settlementAccountUuid),
-                amount, CreditorId(vendorUuid), request.description
-            )
-        )
-
-        when (result) {
-            is RecordVendorPaymentResult.Success ->
-                call.respond(
-                    HttpStatusCode.OK,
-                    RecordVendorPaymentResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+        call.respondIdempotently(
+            idempotencyKeyRepository, tenantId, "record-vendor-payment",
+            Json.encodeToString(RecordVendorPaymentRequestDto.serializer(), request)
+        ) {
+            val result = recordVendorPaymentUseCase.execute(
+                RecordVendorPaymentUseCase.Request(
+                    PeriodId(periodUuid), date, AccountId(apControlAccountUuid), AccountId(settlementAccountUuid),
+                    amount, CreditorId(vendorUuid), request.description
                 )
-            is RecordVendorPaymentResult.InvalidAmount -> call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_amount"))
-            is RecordVendorPaymentResult.PeriodNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("period_not_found"))
-            is RecordVendorPaymentResult.PeriodNotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("period_not_open"))
-            is RecordVendorPaymentResult.ApControlAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("ap_control_account_not_found", result.accountId.value.toString()))
-            is RecordVendorPaymentResult.SettlementAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("settlement_account_not_found", result.accountId.value.toString()))
+            )
+
+            when (result) {
+                is RecordVendorPaymentResult.Success ->
+                    HttpStatusCode.OK to Json.encodeToString(
+                        RecordVendorPaymentResponseDto.serializer(),
+                        RecordVendorPaymentResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+                    )
+                is RecordVendorPaymentResult.InvalidAmount -> HttpStatusCode.BadRequest to errorResponseJson("invalid_amount")
+                is RecordVendorPaymentResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
+                is RecordVendorPaymentResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
+                is RecordVendorPaymentResult.ApControlAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("ap_control_account_not_found", result.accountId.value.toString())
+                is RecordVendorPaymentResult.SettlementAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("settlement_account_not_found", result.accountId.value.toString())
+            }
         }
     }
 }

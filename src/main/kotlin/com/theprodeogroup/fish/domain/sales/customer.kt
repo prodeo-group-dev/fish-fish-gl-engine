@@ -3,14 +3,14 @@ package com.theprodeogroup.fish.domain.sales
 import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
-import com.theprodeogroup.fish.domain.common.ValidationResult
+import com.theprodeogroup.common.ValidationResult
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AgingBucketLabel
 import com.theprodeogroup.fish.domain.ledger.CashFlowActivity
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.ledger.JournalLine
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import java.math.BigDecimal

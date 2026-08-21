@@ -22,6 +22,18 @@ COPY build.gradle.kts settings.gradle.kts ./
 RUN chmod +x gradlew
 RUN ./gradlew --version
 
+# `common/` is the fish-common submodule (Money/ValidationResult) -
+# build.gradle.kts wires common/src/main/kotlin directly into this
+# project's own main sourceSet, so it has to be present in the build
+# context for compilation to succeed. Docker's COPY has no submodule
+# awareness of its own: it just copies whatever's on disk at build
+# time, so the *caller* of `docker build` (a human, or a CI checkout
+# step) is the one responsible for `git submodule update --init`
+# having already run - confirmed the hard way, in a production-
+# readiness review, once this was traced back as the reason CI's own
+# docker-build job would have failed too, on top of the checkout gap
+# that was catching it first.
+COPY common ./common
 COPY src ./src
 RUN ./gradlew buildFatJar --no-daemon --console=plain
 

@@ -19,9 +19,12 @@ import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
+import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
+import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
+import com.theprodeogroup.fish.application.RecordPayRunUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
 import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
 import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
@@ -33,7 +36,7 @@ import com.theprodeogroup.fish.domain.common.PeriodType
 import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountType
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.purchasing.Creditor
 import com.theprodeogroup.fish.domain.purchasing.PurchaseOrder
@@ -103,6 +106,9 @@ class PurchaseOrderRoutesTest {
         val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
+        val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
 
         val tenantId = TenantId.generate()
         val user = User.create(TEST_EMAIL, "Test Accountant").also { userRepository.save(it) }
@@ -145,7 +151,10 @@ class PurchaseOrderRoutesTest {
                 recordVendorObligationUseCase = recordVendorObligationUseCase,
                 recordVendorPaymentUseCase = recordVendorPaymentUseCase,
                 recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,
-                recordInventoryIssueUseCase = recordInventoryIssueUseCase
+                recordInventoryIssueUseCase = recordInventoryIssueUseCase,
+                recordPayRunUseCase = recordPayRunUseCase,
+                getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
+                idempotencyKeyRepository = idempotencyKeyRepository
             )
         }
     }

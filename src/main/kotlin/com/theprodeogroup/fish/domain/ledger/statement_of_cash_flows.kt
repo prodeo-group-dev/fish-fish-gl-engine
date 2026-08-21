@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.domain.ledger
 
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import java.math.BigDecimal

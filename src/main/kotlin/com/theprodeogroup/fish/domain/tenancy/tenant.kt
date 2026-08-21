@@ -1,7 +1,7 @@
 package com.theprodeogroup.fish.domain.tenancy
 
 import com.theprodeogroup.fish.domain.common.DomainEvent
-import com.theprodeogroup.fish.domain.common.ValidationResult
+import com.theprodeogroup.common.ValidationResult
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.Currency

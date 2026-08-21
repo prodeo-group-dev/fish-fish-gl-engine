@@ -1,6 +1,6 @@
 package com.theprodeogroup.fish.domain.inventory
 
-import com.theprodeogroup.fish.domain.ledger.Money
+import com.theprodeogroup.common.Money
 import java.math.BigDecimal
 import java.util.Currency
 

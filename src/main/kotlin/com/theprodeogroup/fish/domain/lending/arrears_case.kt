@@ -1,7 +1,7 @@
 package com.theprodeogroup.fish.domain.lending
 
 import com.theprodeogroup.fish.domain.common.DomainEvent
-import com.theprodeogroup.fish.domain.common.ValidationResult
+import com.theprodeogroup.common.ValidationResult
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.CompanyId

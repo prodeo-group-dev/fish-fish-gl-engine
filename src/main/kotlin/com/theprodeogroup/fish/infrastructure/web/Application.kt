@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.infrastructure.web
 
 import com.auth0.jwt.interfaces.JWTVerifier
+import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
 import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
@@ -10,6 +11,7 @@ import com.theprodeogroup.fish.application.PostSalesOrderUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
+import com.theprodeogroup.fish.application.RecordPayRunUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
 import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
 import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
@@ -30,6 +32,7 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedAccountReposito
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCompanyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCreditorRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCustomerRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedIdempotencyKeyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedJournalEntryRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedLeaveAccrualRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedMembershipRepository
@@ -39,15 +42,19 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedPurchaseOrderRe
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedSalesOrderRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedStockItemRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedUserRepository
+import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
+import io.ktor.server.application.log
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.callloging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.request.httpMethod
+import io.ktor.server.request.path
 import io.ktor.server.response.respond
 import io.ktor.server.routing.routing
 import org.slf4j.event.Level
@@ -99,6 +106,7 @@ fun Application.productionModule() {
     val leaveAccrualRepository = ExposedLeaveAccrualRepository()
     val salesOrderRepository = ExposedSalesOrderRepository()
     val customerRepository = ExposedCustomerRepository()
+    val idempotencyKeyRepository = ExposedIdempotencyKeyRepository()
 
     val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
     val postPurchaseOrderUseCase = PostPurchaseOrderUseCase(
@@ -118,6 +126,8 @@ fun Application.productionModule() {
     val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
+    val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
+    val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
 
     fishModule(
         verifier = buildJwksVerifier(),
@@ -143,7 +153,10 @@ fun Application.productionModule() {
         recordVendorObligationUseCase = recordVendorObligationUseCase,
         recordVendorPaymentUseCase = recordVendorPaymentUseCase,
         recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,
-        recordInventoryIssueUseCase = recordInventoryIssueUseCase
+        recordInventoryIssueUseCase = recordInventoryIssueUseCase,
+        recordPayRunUseCase = recordPayRunUseCase,
+        getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
+        idempotencyKeyRepository = idempotencyKeyRepository
     )
 }
 
@@ -180,13 +193,26 @@ fun Application.fishModule(
     recordVendorObligationUseCase: RecordVendorObligationUseCase,
     recordVendorPaymentUseCase: RecordVendorPaymentUseCase,
     recordInventoryReceiptUseCase: RecordInventoryReceiptUseCase,
-    recordInventoryIssueUseCase: RecordInventoryIssueUseCase
+    recordInventoryIssueUseCase: RecordInventoryIssueUseCase,
+    recordPayRunUseCase: RecordPayRunUseCase,
+    getOrCreateLeaveAccrualUseCase: GetOrCreateLeaveAccrualUseCase,
+    idempotencyKeyRepository: IdempotencyKeyRepository
 ) {
     install(ContentNegotiation) { json() }
     install(CallLogging) { level = Level.INFO }
     install(StatusPages) {
+        // docs/GL_Production_Readiness_Assessment.md Section 1, critical
+        // finding #3 - cause.message previously went straight into the
+        // response body, which can leak exception class names, stack
+        // internals, or fragments of a failed SQL statement to any
+        // caller able to trigger a 500. The real detail is logged
+        // server-side (where an operator can see it) instead of
+        // returned to the client, who only ever gets a generic message.
         exception<Throwable> { call, cause ->
-            call.respond(HttpStatusCode.InternalServerError, ErrorResponseDto("internal_error", cause.message))
+            call.application.log.error(
+                "Unhandled exception handling ${call.request.httpMethod.value} ${call.request.path()}", cause
+            )
+            call.respond(HttpStatusCode.InternalServerError, ErrorResponseDto("internal_error"))
         }
     }
     installFishJwtAuth(verifier, userRepository, membershipRepository)
@@ -194,18 +220,19 @@ fun Application.fishModule(
     routing {
         healthRoutes()
         fishAuthenticated {
-            journalEntryRoutes(postJournalEntryUseCase, periodRepository, companyRepository)
-            purchaseOrderRoutes(postPurchaseOrderUseCase, purchaseOrderRepository, companyRepository)
+            journalEntryRoutes(postJournalEntryUseCase, periodRepository, companyRepository, idempotencyKeyRepository)
+            purchaseOrderRoutes(postPurchaseOrderUseCase, purchaseOrderRepository, companyRepository, idempotencyKeyRepository)
             payrollRoutes(
                 postPayRunUseCase, payRunRepository,
                 remeasureLeaveAccrualUseCase, utilizeLeaveAccrualUseCase, leaveAccrualRepository,
-                companyRepository
+                recordPayRunUseCase, getOrCreateLeaveAccrualUseCase,
+                companyRepository, idempotencyKeyRepository
             )
-            inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, stockItemRepository, companyRepository)
-            salesOrderRoutes(postSalesOrderUseCase, salesOrderRepository, companyRepository)
-            recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository)
-            recordVendorObligationAndPaymentRoutes(recordVendorObligationUseCase, recordVendorPaymentUseCase, companyRepository)
-            recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository)
+            inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, stockItemRepository, companyRepository, idempotencyKeyRepository)
+            salesOrderRoutes(postSalesOrderUseCase, salesOrderRepository, companyRepository, idempotencyKeyRepository)
+            recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, idempotencyKeyRepository)
+            recordVendorObligationAndPaymentRoutes(recordVendorObligationUseCase, recordVendorPaymentUseCase, companyRepository, idempotencyKeyRepository)
+            recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
         }
     }
 }
