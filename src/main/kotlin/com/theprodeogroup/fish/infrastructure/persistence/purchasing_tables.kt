@@ -23,7 +23,24 @@ object PurchaseOrdersTable : Table("purchase_orders") {
     val companyId = uuid("company_id")
     val creditorId = uuid("creditor_id")
     val orderDate = date("order_date")
-    val status = varchar("status", 20)
+    /** Widened from VARCHAR(20) - GOODS_RECEIVED_PENDING_INVOICE (30 chars) exceeds the original DRAFT/SENT sizing, `V7__purchase_order_delivery_terms.sql`. */
+    val status = varchar("status", 30)
+
+    /**
+     * Goods-in-Transit/GRNI columns, added 2026-08-21
+     * (`docs/IFRS_GL_Posting_Matrix.md`'s Goods-in-Transit/GRNI gap,
+     * `V7__purchase_order_delivery_terms.sql`). [deliveryTerms] defaults
+     * to `CONTROL_TRANSFERS_AT_SHIPMENT` at the SQL level too, so every
+     * pre-existing row keeps `PurchaseOrder.send`'s original behaviour
+     * on reload. [goodsInTransitAccountId]/[grniAccountId] are mutually
+     * exclusive in practice (an order only ever follows one of the two
+     * `DeliveryTerms.CONTROL_TRANSFERS_AT_RECEIPT` paths) but both
+     * nullable rather than one shared column, matching the domain
+     * model's own two separate fields.
+     */
+    val deliveryTerms = varchar("delivery_terms", 30)
+    val goodsInTransitAccountId = uuid("goods_in_transit_account_id").nullable()
+    val grniAccountId = uuid("grni_account_id").nullable()
 
     override val primaryKey = PrimaryKey(id)
 }

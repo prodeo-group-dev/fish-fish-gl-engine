@@ -5,6 +5,7 @@ import com.theprodeogroup.fish.domain.inventory.StockItemId
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.Money
 import com.theprodeogroup.fish.domain.purchasing.CreditorId
+import com.theprodeogroup.fish.domain.purchasing.DeliveryTerms
 import com.theprodeogroup.fish.domain.purchasing.PurchaseOrder
 import com.theprodeogroup.fish.domain.purchasing.PurchaseOrderId
 import com.theprodeogroup.fish.domain.purchasing.PurchaseOrderLine
@@ -92,6 +93,9 @@ class ExposedPurchaseOrderRepository : PurchaseOrderRepository {
         statement[PurchaseOrdersTable.creditorId] = purchaseOrder.creditorId.value
         statement[PurchaseOrdersTable.orderDate] = purchaseOrder.date
         statement[PurchaseOrdersTable.status] = purchaseOrder.status.name
+        statement[PurchaseOrdersTable.deliveryTerms] = purchaseOrder.deliveryTerms.name
+        statement[PurchaseOrdersTable.goodsInTransitAccountId] = purchaseOrder.goodsInTransitAccountId?.value
+        statement[PurchaseOrdersTable.grniAccountId] = purchaseOrder.grniAccountId?.value
     }
 
     private fun ResultRow.toPurchaseOrder(lines: List<PurchaseOrderLine>): PurchaseOrder = PurchaseOrder.reconstitute(
@@ -100,6 +104,9 @@ class ExposedPurchaseOrderRepository : PurchaseOrderRepository {
         creditorId = CreditorId(this[PurchaseOrdersTable.creditorId]),
         date = this[PurchaseOrdersTable.orderDate],
         lines = lines,
-        status = PurchaseOrderStatus.valueOf(this[PurchaseOrdersTable.status])
+        status = PurchaseOrderStatus.valueOf(this[PurchaseOrdersTable.status]),
+        deliveryTerms = DeliveryTerms.valueOf(this[PurchaseOrdersTable.deliveryTerms]),
+        goodsInTransitAccountId = this[PurchaseOrdersTable.goodsInTransitAccountId]?.let { AccountId(it) },
+        grniAccountId = this[PurchaseOrdersTable.grniAccountId]?.let { AccountId(it) }
     )
 }
