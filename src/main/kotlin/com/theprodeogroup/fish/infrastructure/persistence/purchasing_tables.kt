@@ -23,13 +23,15 @@ object PurchaseOrdersTable : Table("purchase_orders") {
     val companyId = uuid("company_id")
     val creditorId = uuid("creditor_id")
     val orderDate = date("order_date")
-    /** Widened from VARCHAR(20) - GOODS_RECEIVED_PENDING_INVOICE (30 chars) exceeds the original DRAFT/SENT sizing, `V7__purchase_order_delivery_terms.sql`. */
+    /** Widened from VARCHAR(20) - GOODS_RECEIVED_PENDING_INVOICE (30 chars) exceeds the original DRAFT/SENT sizing, `V8__purchase_order_delivery_terms.sql`. */
     val status = varchar("status", 30)
 
     /**
      * Goods-in-Transit/GRNI columns, added 2026-08-21
      * (`docs/IFRS_GL_Posting_Matrix.md`'s Goods-in-Transit/GRNI gap,
-     * `V7__purchase_order_delivery_terms.sql`). [deliveryTerms] defaults
+     * `V8__purchase_order_delivery_terms.sql` - renumbered from V7 to
+     * avoid colliding with `V7__idempotency_keys.sql`, which landed on
+     * `master` first while this branch was still open). [deliveryTerms] defaults
      * to `CONTROL_TRANSFERS_AT_SHIPMENT` at the SQL level too, so every
      * pre-existing row keeps `PurchaseOrder.send`'s original behaviour
      * on reload. [goodsInTransitAccountId]/[grniAccountId] are mutually
