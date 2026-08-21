@@ -11,6 +11,7 @@ import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
+import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
@@ -19,6 +20,7 @@ import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.post
+import kotlinx.serialization.json.Json
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import java.util.Currency
@@ -40,11 +42,15 @@ import java.util.UUID
  * caller with *any* Tenant Membership could post into any other
  * Tenant's Period by simply claiming a different Tenant in the request -
  * a real multi-tenancy leak this check closes.
+ *
+ * **Idempotency-Key support** (docs/GL_Production_Readiness_Plan.md) -
+ * routes its final execute-and-respond step through [respondIdempotently].
  */
 fun Route.journalEntryRoutes(
     postJournalEntryUseCase: PostJournalEntryUseCase,
     periodRepository: PeriodRepository,
-    companyRepository: CompanyRepository
+    companyRepository: CompanyRepository,
+    idempotencyKeyRepository: IdempotencyKeyRepository
 ) {
     post("/journal-entries") {
         val request = call.receive<PostJournalEntryRequestDto>()
@@ -83,21 +89,25 @@ fun Route.journalEntryRoutes(
             return@post
         }
 
-        val result = postJournalEntryUseCase.execute(
-            PostJournalEntryUseCase.Request(PeriodId(periodId), date, lines, source, request.description)
-        )
+        call.respondIdempotently(
+            idempotencyKeyRepository, tenantId, "post-journal-entry", Json.encodeToString(PostJournalEntryRequestDto.serializer(), request)
+        ) {
+            val result = postJournalEntryUseCase.execute(
+                PostJournalEntryUseCase.Request(PeriodId(periodId), date, lines, source, request.description)
+            )
 
-        when (result) {
-            is PostJournalEntryResult.Success ->
-                call.respond(HttpStatusCode.Created, JournalEntryResponseDto(result.entry.id.value.toString(), result.entry.status.name))
-            is PostJournalEntryResult.PeriodNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("period_not_found"))
-            is PostJournalEntryResult.PeriodNotOpen ->
-                call.respond(HttpStatusCode.Conflict, ErrorResponseDto("period_not_open"))
-            is PostJournalEntryResult.InvalidLines ->
-                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_lines", result.errors.joinToString()))
-            is PostJournalEntryResult.AccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("account_not_found", result.accountId.value.toString()))
+            when (result) {
+                is PostJournalEntryResult.Success ->
+                    HttpStatusCode.Created to Json.encodeToString(
+                        JournalEntryResponseDto.serializer(),
+                        JournalEntryResponseDto(result.entry.id.value.toString(), result.entry.status.name)
+                    )
+                is PostJournalEntryResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
+                is PostJournalEntryResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
+                is PostJournalEntryResult.InvalidLines -> HttpStatusCode.BadRequest to errorResponseJson("invalid_lines", result.errors.joinToString())
+                is PostJournalEntryResult.AccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("account_not_found", result.accountId.value.toString())
+            }
         }
     }
 }

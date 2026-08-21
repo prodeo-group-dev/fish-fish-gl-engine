@@ -19,6 +19,7 @@ import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
+import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordPayRunUseCase
@@ -98,6 +99,7 @@ class SalesOrderRoutesTest {
         )
         val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
         val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
         val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
 
@@ -141,7 +143,8 @@ class SalesOrderRoutesTest {
                 recordSaleUseCase = recordSaleUseCase,
                 recordCollectionUseCase = recordCollectionUseCase,
                 recordPayRunUseCase = recordPayRunUseCase,
-                getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase
+                getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
+                idempotencyKeyRepository = idempotencyKeyRepository
             )
         }
     }

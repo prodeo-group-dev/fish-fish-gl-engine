@@ -7,12 +7,14 @@ import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.sales.SalesOrderId
 import com.theprodeogroup.fish.domain.sales.SalesOrderRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
+import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.post
+import kotlinx.serialization.json.Json
 
 /**
  * `POST /sales-orders/{salesOrderId}/post` - wraps
@@ -33,12 +35,15 @@ import io.ktor.server.routing.post
  * order calls this route once per line.
  *
  * **Same auth -> tenant-ownership -> use-case -> `Result`-to-HTTP
- * pattern as every other route in this layer.**
+ * pattern as every other route in this layer**, now also routing its
+ * final execute-and-respond step through [respondIdempotently]
+ * (docs/GL_Production_Readiness_Plan.md).
  */
 fun Route.salesOrderRoutes(
     postSalesOrderUseCase: PostSalesOrderUseCase,
     salesOrderRepository: SalesOrderRepository,
-    companyRepository: CompanyRepository
+    companyRepository: CompanyRepository,
+    idempotencyKeyRepository: IdempotencyKeyRepository
 ) {
     post("/sales-orders/{salesOrderId}/post") {
         val salesOrderIdRaw = call.parameters["salesOrderId"]
@@ -62,35 +67,39 @@ fun Route.salesOrderRoutes(
         val cogsExpenseAccountUuid = request.cogsExpenseAccountId?.let { call.parseUuid(it) ?: return@post }
         val inventoryAssetAccountUuid = request.inventoryAssetAccountId?.let { call.parseUuid(it) ?: return@post }
 
-        val result = postSalesOrderUseCase.execute(
-            PostSalesOrderUseCase.Request(
-                SalesOrderId(salesOrderUuid), request.lineIndex, PeriodId(periodUuid), AccountId(arControlAccountUuid),
-                cogsExpenseAccountUuid?.let { AccountId(it) }, inventoryAssetAccountUuid?.let { AccountId(it) }
-            )
-        )
-
-        when (result) {
-            is PostSalesOrderResult.Success ->
-                call.respond(
-                    HttpStatusCode.OK,
-                    PostSalesOrderResponseDto(
-                        result.salesOrder.id.value.toString(),
-                        result.salesOrder.status.name,
-                        result.journalEntry.id.value.toString()
-                    )
+        call.respondIdempotently(
+            idempotencyKeyRepository, tenantId, "post-sales-order", Json.encodeToString(PostSalesOrderRequestDto.serializer(), request)
+        ) {
+            val result = postSalesOrderUseCase.execute(
+                PostSalesOrderUseCase.Request(
+                    SalesOrderId(salesOrderUuid), request.lineIndex, PeriodId(periodUuid), AccountId(arControlAccountUuid),
+                    cogsExpenseAccountUuid?.let { AccountId(it) }, inventoryAssetAccountUuid?.let { AccountId(it) }
                 )
-            is PostSalesOrderResult.SalesOrderNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("sales_order_not_found"))
-            is PostSalesOrderResult.PeriodNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("period_not_found"))
-            is PostSalesOrderResult.PeriodNotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("period_not_open"))
-            is PostSalesOrderResult.ArControlAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("ar_control_account_not_found", result.accountId.value.toString()))
-            is PostSalesOrderResult.InvalidLineIndex -> call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_line_index"))
-            is PostSalesOrderResult.LineAlreadyDelivered -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("line_already_delivered"))
-            is PostSalesOrderResult.GoodsLineRequiresInventoryAccounts ->
-                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("goods_line_requires_inventory_accounts"))
-            is PostSalesOrderResult.InventoryAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("inventory_account_not_found", result.accountId.value.toString()))
-            is PostSalesOrderResult.InsufficientStock -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("insufficient_stock"))
+            )
+
+            when (result) {
+                is PostSalesOrderResult.Success ->
+                    HttpStatusCode.OK to Json.encodeToString(
+                        PostSalesOrderResponseDto.serializer(),
+                        PostSalesOrderResponseDto(
+                            result.salesOrder.id.value.toString(),
+                            result.salesOrder.status.name,
+                            result.journalEntry.id.value.toString()
+                        )
+                    )
+                is PostSalesOrderResult.SalesOrderNotFound -> HttpStatusCode.NotFound to errorResponseJson("sales_order_not_found")
+                is PostSalesOrderResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
+                is PostSalesOrderResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
+                is PostSalesOrderResult.ArControlAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("ar_control_account_not_found", result.accountId.value.toString())
+                is PostSalesOrderResult.InvalidLineIndex -> HttpStatusCode.BadRequest to errorResponseJson("invalid_line_index")
+                is PostSalesOrderResult.LineAlreadyDelivered -> HttpStatusCode.Conflict to errorResponseJson("line_already_delivered")
+                is PostSalesOrderResult.GoodsLineRequiresInventoryAccounts ->
+                    HttpStatusCode.BadRequest to errorResponseJson("goods_line_requires_inventory_accounts")
+                is PostSalesOrderResult.InventoryAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("inventory_account_not_found", result.accountId.value.toString())
+                is PostSalesOrderResult.InsufficientStock -> HttpStatusCode.Conflict to errorResponseJson("insufficient_stock")
+            }
         }
     }
 }

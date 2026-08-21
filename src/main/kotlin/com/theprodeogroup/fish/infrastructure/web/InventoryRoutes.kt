@@ -11,6 +11,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
+import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
@@ -18,6 +19,7 @@ import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.post
+import kotlinx.serialization.json.Json
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import java.util.Currency
@@ -38,12 +40,17 @@ import java.util.Currency
  * (mirror images of each other, Section 10.16's own KDoc), so they get
  * separate routes rather than one with a direction flag, the same
  * reasoning already applied to `LeaveAccrual`'s pair.
+ *
+ * **Idempotency-Key support** (docs/GL_Production_Readiness_Plan.md) -
+ * both routes route their final execute-and-respond step through
+ * [respondIdempotently].
  */
 fun Route.inventoryRoutes(
     postInventoryReceiptUseCase: PostInventoryReceiptUseCase,
     postInventoryIssueUseCase: PostInventoryIssueUseCase,
     stockItemRepository: StockItemRepository,
-    companyRepository: CompanyRepository
+    companyRepository: CompanyRepository,
+    idempotencyKeyRepository: IdempotencyKeyRepository
 ) {
     post("/stock-items/{stockItemId}/receipts") {
         val stockItem = call.loadStockItem(stockItemRepository) ?: return@post
@@ -59,25 +66,33 @@ fun Route.inventoryRoutes(
         val contraAccountUuid = call.parseUuid(request.contraAccountId) ?: return@post
         val date = call.parseInventoryDate(request.date) ?: return@post
 
-        val result = postInventoryReceiptUseCase.execute(
-            PostInventoryReceiptUseCase.Request(
-                stockItem.id, quantityReceived, costReceived,
-                AccountId(inventoryAssetAccountUuid), AccountId(contraAccountUuid), PeriodId(periodUuid), date
+        call.respondIdempotently(
+            idempotencyKeyRepository, tenantId, "post-inventory-receipt",
+            Json.encodeToString(PostInventoryReceiptRequestDto.serializer(), request)
+        ) {
+            val result = postInventoryReceiptUseCase.execute(
+                PostInventoryReceiptUseCase.Request(
+                    stockItem.id, quantityReceived, costReceived,
+                    AccountId(inventoryAssetAccountUuid), AccountId(contraAccountUuid), PeriodId(periodUuid), date
+                )
             )
-        )
 
-        when (result) {
-            is PostInventoryReceiptResult.Success ->
-                call.respond(HttpStatusCode.OK, result.stockItem.toDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name))
-            is PostInventoryReceiptResult.StockItemNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("stock_item_not_found"))
-            is PostInventoryReceiptResult.PeriodNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("period_not_found"))
-            is PostInventoryReceiptResult.PeriodNotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("period_not_open"))
-            is PostInventoryReceiptResult.InventoryAssetAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("inventory_asset_account_not_found", result.accountId.value.toString()))
-            is PostInventoryReceiptResult.ContraAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("contra_account_not_found", result.accountId.value.toString()))
-            is PostInventoryReceiptResult.InvalidReceipt ->
-                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_receipt", result.errors.joinToString("; ")))
+            when (result) {
+                is PostInventoryReceiptResult.Success ->
+                    HttpStatusCode.OK to Json.encodeToString(
+                        StockItemJournalEntryResponseDto.serializer(),
+                        result.stockItem.toDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+                    )
+                is PostInventoryReceiptResult.StockItemNotFound -> HttpStatusCode.NotFound to errorResponseJson("stock_item_not_found")
+                is PostInventoryReceiptResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
+                is PostInventoryReceiptResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
+                is PostInventoryReceiptResult.InventoryAssetAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("inventory_asset_account_not_found", result.accountId.value.toString())
+                is PostInventoryReceiptResult.ContraAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("contra_account_not_found", result.accountId.value.toString())
+                is PostInventoryReceiptResult.InvalidReceipt ->
+                    HttpStatusCode.BadRequest to errorResponseJson("invalid_receipt", result.errors.joinToString("; "))
+            }
         }
     }
 
@@ -94,25 +109,33 @@ fun Route.inventoryRoutes(
         val contraAccountUuid = call.parseUuid(request.contraAccountId) ?: return@post
         val date = call.parseInventoryDate(request.date) ?: return@post
 
-        val result = postInventoryIssueUseCase.execute(
-            PostInventoryIssueUseCase.Request(
-                stockItem.id, quantityIssued,
-                AccountId(inventoryAssetAccountUuid), AccountId(contraAccountUuid), PeriodId(periodUuid), date
+        call.respondIdempotently(
+            idempotencyKeyRepository, tenantId, "post-inventory-issue",
+            Json.encodeToString(PostInventoryIssueRequestDto.serializer(), request)
+        ) {
+            val result = postInventoryIssueUseCase.execute(
+                PostInventoryIssueUseCase.Request(
+                    stockItem.id, quantityIssued,
+                    AccountId(inventoryAssetAccountUuid), AccountId(contraAccountUuid), PeriodId(periodUuid), date
+                )
             )
-        )
 
-        when (result) {
-            is PostInventoryIssueResult.Success ->
-                call.respond(HttpStatusCode.OK, result.stockItem.toDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name))
-            is PostInventoryIssueResult.StockItemNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("stock_item_not_found"))
-            is PostInventoryIssueResult.PeriodNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("period_not_found"))
-            is PostInventoryIssueResult.PeriodNotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("period_not_open"))
-            is PostInventoryIssueResult.InventoryAssetAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("inventory_asset_account_not_found", result.accountId.value.toString()))
-            is PostInventoryIssueResult.ContraAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("contra_account_not_found", result.accountId.value.toString()))
-            is PostInventoryIssueResult.InvalidIssue ->
-                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_issue", result.errors.joinToString("; ")))
+            when (result) {
+                is PostInventoryIssueResult.Success ->
+                    HttpStatusCode.OK to Json.encodeToString(
+                        StockItemJournalEntryResponseDto.serializer(),
+                        result.stockItem.toDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+                    )
+                is PostInventoryIssueResult.StockItemNotFound -> HttpStatusCode.NotFound to errorResponseJson("stock_item_not_found")
+                is PostInventoryIssueResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
+                is PostInventoryIssueResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
+                is PostInventoryIssueResult.InventoryAssetAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("inventory_asset_account_not_found", result.accountId.value.toString())
+                is PostInventoryIssueResult.ContraAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("contra_account_not_found", result.accountId.value.toString())
+                is PostInventoryIssueResult.InvalidIssue ->
+                    HttpStatusCode.BadRequest to errorResponseJson("invalid_issue", result.errors.joinToString("; "))
+            }
         }
     }
 }

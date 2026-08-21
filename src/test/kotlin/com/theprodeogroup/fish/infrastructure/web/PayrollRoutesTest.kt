@@ -13,6 +13,7 @@ import com.theprodeogroup.fish.application.FakePurchaseOrderRepository
 import com.theprodeogroup.fish.application.FakeSalesOrderRepository
 import com.theprodeogroup.fish.application.FakeStockItemRepository
 import com.theprodeogroup.fish.application.FakeUserRepository
+import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
 import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
@@ -99,6 +100,7 @@ class PayrollRoutesTest {
         )
         val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
         val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
         val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
 
@@ -144,7 +146,8 @@ class PayrollRoutesTest {
                 recordSaleUseCase = recordSaleUseCase,
                 recordCollectionUseCase = recordCollectionUseCase,
                 recordPayRunUseCase = recordPayRunUseCase,
-                getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase
+                getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
+                idempotencyKeyRepository = idempotencyKeyRepository
             )
         }
     }
@@ -207,6 +210,40 @@ class PayrollRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.NotFound
+    }
+
+    @Test
+    fun `given the same Idempotency-Key and body posted twice, when a PayRun is posted, then the second call replays the first response instead of posting a second JournalEntry`() = testApplication {
+        // PayRun has no double-post guard of its own (unlike PurchaseOrder's
+        // PurchaseOrderNotDraft) - an Idempotency-Key is the *only*
+        // protection here against a retried request posting twice.
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val idempotencyKey = java.util.UUID.randomUUID().toString()
+        val requestBody = """{"periodId": "${fixture.period.id.value}", "wagesExpenseAccountId": "${fixture.wagesExpenseAccount.id.value}",
+            |"salariesExpenseAccountId": "${fixture.salariesExpenseAccount.id.value}", "cashAccountId": "${fixture.cashAccount.id.value}"}""".trimMargin()
+
+        val first = client.post("/pay-runs/${fixture.payRun.id.value}/post") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            header("Idempotency-Key", idempotencyKey)
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+        val second = client.post("/pay-runs/${fixture.payRun.id.value}/post") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            header("Idempotency-Key", idempotencyKey)
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+
+        second.status shouldBe HttpStatusCode.OK
+        val firstBody: PostPayRunResponseDto = first.body()
+        val secondBody: PostPayRunResponseDto = second.body()
+        secondBody.journalEntryId shouldBe firstBody.journalEntryId
+        fixture.journalEntryRepository.saveCalls.size shouldBe 1
     }
 
     // -- POST /leave-accruals/{id}/remeasure --

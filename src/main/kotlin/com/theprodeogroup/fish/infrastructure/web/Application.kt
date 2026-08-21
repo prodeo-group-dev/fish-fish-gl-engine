@@ -28,6 +28,7 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedAccountReposito
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCompanyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCreditorRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCustomerRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedIdempotencyKeyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedJournalEntryRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedLeaveAccrualRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedMembershipRepository
@@ -37,15 +38,19 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedPurchaseOrderRe
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedSalesOrderRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedStockItemRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedUserRepository
+import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
+import io.ktor.server.application.log
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.callloging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.request.httpMethod
+import io.ktor.server.request.path
 import io.ktor.server.response.respond
 import io.ktor.server.routing.routing
 import org.slf4j.event.Level
@@ -97,6 +102,7 @@ fun Application.productionModule() {
     val leaveAccrualRepository = ExposedLeaveAccrualRepository()
     val salesOrderRepository = ExposedSalesOrderRepository()
     val customerRepository = ExposedCustomerRepository()
+    val idempotencyKeyRepository = ExposedIdempotencyKeyRepository()
 
     val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
     val postPurchaseOrderUseCase = PostPurchaseOrderUseCase(
@@ -137,7 +143,8 @@ fun Application.productionModule() {
         recordSaleUseCase = recordSaleUseCase,
         recordCollectionUseCase = recordCollectionUseCase,
         recordPayRunUseCase = recordPayRunUseCase,
-        getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase
+        getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
+        idempotencyKeyRepository = idempotencyKeyRepository
     )
 }
 
@@ -172,13 +179,24 @@ fun Application.fishModule(
     recordSaleUseCase: RecordSaleUseCase,
     recordCollectionUseCase: RecordCollectionUseCase,
     recordPayRunUseCase: RecordPayRunUseCase,
-    getOrCreateLeaveAccrualUseCase: GetOrCreateLeaveAccrualUseCase
+    getOrCreateLeaveAccrualUseCase: GetOrCreateLeaveAccrualUseCase,
+    idempotencyKeyRepository: IdempotencyKeyRepository
 ) {
     install(ContentNegotiation) { json() }
     install(CallLogging) { level = Level.INFO }
     install(StatusPages) {
+        // docs/GL_Production_Readiness_Assessment.md Section 1, critical
+        // finding #3 - cause.message previously went straight into the
+        // response body, which can leak exception class names, stack
+        // internals, or fragments of a failed SQL statement to any
+        // caller able to trigger a 500. The real detail is logged
+        // server-side (where an operator can see it) instead of
+        // returned to the client, who only ever gets a generic message.
         exception<Throwable> { call, cause ->
-            call.respond(HttpStatusCode.InternalServerError, ErrorResponseDto("internal_error", cause.message))
+            call.application.log.error(
+                "Unhandled exception handling ${call.request.httpMethod.value} ${call.request.path()}", cause
+            )
+            call.respond(HttpStatusCode.InternalServerError, ErrorResponseDto("internal_error"))
         }
     }
     installFishJwtAuth(verifier, userRepository, membershipRepository)
@@ -186,17 +204,17 @@ fun Application.fishModule(
     routing {
         healthRoutes()
         fishAuthenticated {
-            journalEntryRoutes(postJournalEntryUseCase, periodRepository, companyRepository)
-            purchaseOrderRoutes(postPurchaseOrderUseCase, purchaseOrderRepository, companyRepository)
+            journalEntryRoutes(postJournalEntryUseCase, periodRepository, companyRepository, idempotencyKeyRepository)
+            purchaseOrderRoutes(postPurchaseOrderUseCase, purchaseOrderRepository, companyRepository, idempotencyKeyRepository)
             payrollRoutes(
                 postPayRunUseCase, payRunRepository,
                 remeasureLeaveAccrualUseCase, utilizeLeaveAccrualUseCase, leaveAccrualRepository,
                 recordPayRunUseCase, getOrCreateLeaveAccrualUseCase,
-                companyRepository
+                companyRepository, idempotencyKeyRepository
             )
-            inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, stockItemRepository, companyRepository)
-            salesOrderRoutes(postSalesOrderUseCase, salesOrderRepository, companyRepository)
-            recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository)
+            inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, stockItemRepository, companyRepository, idempotencyKeyRepository)
+            salesOrderRoutes(postSalesOrderUseCase, salesOrderRepository, companyRepository, idempotencyKeyRepository)
+            recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, idempotencyKeyRepository)
         }
     }
 }

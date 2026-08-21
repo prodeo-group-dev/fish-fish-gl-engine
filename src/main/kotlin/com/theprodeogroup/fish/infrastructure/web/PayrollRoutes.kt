@@ -20,6 +20,7 @@ import com.theprodeogroup.fish.domain.payroll.PayRunId
 import com.theprodeogroup.fish.domain.payroll.PayRunRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
+import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
@@ -27,6 +28,7 @@ import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.post
+import kotlinx.serialization.json.Json
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import java.util.Currency
@@ -59,6 +61,19 @@ import java.util.Currency
  * thin interface with no owning aggregate: `companyId` travels in the
  * request body rather than being derived from a path-resolved
  * aggregate.
+ *
+ * **Idempotency-Key support** (docs/GL_Production_Readiness_Plan.md) -
+ * every route here that actually posts a `JournalEntry` (all but
+ * `POST /leave-accruals`) routes its final execute-and-respond step
+ * through [respondIdempotently]. `POST /leave-accruals` is
+ * deliberately excluded - `GetOrCreateLeaveAccrualUseCase` is already
+ * idempotent by design (by `(companyId, employeeId)`, per its own
+ * KDoc), so a second idempotency mechanism on top would be pure
+ * ceremony. `PostPayRunUseCase`'s route is the one place this
+ * genuinely matters most in this file: `PayRun` has no double-post
+ * guard of its own at all (unlike `PurchaseOrder`'s `PurchaseOrderNotDraft`),
+ * so an idempotency key is the *only* protection against a retried
+ * request posting the same pay run twice.
  */
 fun Route.payrollRoutes(
     postPayRunUseCase: PostPayRunUseCase,
@@ -68,7 +83,8 @@ fun Route.payrollRoutes(
     leaveAccrualRepository: LeaveAccrualRepository,
     recordPayRunUseCase: RecordPayRunUseCase,
     getOrCreateLeaveAccrualUseCase: GetOrCreateLeaveAccrualUseCase,
-    companyRepository: CompanyRepository
+    companyRepository: CompanyRepository,
+    idempotencyKeyRepository: IdempotencyKeyRepository
 ) {
     post("/pay-runs/{payRunId}/post") {
         val payRunIdRaw = call.parameters["payRunId"]
@@ -92,28 +108,32 @@ fun Route.payrollRoutes(
         val salariesAccountUuid = call.parseUuid(request.salariesExpenseAccountId) ?: return@post
         val cashAccountUuid = call.parseUuid(request.cashAccountId) ?: return@post
 
-        val result = postPayRunUseCase.execute(
-            PostPayRunUseCase.Request(
-                PayRunId(payRunUuid), PeriodId(periodUuid),
-                AccountId(wagesAccountUuid), AccountId(salariesAccountUuid), AccountId(cashAccountUuid)
-            )
-        )
-
-        when (result) {
-            is PostPayRunResult.Success ->
-                call.respond(
-                    HttpStatusCode.OK,
-                    PostPayRunResponseDto(result.payRun.id.value.toString(), result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+        call.respondIdempotently(
+            idempotencyKeyRepository, tenantId, "post-pay-run", Json.encodeToString(PostPayRunRequestDto.serializer(), request)
+        ) {
+            val result = postPayRunUseCase.execute(
+                PostPayRunUseCase.Request(
+                    PayRunId(payRunUuid), PeriodId(periodUuid),
+                    AccountId(wagesAccountUuid), AccountId(salariesAccountUuid), AccountId(cashAccountUuid)
                 )
-            is PostPayRunResult.PayRunNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("pay_run_not_found"))
-            is PostPayRunResult.PeriodNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("period_not_found"))
-            is PostPayRunResult.PeriodNotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("period_not_open"))
-            is PostPayRunResult.WagesExpenseAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("wages_expense_account_not_found", result.accountId.value.toString()))
-            is PostPayRunResult.SalariesExpenseAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("salaries_expense_account_not_found", result.accountId.value.toString()))
-            is PostPayRunResult.CashAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("cash_account_not_found", result.accountId.value.toString()))
+            )
+
+            when (result) {
+                is PostPayRunResult.Success ->
+                    HttpStatusCode.OK to Json.encodeToString(
+                        PostPayRunResponseDto.serializer(),
+                        PostPayRunResponseDto(result.payRun.id.value.toString(), result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+                    )
+                is PostPayRunResult.PayRunNotFound -> HttpStatusCode.NotFound to errorResponseJson("pay_run_not_found")
+                is PostPayRunResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
+                is PostPayRunResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
+                is PostPayRunResult.WagesExpenseAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("wages_expense_account_not_found", result.accountId.value.toString())
+                is PostPayRunResult.SalariesExpenseAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("salaries_expense_account_not_found", result.accountId.value.toString())
+                is PostPayRunResult.CashAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("cash_account_not_found", result.accountId.value.toString())
+            }
         }
     }
 
@@ -130,25 +150,34 @@ fun Route.payrollRoutes(
         val liabilityAccountUuid = call.parseUuid(request.accruedLeaveLiabilityAccountId) ?: return@post
         val date = call.parseLocalDate(request.date) ?: return@post
 
-        val result = remeasureLeaveAccrualUseCase.execute(
-            RemeasureLeaveAccrualUseCase.Request(
-                leaveAccrual.id, targetAmount, AccountId(leaveExpenseAccountUuid), AccountId(liabilityAccountUuid), PeriodId(periodUuid), date
+        call.respondIdempotently(
+            idempotencyKeyRepository, tenantId, "remeasure-leave-accrual", Json.encodeToString(RemeasureLeaveAccrualRequestDto.serializer(), request)
+        ) {
+            val result = remeasureLeaveAccrualUseCase.execute(
+                RemeasureLeaveAccrualUseCase.Request(
+                    leaveAccrual.id, targetAmount, AccountId(leaveExpenseAccountUuid), AccountId(liabilityAccountUuid), PeriodId(periodUuid), date
+                )
             )
-        )
 
-        when (result) {
-            is RemeasureLeaveAccrualResult.Success ->
-                call.respond(HttpStatusCode.OK, result.leaveAccrual.toDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name))
-            is RemeasureLeaveAccrualResult.NoChangeNeeded ->
-                call.respond(HttpStatusCode.OK, leaveAccrual.toDto(journalEntryId = null, journalEntryStatus = null))
-            is RemeasureLeaveAccrualResult.LeaveAccrualNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("leave_accrual_not_found"))
-            is RemeasureLeaveAccrualResult.PeriodNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("period_not_found"))
-            is RemeasureLeaveAccrualResult.PeriodNotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("period_not_open"))
-            is RemeasureLeaveAccrualResult.LeaveExpenseAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("leave_expense_account_not_found", result.accountId.value.toString()))
-            is RemeasureLeaveAccrualResult.AccruedLeaveLiabilityAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("accrued_leave_liability_account_not_found", result.accountId.value.toString()))
-            is RemeasureLeaveAccrualResult.CurrencyMismatch -> call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("currency_mismatch"))
+            when (result) {
+                is RemeasureLeaveAccrualResult.Success ->
+                    HttpStatusCode.OK to Json.encodeToString(
+                        LeaveAccrualResponseDto.serializer(),
+                        result.leaveAccrual.toDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+                    )
+                is RemeasureLeaveAccrualResult.NoChangeNeeded ->
+                    HttpStatusCode.OK to Json.encodeToString(
+                        LeaveAccrualResponseDto.serializer(), leaveAccrual.toDto(journalEntryId = null, journalEntryStatus = null)
+                    )
+                is RemeasureLeaveAccrualResult.LeaveAccrualNotFound -> HttpStatusCode.NotFound to errorResponseJson("leave_accrual_not_found")
+                is RemeasureLeaveAccrualResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
+                is RemeasureLeaveAccrualResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
+                is RemeasureLeaveAccrualResult.LeaveExpenseAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("leave_expense_account_not_found", result.accountId.value.toString())
+                is RemeasureLeaveAccrualResult.AccruedLeaveLiabilityAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("accrued_leave_liability_account_not_found", result.accountId.value.toString())
+                is RemeasureLeaveAccrualResult.CurrencyMismatch -> HttpStatusCode.BadRequest to errorResponseJson("currency_mismatch")
+            }
         }
     }
 
@@ -165,25 +194,32 @@ fun Route.payrollRoutes(
         val liabilityAccountUuid = call.parseUuid(request.accruedLeaveLiabilityAccountId) ?: return@post
         val date = call.parseLocalDate(request.date) ?: return@post
 
-        val result = utilizeLeaveAccrualUseCase.execute(
-            UtilizeLeaveAccrualUseCase.Request(
-                leaveAccrual.id, amount, AccountId(cashAccountUuid), AccountId(liabilityAccountUuid), PeriodId(periodUuid), date
+        call.respondIdempotently(
+            idempotencyKeyRepository, tenantId, "utilize-leave-accrual", Json.encodeToString(UtilizeLeaveAccrualRequestDto.serializer(), request)
+        ) {
+            val result = utilizeLeaveAccrualUseCase.execute(
+                UtilizeLeaveAccrualUseCase.Request(
+                    leaveAccrual.id, amount, AccountId(cashAccountUuid), AccountId(liabilityAccountUuid), PeriodId(periodUuid), date
+                )
             )
-        )
 
-        when (result) {
-            is UtilizeLeaveAccrualResult.Success ->
-                call.respond(HttpStatusCode.OK, result.leaveAccrual.toDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name))
-            is UtilizeLeaveAccrualResult.LeaveAccrualNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("leave_accrual_not_found"))
-            is UtilizeLeaveAccrualResult.PeriodNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("period_not_found"))
-            is UtilizeLeaveAccrualResult.PeriodNotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("period_not_open"))
-            is UtilizeLeaveAccrualResult.CashAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("cash_account_not_found", result.accountId.value.toString()))
-            is UtilizeLeaveAccrualResult.AccruedLeaveLiabilityAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("accrued_leave_liability_account_not_found", result.accountId.value.toString()))
-            is UtilizeLeaveAccrualResult.CurrencyMismatch -> call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("currency_mismatch"))
-            is UtilizeLeaveAccrualResult.NonPositiveAmount -> call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("non_positive_amount"))
-            is UtilizeLeaveAccrualResult.NothingToUtilize -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("nothing_to_utilize"))
+            when (result) {
+                is UtilizeLeaveAccrualResult.Success ->
+                    HttpStatusCode.OK to Json.encodeToString(
+                        LeaveAccrualResponseDto.serializer(),
+                        result.leaveAccrual.toDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+                    )
+                is UtilizeLeaveAccrualResult.LeaveAccrualNotFound -> HttpStatusCode.NotFound to errorResponseJson("leave_accrual_not_found")
+                is UtilizeLeaveAccrualResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
+                is UtilizeLeaveAccrualResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
+                is UtilizeLeaveAccrualResult.CashAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("cash_account_not_found", result.accountId.value.toString())
+                is UtilizeLeaveAccrualResult.AccruedLeaveLiabilityAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("accrued_leave_liability_account_not_found", result.accountId.value.toString())
+                is UtilizeLeaveAccrualResult.CurrencyMismatch -> HttpStatusCode.BadRequest to errorResponseJson("currency_mismatch")
+                is UtilizeLeaveAccrualResult.NonPositiveAmount -> HttpStatusCode.BadRequest to errorResponseJson("non_positive_amount")
+                is UtilizeLeaveAccrualResult.NothingToUtilize -> HttpStatusCode.Conflict to errorResponseJson("nothing_to_utilize")
+            }
         }
     }
 
@@ -202,28 +238,32 @@ fun Route.payrollRoutes(
         val cashAccountUuid = call.parseUuid(request.cashAccountId) ?: return@post
         val date = call.parseLocalDate(request.date) ?: return@post
 
-        val result = recordPayRunUseCase.execute(
-            RecordPayRunUseCase.Request(
-                CompanyId(companyUuid), PeriodId(periodUuid), date, totalWages, totalSalaries,
-                AccountId(wagesAccountUuid), AccountId(salariesAccountUuid), AccountId(cashAccountUuid)
-            )
-        )
-
-        when (result) {
-            is RecordPayRunResult.Success ->
-                call.respond(
-                    HttpStatusCode.OK,
-                    RecordPayRunResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+        call.respondIdempotently(
+            idempotencyKeyRepository, tenantId, "record-pay-run", Json.encodeToString(RecordPayRunRequestDto.serializer(), request)
+        ) {
+            val result = recordPayRunUseCase.execute(
+                RecordPayRunUseCase.Request(
+                    CompanyId(companyUuid), PeriodId(periodUuid), date, totalWages, totalSalaries,
+                    AccountId(wagesAccountUuid), AccountId(salariesAccountUuid), AccountId(cashAccountUuid)
                 )
-            is RecordPayRunResult.InvalidAmounts -> call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_amounts"))
-            is RecordPayRunResult.PeriodNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("period_not_found"))
-            is RecordPayRunResult.PeriodNotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("period_not_open"))
-            is RecordPayRunResult.WagesExpenseAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("wages_expense_account_not_found", result.accountId.value.toString()))
-            is RecordPayRunResult.SalariesExpenseAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("salaries_expense_account_not_found", result.accountId.value.toString()))
-            is RecordPayRunResult.CashAccountNotFound ->
-                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("cash_account_not_found", result.accountId.value.toString()))
+            )
+
+            when (result) {
+                is RecordPayRunResult.Success ->
+                    HttpStatusCode.OK to Json.encodeToString(
+                        RecordPayRunResponseDto.serializer(),
+                        RecordPayRunResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+                    )
+                is RecordPayRunResult.InvalidAmounts -> HttpStatusCode.BadRequest to errorResponseJson("invalid_amounts")
+                is RecordPayRunResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
+                is RecordPayRunResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
+                is RecordPayRunResult.WagesExpenseAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("wages_expense_account_not_found", result.accountId.value.toString())
+                is RecordPayRunResult.SalariesExpenseAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("salaries_expense_account_not_found", result.accountId.value.toString())
+                is RecordPayRunResult.CashAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("cash_account_not_found", result.accountId.value.toString())
+            }
         }
     }
 
