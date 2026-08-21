@@ -266,3 +266,55 @@ data class RecordVendorPaymentResponseDto(
     val journalEntryId: String,
     val status: String
 )
+
+/**
+ * Wire shapes for `RecordInventoryReceiptUseCase`/`RecordInventoryIssueUseCase`
+ * (Option B resolution, `docs/Ecosystem_Extraction_DDD_Design.md` Section
+ * 1.3) - Inventory's mirror of `RecordSaleRequestDto`/`RecordCollectionRequestDto`
+ * above, for the separate, not-built-here `fish-inventory-management`
+ * (IM) system, which now owns the whole IAS 2 costing engine. Same
+ * reasoning: `companyId` is included directly since neither use case
+ * has an owning aggregate in this repo to resolve tenant scoping from
+ * - unlike `PostInventoryReceiptRequestDto`/`PostInventoryIssueRequestDto`
+ * above, which still resolve tenant scoping via a `StockItem` lookup.
+ * `committedCost`/`committedCostCurrency` replace `quantityReceived`/
+ * `costReceived` (per-unit) - IM has already computed the total; this
+ * repo only records it.
+ */
+@Serializable
+data class RecordInventoryReceiptRequestDto(
+    val companyId: String,
+    val periodId: String,
+    val date: String,
+    val inventoryAssetAccountId: String,
+    val contraAccountId: String,
+    val committedCost: String,
+    val committedCostCurrency: String,
+    val itemId: String,
+    val description: String? = null
+)
+
+@Serializable
+data class RecordInventoryReceiptResponseDto(
+    val journalEntryId: String,
+    val status: String
+)
+
+@Serializable
+data class RecordInventoryIssueRequestDto(
+    val companyId: String,
+    val periodId: String,
+    val date: String,
+    val contraAccountId: String,
+    val inventoryAssetAccountId: String,
+    val committedCost: String,
+    val committedCostCurrency: String,
+    val itemId: String,
+    val description: String? = null
+)
+
+@Serializable
+data class RecordInventoryIssueResponseDto(
+    val journalEntryId: String,
+    val status: String
+)

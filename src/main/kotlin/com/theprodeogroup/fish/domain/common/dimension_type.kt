@@ -58,6 +58,18 @@ enum class DimensionType {
     VENDOR,
 
     /**
+     * Inventory item/SKU identifier - tagged on the Inventory Asset
+     * line by `RecordInventoryReceiptUseCase`/`RecordInventoryIssueUseCase`
+     * with a caller-supplied, non-authoritative item reference (Option
+     * B, `docs/Ecosystem_Extraction_DDD_Design.md` Section 1.3: `IM/`
+     * owns item identity, the GL Engine only tags it). Same "dimension
+     * tagged on a specific control line to make Ledger-derived
+     * reporting possible without retrofitting an aggregate" reasoning
+     * as CUSTOMER/VENDOR.
+     */
+    ITEM,
+
+    /**
      * IAS 7 cash-flow activity classification, tagged on the cash/bank
      * side of a JournalLine (not the counter-account side). Value is a
      * `CashFlowActivity` enum name (`domain.ledger`) - kept in `common`

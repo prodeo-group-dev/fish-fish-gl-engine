@@ -8,6 +8,8 @@ import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
+import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
+import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
 import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
 import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
@@ -114,6 +116,8 @@ fun Application.productionModule() {
     val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
+    val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
+    val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
 
     fishModule(
         verifier = buildJwksVerifier(),
@@ -137,7 +141,9 @@ fun Application.productionModule() {
         recordSaleUseCase = recordSaleUseCase,
         recordCollectionUseCase = recordCollectionUseCase,
         recordVendorObligationUseCase = recordVendorObligationUseCase,
-        recordVendorPaymentUseCase = recordVendorPaymentUseCase
+        recordVendorPaymentUseCase = recordVendorPaymentUseCase,
+        recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,
+        recordInventoryIssueUseCase = recordInventoryIssueUseCase
     )
 }
 
@@ -172,7 +178,9 @@ fun Application.fishModule(
     recordSaleUseCase: RecordSaleUseCase,
     recordCollectionUseCase: RecordCollectionUseCase,
     recordVendorObligationUseCase: RecordVendorObligationUseCase,
-    recordVendorPaymentUseCase: RecordVendorPaymentUseCase
+    recordVendorPaymentUseCase: RecordVendorPaymentUseCase,
+    recordInventoryReceiptUseCase: RecordInventoryReceiptUseCase,
+    recordInventoryIssueUseCase: RecordInventoryIssueUseCase
 ) {
     install(ContentNegotiation) { json() }
     install(CallLogging) { level = Level.INFO }
@@ -197,6 +205,7 @@ fun Application.fishModule(
             salesOrderRoutes(postSalesOrderUseCase, salesOrderRepository, companyRepository)
             recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository)
             recordVendorObligationAndPaymentRoutes(recordVendorObligationUseCase, recordVendorPaymentUseCase, companyRepository)
+            recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository)
         }
     }
 }

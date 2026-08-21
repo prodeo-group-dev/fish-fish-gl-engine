@@ -20,6 +20,8 @@ import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
+import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
+import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
 import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
 import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
@@ -99,6 +101,8 @@ class PurchaseOrderRoutesTest {
         val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
 
         val tenantId = TenantId.generate()
         val user = User.create(TEST_EMAIL, "Test Accountant").also { userRepository.save(it) }
@@ -139,7 +143,9 @@ class PurchaseOrderRoutesTest {
                 recordSaleUseCase = recordSaleUseCase,
                 recordCollectionUseCase = recordCollectionUseCase,
                 recordVendorObligationUseCase = recordVendorObligationUseCase,
-                recordVendorPaymentUseCase = recordVendorPaymentUseCase
+                recordVendorPaymentUseCase = recordVendorPaymentUseCase,
+                recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,
+                recordInventoryIssueUseCase = recordInventoryIssueUseCase
             )
         }
     }
