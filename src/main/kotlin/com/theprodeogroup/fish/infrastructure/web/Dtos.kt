@@ -219,3 +219,35 @@ data class RecordCollectionResponseDto(
     val journalEntryId: String,
     val status: String
 )
+
+/**
+ * Wire shapes for `RecordPayRunUseCase`/`GetOrCreateLeaveAccrualUseCase`
+ * - the HR/Payroll counterpart to `RecordSaleUseCase`/`RecordCollectionUseCase`
+ * above, same "no owning aggregate here, so `companyId` travels in the
+ * request body" reasoning.
+ */
+@Serializable
+data class RecordPayRunRequestDto(
+    val companyId: String,
+    val periodId: String,
+    val date: String,
+    val totalWages: String,
+    val totalSalaries: String,
+    val currency: String,
+    val wagesExpenseAccountId: String,
+    val salariesExpenseAccountId: String,
+    val cashAccountId: String
+)
+
+@Serializable
+data class RecordPayRunResponseDto(
+    val journalEntryId: String,
+    val status: String
+)
+
+@Serializable
+data class GetOrCreateLeaveAccrualRequestDto(
+    val companyId: String,
+    val employeeId: String,
+    val currency: String
+)

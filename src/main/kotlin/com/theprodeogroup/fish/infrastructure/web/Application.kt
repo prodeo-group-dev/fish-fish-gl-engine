@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.infrastructure.web
 
 import com.auth0.jwt.interfaces.JWTVerifier
+import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
 import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
@@ -8,6 +9,7 @@ import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
+import com.theprodeogroup.fish.application.RecordPayRunUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
@@ -110,6 +112,8 @@ fun Application.productionModule() {
     )
     val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
+    val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
+    val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
 
     fishModule(
         verifier = buildJwksVerifier(),
@@ -131,7 +135,9 @@ fun Application.productionModule() {
         salesOrderRepository = salesOrderRepository,
         postSalesOrderUseCase = postSalesOrderUseCase,
         recordSaleUseCase = recordSaleUseCase,
-        recordCollectionUseCase = recordCollectionUseCase
+        recordCollectionUseCase = recordCollectionUseCase,
+        recordPayRunUseCase = recordPayRunUseCase,
+        getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase
     )
 }
 
@@ -164,7 +170,9 @@ fun Application.fishModule(
     salesOrderRepository: SalesOrderRepository,
     postSalesOrderUseCase: PostSalesOrderUseCase,
     recordSaleUseCase: RecordSaleUseCase,
-    recordCollectionUseCase: RecordCollectionUseCase
+    recordCollectionUseCase: RecordCollectionUseCase,
+    recordPayRunUseCase: RecordPayRunUseCase,
+    getOrCreateLeaveAccrualUseCase: GetOrCreateLeaveAccrualUseCase
 ) {
     install(ContentNegotiation) { json() }
     install(CallLogging) { level = Level.INFO }
@@ -183,6 +191,7 @@ fun Application.fishModule(
             payrollRoutes(
                 postPayRunUseCase, payRunRepository,
                 remeasureLeaveAccrualUseCase, utilizeLeaveAccrualUseCase, leaveAccrualRepository,
+                recordPayRunUseCase, getOrCreateLeaveAccrualUseCase,
                 companyRepository
             )
             inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, stockItemRepository, companyRepository)
