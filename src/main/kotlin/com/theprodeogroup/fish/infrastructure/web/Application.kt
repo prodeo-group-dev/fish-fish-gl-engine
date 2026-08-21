@@ -7,6 +7,8 @@ import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
+import com.theprodeogroup.fish.application.RecordCollectionUseCase
+import com.theprodeogroup.fish.application.RecordSaleUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.inventory.StockItemRepository
@@ -106,6 +108,8 @@ fun Application.productionModule() {
     val postSalesOrderUseCase = PostSalesOrderUseCase(
         salesOrderRepository, customerRepository, stockItemRepository, periodRepository, accountRepository, journalEntryRepository
     )
+    val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
+    val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
 
     fishModule(
         verifier = buildJwksVerifier(),
@@ -125,7 +129,9 @@ fun Application.productionModule() {
         postInventoryReceiptUseCase = postInventoryReceiptUseCase,
         postInventoryIssueUseCase = postInventoryIssueUseCase,
         salesOrderRepository = salesOrderRepository,
-        postSalesOrderUseCase = postSalesOrderUseCase
+        postSalesOrderUseCase = postSalesOrderUseCase,
+        recordSaleUseCase = recordSaleUseCase,
+        recordCollectionUseCase = recordCollectionUseCase
     )
 }
 
@@ -156,7 +162,9 @@ fun Application.fishModule(
     postInventoryReceiptUseCase: PostInventoryReceiptUseCase,
     postInventoryIssueUseCase: PostInventoryIssueUseCase,
     salesOrderRepository: SalesOrderRepository,
-    postSalesOrderUseCase: PostSalesOrderUseCase
+    postSalesOrderUseCase: PostSalesOrderUseCase,
+    recordSaleUseCase: RecordSaleUseCase,
+    recordCollectionUseCase: RecordCollectionUseCase
 ) {
     install(ContentNegotiation) { json() }
     install(CallLogging) { level = Level.INFO }
@@ -179,6 +187,7 @@ fun Application.fishModule(
             )
             inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, stockItemRepository, companyRepository)
             salesOrderRoutes(postSalesOrderUseCase, salesOrderRepository, companyRepository)
+            recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository)
         }
     }
 }

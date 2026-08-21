@@ -171,3 +171,51 @@ data class PostSalesOrderResponseDto(
     val status: String,
     val journalEntryId: String
 )
+
+/**
+ * Wire shapes for `RecordSaleUseCase`/`RecordCollectionUseCase`
+ * (docs/Sales_Order_Processing_DDD_Design.md Section 0) - the two thin
+ * posting interfaces the separate, not-built-here `fish-sales-order-
+ * processing` (SOP) system calls into. Unlike every other request DTO
+ * in this file, [RecordSaleRequestDto.companyId]/
+ * [RecordCollectionRequestDto.companyId] are included directly -
+ * neither use case has an owning aggregate in this repo to resolve
+ * tenant scoping from.
+ */
+@Serializable
+data class RecordSaleRequestDto(
+    val companyId: String,
+    val periodId: String,
+    val date: String,
+    val arControlAccountId: String,
+    val revenueAccountId: String,
+    val amount: String,
+    val currency: String,
+    val customerId: String,
+    val description: String? = null
+)
+
+@Serializable
+data class RecordSaleResponseDto(
+    val journalEntryId: String,
+    val status: String
+)
+
+@Serializable
+data class RecordCollectionRequestDto(
+    val companyId: String,
+    val periodId: String,
+    val date: String,
+    val settlementAccountId: String,
+    val arControlAccountId: String,
+    val amount: String,
+    val currency: String,
+    val customerId: String,
+    val description: String? = null
+)
+
+@Serializable
+data class RecordCollectionResponseDto(
+    val journalEntryId: String,
+    val status: String
+)
