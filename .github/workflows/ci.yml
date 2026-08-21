@@ -4,6 +4,16 @@ name: CI
 # AWS-readiness assessment ("GitHub Actions is a real, standing gap").
 # Runs on every PR and on every push to master, so a broken build is
 # caught before merge, not discovered later.
+#
+# Every checkout below passes `submodules: true` - the fish-common
+# submodule (Money/ValidationResult, wired into build.gradle.kts's
+# main sourceSet) is otherwise left empty by actions/checkout@v4's
+# default behavior, which doesn't fetch submodule content unless asked.
+# Confirmed the hard way: every commit since the fish-common migration
+# landed CI red (dozens of "Unresolved reference" compile errors) with
+# no one noticing, since nothing was watching CI status directly -
+# found and fixed in a production-readiness review, not caught at
+# merge time.
 on:
   pull_request:
   push:
@@ -15,6 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -44,6 +56,8 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -66,5 +80,7 @@ jobs:
     needs: test
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Build the container image (not pushed anywhere - just confirms the Dockerfile is valid)
         run: docker build -t fish-gl-engine:ci .
