@@ -26,14 +26,14 @@ class ExposedTaxRuleRepository : TaxRuleRepository {
             TaxRulesTable.update({ TaxRulesTable.id eq taxRule.id.value }) { statement ->
                 statement[jurisdiction] = taxRule.jurisdiction
                 statement[taxType] = taxRule.taxType.name
-                statement[rate] = taxRule.rate
+                statement[rateStructure] = encodeRateStructure(taxRule.rateStructure)
             }
         } else {
             TaxRulesTable.insert { statement ->
                 statement[id] = taxRule.id.value
                 statement[jurisdiction] = taxRule.jurisdiction
                 statement[taxType] = taxRule.taxType.name
-                statement[rate] = taxRule.rate
+                statement[rateStructure] = encodeRateStructure(taxRule.rateStructure)
             }
         }
         Unit
@@ -55,7 +55,7 @@ class ExposedTaxRuleRepository : TaxRuleRepository {
     private fun ResultRow.toTaxRule(): TaxRule = TaxRule.create(
         jurisdiction = this[TaxRulesTable.jurisdiction],
         taxType = TaxType.valueOf(this[TaxRulesTable.taxType]),
-        rate = this[TaxRulesTable.rate],
+        rateStructure = decodeRateStructure(this[TaxRulesTable.rateStructure]),
         id = TaxRuleId(this[TaxRulesTable.id])
     )
 }

@@ -109,6 +109,49 @@ class TaxComputationTest {
         computation.taxRuleId shouldBe taxRule.id
     }
 
+    @Test
+    fun `given a TaxRule with a CategorySplit RateStructure, when computed with a category, then taxDue uses that category's rate`() {
+        val companyId = CompanyId.generate()
+        val periodId = PeriodId.generate()
+        val revenue = account(companyId, AccountType.REVENUE)
+        val entry = postedEntry(
+            periodId,
+            JournalLine(AccountId.generate(), Money(BigDecimal("1000.00"), GBP), TransactionSide.DEBIT),
+            JournalLine(revenue.id, Money(BigDecimal("1000.00"), GBP), TransactionSide.CREDIT)
+        )
+        val irishCorporationTax = RateStructure.CategorySplit(
+            mapOf("trading" to BigDecimal("0.125"), "passive" to BigDecimal("0.25"))
+        )
+        val taxRule = TaxRule.create("Ireland", TaxType.CORPORATE_INCOME_TAX, irishCorporationTax)
+
+        val computation = TaxComputation.of(
+            taxRule, listOf(revenue), listOf(entry), periodId, GBP, TaxComputationInputs(category = "trading")
+        )
+
+        computation.taxableProfit shouldBe Money(BigDecimal("1000.00"), GBP)
+        computation.taxDue shouldBe Money(BigDecimal("125.00"), GBP)
+    }
+
+    @Test
+    fun `given a TaxRule with a CategorySplit RateStructure, when computed without a category, then it fails`() {
+        val companyId = CompanyId.generate()
+        val periodId = PeriodId.generate()
+        val revenue = account(companyId, AccountType.REVENUE)
+        val entry = postedEntry(
+            periodId,
+            JournalLine(AccountId.generate(), Money(BigDecimal("1000.00"), GBP), TransactionSide.DEBIT),
+            JournalLine(revenue.id, Money(BigDecimal("1000.00"), GBP), TransactionSide.CREDIT)
+        )
+        val irishCorporationTax = RateStructure.CategorySplit(
+            mapOf("trading" to BigDecimal("0.125"), "passive" to BigDecimal("0.25"))
+        )
+        val taxRule = TaxRule.create("Ireland", TaxType.CORPORATE_INCOME_TAX, irishCorporationTax)
+
+        shouldThrow<IllegalArgumentException> {
+            TaxComputation.of(taxRule, listOf(revenue), listOf(entry), periodId, GBP)
+        }
+    }
+
     private fun account(companyId: CompanyId, type: AccountType): Account {
         val classification = if (type.requiresClassification()) AccountClassification.CURRENT else null
         return Account.create(companyId, type, classification, "4000", "Test Account")

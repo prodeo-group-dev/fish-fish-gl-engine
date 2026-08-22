@@ -34,8 +34,16 @@ import java.util.Currency
  * 10.11), this matches the "reference other aggregates by ID" pattern
  * used everywhere else in this codebase. [of] still takes the resolved
  * `TaxRule` as an input (the caller already has it, needed for the
- * actual `.rate` arithmetic) - only what gets *stored* on the result
- * changed shape.
+ * actual rate-structure arithmetic) - only what gets *stored* on the
+ * result changed shape.
+ *
+ * [of]'s optional `inputs` parameter (2026-08-22, [RateStructure]) is
+ * how a caller supplies whatever a non-flat `TaxRule.rateStructure`
+ * needs - a category (Ireland trading/passive, Liberia/Guinea sector,
+ * Côte d'Ivoire residency) or turnover/fixed-assets figures (Nigeria's
+ * small-company exemption). Defaults to [TaxComputationInputs.NONE],
+ * since the original flat-rate shape (and plain tiering) needs none of
+ * it - existing callers are unaffected.
  *
  * [taxDue] is floored at zero - a loss-making Period ([taxableProfit]
  * negative) owes no tax, never a negative liability/refund. No
@@ -64,6 +72,7 @@ class TaxComputation private constructor(
             postedEntries: List<JournalEntry>,
             periodId: PeriodId,
             currency: Currency,
+            inputs: TaxComputationInputs = TaxComputationInputs.NONE,
             id: TaxComputationId = TaxComputationId.generate(),
             now: Instant = Instant.now()
         ): TaxComputation {
@@ -75,7 +84,7 @@ class TaxComputation private constructor(
             val taxableProfit = profitAndLoss.netIncome
             val zero = Money(BigDecimal.ZERO, currency)
             val positiveProfit = if (taxableProfit.amount.signum() > 0) taxableProfit else zero
-            val taxDue = positiveProfit * taxRule.rate
+            val taxDue = Money(taxRule.rateStructure.computeTaxDue(positiveProfit.amount, inputs), currency)
 
             return TaxComputation(id, profitAndLoss.companyId, periodId, taxRule.id, taxableProfit, taxDue, now)
         }

@@ -12,7 +12,15 @@ object TaxRulesTable : Table("tax_rules") {
     val id = uuid("id")
     val jurisdiction = varchar("jurisdiction", 100)
     val taxType = varchar("tax_type", 30)
-    val rate = decimal("rate", 19, 4)
+
+    /**
+     * Replaces the original `rate NUMERIC(19,4)` column
+     * (`V9__tax_rule_rate_structure.sql`) - holds a
+     * `RateStructure` encoded via [encodeRateStructure]/
+     * [decodeRateStructure], same hand-written-text convention as
+     * `journal_lines.dimensions`.
+     */
+    val rateStructure = text("rate_structure")
 
     override val primaryKey = PrimaryKey(id)
 }

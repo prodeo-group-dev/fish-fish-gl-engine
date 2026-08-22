@@ -5,9 +5,10 @@ import java.math.BigDecimal
 /**
  * Jurisdiction-specific tax configuration (docs/DDD_Design.md Section
  * 3.4; spec Section 7.12: "stored as data, not hard-coded, since rates
- * and rules change by country and over time"). [rate] is a fraction
- * (`0.30` for 30%), matching `Borrowing.annualInterestRate`'s existing
- * convention.
+ * and rules change by country and over time"). [rateStructure] replaces
+ * a single flat `rate: BigDecimal` (2026-08-22) - see [RateStructure]'s
+ * own KDoc for why a flat rate alone can't represent what real
+ * jurisdictions actually do for Corporate Income Tax.
  *
  * **Global reference data, not scoped to any Tenant/Company** - built
  * with real identity and a repository (docs/DDD_Design.md Section
@@ -37,18 +38,32 @@ class TaxRule private constructor(
     val id: TaxRuleId,
     val jurisdiction: String,
     val taxType: TaxType,
-    val rate: BigDecimal
+    val rateStructure: RateStructure
 ) {
     companion object {
         fun create(
             jurisdiction: String,
             taxType: TaxType,
-            rate: BigDecimal,
+            rateStructure: RateStructure,
             id: TaxRuleId = TaxRuleId.generate()
         ): TaxRule {
             require(jurisdiction.isNotBlank()) { "TaxRule jurisdiction must not be blank" }
-            require(rate.signum() >= 0) { "TaxRule rate cannot be negative" }
-            return TaxRule(id, jurisdiction, taxType, rate)
+            return TaxRule(id, jurisdiction, taxType, rateStructure)
         }
+
+        /**
+         * Convenience for the common flat-rate case - wraps [rate] in
+         * [RateStructure.Flat]. Matches this class's original
+         * single-rate API exactly, so every flat-rate caller (Sierra
+         * Leone, and any other jurisdiction with no tiering/category/
+         * exemption shape) keeps working unchanged; validation of
+         * [rate] itself now lives in [RateStructure.Flat]'s own `init`.
+         */
+        fun create(
+            jurisdiction: String,
+            taxType: TaxType,
+            rate: BigDecimal,
+            id: TaxRuleId = TaxRuleId.generate()
+        ): TaxRule = create(jurisdiction, taxType, RateStructure.Flat(rate), id)
     }
 }

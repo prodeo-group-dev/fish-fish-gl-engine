@@ -6,7 +6,12 @@ import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountType
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.ledger.PeriodId
+import com.theprodeogroup.fish.domain.tax.ExemptionTest
+import com.theprodeogroup.fish.domain.tax.MarginalRelief
+import com.theprodeogroup.fish.domain.tax.RateStructure
 import com.theprodeogroup.fish.domain.tax.TaxComputation
+import com.theprodeogroup.fish.domain.tax.TaxComputationInputs
+import com.theprodeogroup.fish.domain.tax.Tier
 import com.theprodeogroup.fish.domain.tax.TaxRule
 import com.theprodeogroup.fish.domain.tax.TaxType
 import com.theprodeogroup.fish.domain.tenancy.Company
@@ -31,9 +36,9 @@ private val TODAY = LocalDate.of(2026, 8, 20)
  * of the scale a value was written with (`BigDecimal("0.25")` comes back
  * `0.2500`) - the same reason `Money` needed its own scale-independent
  * `equals()`, and the same fix already used in
- * `EcosystemRepositoriesIntegrationTest`. `TaxRule.rate` is a raw
- * `BigDecimal`, not wrapped in `Money`, so it needs this helper instead
- * of `shouldBe`.
+ * `EcosystemRepositoriesIntegrationTest`. `RateStructure.Flat.rate` is a
+ * raw `BigDecimal`, not wrapped in `Money`, so it needs this helper
+ * instead of `shouldBe`.
  */
 private infix fun BigDecimal.shouldEqualNumerically(other: BigDecimal) {
     (this.compareTo(other) == 0) shouldBe true
@@ -76,7 +81,42 @@ class TaxRepositoriesIntegrationTest {
         reloaded.id shouldBe taxRule.id
         reloaded.jurisdiction shouldBe jurisdiction
         reloaded.taxType shouldBe TaxType.CORPORATE_INCOME_TAX
-        reloaded.rate shouldEqualNumerically BigDecimal("0.25")
+        (reloaded.rateStructure as RateStructure.Flat).rate shouldEqualNumerically BigDecimal("0.25")
+    }
+
+    @Test
+    fun `given a TaxRule with a non-flat RateStructure, when saved and reloaded, then the structure round-trips through the encoded TEXT column`() {
+        val jurisdiction = "Nigeria ${UUID.randomUUID()}"
+        val structure = RateStructure.ThresholdExemption(
+            exemptionTest = ExemptionTest(maxTurnover = BigDecimal("100000000"), maxFixedAssets = BigDecimal("250000000")),
+            otherwise = RateStructure.Tiered(
+                tiers = listOf(
+                    Tier(BigDecimal("50000"), BigDecimal("0.19")),
+                    Tier(null, BigDecimal("0.25"))
+                ),
+                marginalRelief = MarginalRelief(BigDecimal("50000"), BigDecimal("250000"), BigDecimal("0.015"))
+            )
+        )
+        val taxRule = TaxRule.create(jurisdiction, TaxType.CORPORATE_INCOME_TAX, structure)
+
+        taxRuleRepository.save(taxRule)
+        val reloaded = requireNotNull(taxRuleRepository.findById(taxRule.id))
+
+        val reloadedStructure = reloaded.rateStructure as RateStructure.ThresholdExemption
+        requireNotNull(reloadedStructure.exemptionTest.maxTurnover) shouldEqualNumerically BigDecimal("100000000")
+        requireNotNull(reloadedStructure.exemptionTest.maxFixedAssets) shouldEqualNumerically BigDecimal("250000000")
+        val otherwise = reloadedStructure.otherwise as RateStructure.Tiered
+        otherwise.tiers.size shouldBe 2
+        requireNotNull(otherwise.tiers[0].upperBound) shouldEqualNumerically BigDecimal("50000")
+        otherwise.tiers[0].rate shouldEqualNumerically BigDecimal("0.19")
+        otherwise.tiers[1].upperBound shouldBe null
+        requireNotNull(otherwise.marginalRelief).fraction shouldEqualNumerically BigDecimal("0.015")
+
+        // and it computes the same as the original, unreloaded structure
+        reloadedStructure.computeTaxDue(
+            BigDecimal("50000000"),
+            TaxComputationInputs(turnover = BigDecimal("150000000"), fixedAssets = BigDecimal("200000000"))
+        ) shouldEqualNumerically BigDecimal("15000000")
     }
 
     @Test

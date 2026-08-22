@@ -5,6 +5,7 @@ import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.tax.TaxComputation
+import com.theprodeogroup.fish.domain.tax.TaxComputationInputs
 import com.theprodeogroup.fish.domain.tax.TaxComputationRepository
 import com.theprodeogroup.fish.domain.tax.TaxRule
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
@@ -63,7 +64,8 @@ class ComputeTaxUseCase(
         val companyId: CompanyId,
         val periodId: PeriodId,
         val taxRule: TaxRule,
-        val currency: Currency
+        val currency: Currency,
+        val inputs: TaxComputationInputs = TaxComputationInputs.NONE
     )
 
     fun execute(request: Request): ComputeTaxResult {
@@ -79,7 +81,9 @@ class ComputeTaxUseCase(
         }
 
         val postedEntries = journalEntryRepository.findAllByPeriod(period.id)
-        val computation = TaxComputation.of(request.taxRule, accounts, postedEntries, period.id, request.currency)
+        val computation = TaxComputation.of(
+            request.taxRule, accounts, postedEntries, period.id, request.currency, request.inputs
+        )
         taxComputationRepository.save(computation)
 
         return ComputeTaxResult.Success(computation)

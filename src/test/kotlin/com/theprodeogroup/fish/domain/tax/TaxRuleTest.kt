@@ -13,7 +13,7 @@ class TaxRuleTest {
 
         rule.jurisdiction shouldBe "Sierra Leone"
         rule.taxType shouldBe TaxType.CORPORATE_INCOME_TAX
-        rule.rate shouldBe BigDecimal("0.30")
+        rule.rateStructure shouldBe RateStructure.Flat(BigDecimal("0.30"))
     }
 
     @Test
@@ -34,6 +34,15 @@ class TaxRuleTest {
     fun `given a zero rate, when created, then it succeeds`() {
         val rule = TaxRule.create("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal.ZERO)
 
-        rule.rate shouldBe BigDecimal.ZERO
+        rule.rateStructure shouldBe RateStructure.Flat(BigDecimal.ZERO)
+    }
+
+    @Test
+    fun `given an explicit non-flat RateStructure, when created, then it holds it directly`() {
+        val structure = RateStructure.CategorySplit(mapOf("trading" to BigDecimal("0.125"), "passive" to BigDecimal("0.25")))
+
+        val rule = TaxRule.create("Ireland", TaxType.CORPORATE_INCOME_TAX, structure)
+
+        rule.rateStructure shouldBe structure
     }
 }
