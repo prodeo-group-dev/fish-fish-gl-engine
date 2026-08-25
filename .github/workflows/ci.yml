@@ -84,3 +84,77 @@ jobs:
           submodules: true
       - name: Build the container image (not pushed anywhere - just confirms the Dockerfile is valid)
         run: docker build -t fish-gl-engine:ci .
+
+  # docs/GL_Production_Readiness_Plan.md Phase 1b (CD pipeline) - closes
+  # the standing gap docker-build's own step comment has flagged since
+  # Section 10.19 ("not pushed anywhere - just confirms the Dockerfile
+  # is valid"). Deploys straight to production on every push to master
+  # that passes test/integration-test/docker-build - no staging
+  # environment exists yet (confirmed 2026-08-22, docs/GL_Production_Readiness_Plan.md's
+  # suggested build order).
+  #
+  # Needs infra/terraform/ applied first, and its outputs set as the
+  # GitHub Actions repository *variables* referenced below (`vars.*`,
+  # not `secrets.*` - none of these are sensitive; the one genuinely
+  # sensitive value, FISH_DB_PASSWORD, lives in AWS Secrets Manager and
+  # never touches GitHub at all) - see infra/terraform/README.md's
+  # step-by-step setup.
+  #
+  # Authenticates via OIDC (`aws-actions/configure-aws-credentials`'s
+  # `role-to-assume`) - no long-lived AWS access keys stored in GitHub
+  # secrets, matching infra/terraform/iam.tf's trust policy, which is
+  # itself scoped to master-branch pushes on this repo only.
+  deploy:
+    name: Deploy to ECS (production)
+    runs-on: ubuntu-latest
+    needs: [test, integration-test, docker-build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push the image
+        env:
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          IMAGE_TAG: sha-${{ github.sha }}
+        run: |
+          docker build -t "$ECR_REPOSITORY:$IMAGE_TAG" -t "$ECR_REPOSITORY:latest" .
+          docker push "$ECR_REPOSITORY:$IMAGE_TAG"
+          docker push "$ECR_REPOSITORY:latest"
+
+      - name: Fetch the current task definition (Terraform owns everything except the container image - see infra/terraform/ecs.tf)
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "${{ vars.ECS_TASK_DEFINITION_FAMILY }}" \
+            --query taskDefinition \
+            > task-definition.json
+
+      - name: Update the task definition with the newly-pushed image
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ vars.ECS_CONTAINER_NAME }}
+          image: ${{ vars.ECR_REPOSITORY }}:sha-${{ github.sha }}
+
+      - name: Deploy the new task definition and wait for the service to stabilize
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          cluster: ${{ vars.ECS_CLUSTER }}
+          service: ${{ vars.ECS_SERVICE }}
+          wait-for-service-stability: true

@@ -8,3 +8,16 @@ out/
 # Local database credentials (docs/DDD_Design.md Section 10) - never committed
 .env
 .env.local
+
+# Terraform (infra/terraform/) - local state holds real resource IDs
+# and, per variables.tf's own caveat, db_password in plaintext (a
+# known Terraform limitation until a remote encrypted backend is
+# configured) - never committed. .terraform/ is just downloaded
+# provider binaries, safe to regenerate via `terraform init`.
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/*.tfvars
+infra/terraform/crash.log
+infra/terraform/override.tf
+infra/terraform/override.tf.json
