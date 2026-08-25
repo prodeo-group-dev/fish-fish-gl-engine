@@ -11,14 +11,21 @@
 # add a `data "aws_iam_openid_connect_provider"` lookup instead, then
 # reference `data.aws_iam_openid_connect_provider.github.arn` in the
 # trust policy below.
+
+# Fetches GitHub's OIDC endpoint's actual TLS certificate at `apply`
+# time and derives the thumbprint from it, rather than hand-typing a
+# value that can go stale (GitHub has rotated this before) or simply
+# be wrong - confirmed the hard way, 2026-08-22: `terraform validate`
+# caught a hand-typed thumbprint here that was only 39 hex characters,
+# not the required 40. This removes that whole class of error.
+data "tls_certificate" "github_actions" {
+  url = "https://token.actions.githubusercontent.com"
+}
+
 resource "aws_iam_openid_connect_provider" "github" {
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
-  # GitHub's well-known OIDC thumbprint as of 2026-08-22 - GitHub has
-  # rotated this before and could again; verify at
-  # https://github.blog before `apply` rather than trusting this is
-  # still current.
-  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea"]
+  thumbprint_list = [data.tls_certificate.github_actions.certificates[0].sha1_fingerprint]
 }
 
 data "aws_iam_policy_document" "github_actions_assume_role" {
@@ -89,8 +96,8 @@ data "aws_iam_policy_document" "github_actions_deploy" {
   }
 
   statement {
-    sid    = "PassTaskRoles"
-    effect = "Allow"
+    sid     = "PassTaskRoles"
+    effect  = "Allow"
     actions = ["iam:PassRole"]
     resources = [
       aws_iam_role.ecs_task_execution.arn,

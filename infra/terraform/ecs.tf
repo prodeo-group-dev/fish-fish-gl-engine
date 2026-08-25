@@ -22,7 +22,7 @@ resource "aws_ecs_task_definition" "this" {
 
   container_definitions = jsonencode([
     {
-      name      = var.project_name
+      name = var.project_name
       # "bootstrap" is a placeholder tag - nothing pushes an image with
       # this exact tag. The first `terraform apply` will create a task
       # definition revision that can't actually start (image not

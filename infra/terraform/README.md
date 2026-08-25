@@ -1,11 +1,15 @@
 # AWS infrastructure for CD
 
 Written 2026-08-22 to close `docs/GL_Production_Readiness_Plan.md`'s Phase 1b
-(CD pipeline). **Genuinely unverified** — no `terraform` CLI and no AWS
-credentials were available in the environment this was written in, so none of
-this has been through `terraform init`/`validate`/`plan`, let alone `apply`.
-Review it like any other unverified code before trusting it with real AWS
-spend.
+(CD pipeline). Originally unverified (no `terraform` CLI available); once
+Terraform was installed the same day, `fmt`/`init`/`validate` were run for
+real and pass — `validate` caught a genuine bug (a hand-typed GitHub OIDC
+thumbprint that was 39 characters, not the required 40; fixed by fetching it
+live via `data "tls_certificate"` instead of hardcoding it at all). A `plan`
+with dummy variable values resolved cleanly up to the point of needing real
+AWS credentials, which weren't available. **Still never run against real
+AWS** — no `plan`/`apply` with real credentials. Review it like any other
+partially-verified code before trusting it with real AWS spend.
 
 Deliberately out of scope: **database/RDS provisioning**. This config expects
 Postgres to already exist somewhere reachable from the AWS account (an RDS

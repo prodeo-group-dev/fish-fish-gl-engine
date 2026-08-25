@@ -1,11 +1,10 @@
 # docs/GL_Production_Readiness_Plan.md Phase 1b (CD pipeline) - this
 # directory is the AWS infrastructure `.github/workflows/ci.yml`'s
-# `deploy` job pushes to. Written 2026-08-22, genuinely unverified:
-# this sandbox has no `terraform` CLI and no AWS credentials, so none
-# of this has been through `terraform init`/`validate`/`plan`, let
-# alone `apply` - same "treat as unverified until run somewhere with
-# real tooling" caveat CLAUDE.md already applies to Cowork-sandbox code.
-# Run `terraform init && terraform validate` yourself before `apply`.
+# `deploy` job pushes to. Written 2026-08-22 with no `terraform` CLI
+# available, so genuinely unverified at the time; `terraform init`/
+# `fmt`/`validate` were run for real the same day once Terraform was
+# installed (see iam.tf's own note on what `validate` caught). `plan`/
+# `apply` still haven't run - no AWS credentials available yet.
 
 terraform {
   required_version = ">= 1.5"
@@ -14,6 +13,10 @@ terraform {
     aws = {
       source  = "hashicorp/aws"
       version = "~> 5.0"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
     }
   }
 
