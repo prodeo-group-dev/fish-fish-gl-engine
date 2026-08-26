@@ -1,13 +1,21 @@
 package com.theprodeogroup.fish.application
 
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.PostingStatus
+import com.theprodeogroup.fish.domain.common.TransactionSide
+import com.theprodeogroup.fish.domain.ledger.AccountType
+import com.theprodeogroup.fish.domain.ledger.ChartOfAccountsTemplate
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantOnboarded
 import com.theprodeogroup.fish.domain.tenancy.TenantSegment
 import com.theprodeogroup.fish.domain.tenancy.TenantStatus
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
+import java.time.LocalDate
 import java.util.Currency
 
 private val GBP: Currency = Currency.getInstance("GBP")
@@ -19,7 +27,12 @@ class OnboardTenantUseCaseTest {
     private val companyRepository = FakeCompanyRepository()
     private val userRepository = FakeUserRepository()
     private val membershipRepository = FakeMembershipRepository()
-    private val useCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository)
+    private val accountRepository = FakeAccountRepository()
+    private val periodRepository = FakePeriodRepository()
+    private val journalEntryRepository = FakeJournalEntryRepository()
+    private val useCase = OnboardTenantUseCase(
+        tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository
+    )
 
     private fun validRequest(segment: TenantSegment = TenantSegment.INTERNAL_VENTURE) = OnboardTenantUseCase.Request(
         tenantName = "Purse",
@@ -87,5 +100,88 @@ class OnboardTenantUseCaseTest {
 
         result.tenant.segment shouldBe TenantSegment.EXTERNAL_B2B
         result.tenant.status shouldBe TenantStatus.ACTIVE
+    }
+
+    @Test
+    fun `given a valid request, when executed, then a Chart of Accounts is seeded for the new Company and persisted`() {
+        val result = useCase.execute(validRequest())
+
+        result.chartOfAccounts.isNotEmpty() shouldBe true
+        result.chartOfAccounts.all { it.companyId == result.company.id } shouldBe true
+        result.chartOfAccounts.map { accountRepository.findById(it.id) } shouldBe result.chartOfAccounts
+    }
+
+    @Test
+    fun `given a NON_PROFIT clientType, when executed, then the seeded Chart of Accounts uses net-assets equity accounts`() {
+        val result = useCase.execute(validRequest())
+
+        result.chartOfAccounts.filter { it.type == AccountType.EQUITY }.map { it.name } shouldBe
+            listOf("Unrestricted Net Assets", "Restricted Net Assets", "Opening Balance Equity")
+    }
+
+    @Test
+    fun `given a start date, when executed, then a one-month opening Period is created open and persisted`() {
+        val start = LocalDate.of(2026, 1, 1)
+        val result = useCase.execute(validRequest(), openingPeriodStartDate = start)
+
+        result.openingPeriod.companyId shouldBe result.company.id
+        result.openingPeriod.startDate shouldBe start
+        result.openingPeriod.endDate shouldBe start.plusMonths(1)
+        result.openingPeriod.allowsPosting() shouldBe true
+        periodRepository.findById(result.openingPeriod.id) shouldBe result.openingPeriod
+    }
+
+    @Test
+    fun `given no opening cash balance, when executed, then no opening-balance JournalEntry is posted`() {
+        val result = useCase.execute(validRequest())
+
+        result.openingBalanceEntry shouldBe null
+        journalEntryRepository.saveCalls shouldBe emptyList()
+    }
+
+    @Test
+    fun `given an opening cash balance of exactly zero, when executed, then no opening-balance JournalEntry is posted`() {
+        val result = useCase.execute(validRequest().copy(openingCashBalance = BigDecimal.ZERO))
+
+        result.openingBalanceEntry shouldBe null
+        journalEntryRepository.saveCalls shouldBe emptyList()
+    }
+
+    @Test
+    fun `given a positive opening cash balance, when executed, then a balanced JournalEntry debits Cash and credits Opening Balance Equity`() {
+        val result = useCase.execute(validRequest().copy(openingCashBalance = BigDecimal("500.00")))
+
+        val entry = requireNotNull(result.openingBalanceEntry)
+        val cashAccount = result.chartOfAccounts.single { it.code == ChartOfAccountsTemplate.CASH_CODE }
+        val openingBalanceEquityAccount = result.chartOfAccounts.single { it.code == ChartOfAccountsTemplate.OPENING_BALANCE_EQUITY_CODE }
+
+        entry.lines.size shouldBe 2
+        val debitLine = entry.lines.single { it.side == TransactionSide.DEBIT }
+        val creditLine = entry.lines.single { it.side == TransactionSide.CREDIT }
+        debitLine.accountId shouldBe cashAccount.id
+        debitLine.amount shouldBe Money(BigDecimal("500.00"), GBP)
+        creditLine.accountId shouldBe openingBalanceEquityAccount.id
+        creditLine.amount shouldBe Money(BigDecimal("500.00"), GBP)
+        entry.status shouldBe PostingStatus.POSTED
+        journalEntryRepository.findById(entry.id) shouldBe entry
+    }
+
+    @Test
+    fun `given a positive opening cash balance, when executed, then both referenced Accounts are marked as having posted activity`() {
+        val result = useCase.execute(validRequest().copy(openingCashBalance = BigDecimal("500.00")))
+
+        val cashAccount = requireNotNull(accountRepository.findById(result.chartOfAccounts.single { it.code == ChartOfAccountsTemplate.CASH_CODE }.id))
+        val openingBalanceEquityAccount = requireNotNull(
+            accountRepository.findById(result.chartOfAccounts.single { it.code == ChartOfAccountsTemplate.OPENING_BALANCE_EQUITY_CODE }.id)
+        )
+        cashAccount.hasPostedActivity shouldBe true
+        openingBalanceEquityAccount.hasPostedActivity shouldBe true
+    }
+
+    @Test
+    fun `given a negative opening cash balance, when executed, then it throws rather than posting an invalid entry`() {
+        shouldThrow<IllegalArgumentException> {
+            useCase.execute(validRequest().copy(openingCashBalance = BigDecimal("-1.00")))
+        }
     }
 }

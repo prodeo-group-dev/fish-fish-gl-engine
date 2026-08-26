@@ -80,8 +80,8 @@ class TenantRoutesTest {
         val creditorRepository = FakeCreditorRepository()
         val stockItemRepository = FakeStockItemRepository()
         val purchaseOrderRepository = FakePurchaseOrderRepository()
-        val onboardTenantUseCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository)
-        val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(tenantRepository, companyRepository)
+        val onboardTenantUseCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository)
+        val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(tenantRepository, companyRepository, accountRepository, periodRepository, journalEntryRepository)
         val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
         val postPurchaseOrderUseCase = PostPurchaseOrderUseCase(
             purchaseOrderRepository, creditorRepository, stockItemRepository, periodRepository, accountRepository, journalEntryRepository

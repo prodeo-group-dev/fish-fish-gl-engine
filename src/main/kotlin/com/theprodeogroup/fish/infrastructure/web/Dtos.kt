@@ -356,6 +356,11 @@ data class GetOrCreateLeaveAccrualRequestDto(
  * field on the request - the admin's identity comes from the verified
  * JWT's `email` claim ([VerifiedIdentity]), never from caller-supplied
  * request data, matching [FISH_JWT_ONBOARDING_AUTH_NAME]'s whole point.
+ *
+ * `openingCashBalance` is optional and nullable, not required - most
+ * users onboarding are expected to have incomplete records, not a full
+ * opening trial balance, so this shouldn't be a mandatory field forcing
+ * a value nobody has yet (see `OnboardTenantUseCase`'s own KDoc).
  */
 @Serializable
 data class OnboardTenantRequestDto(
@@ -366,7 +371,8 @@ data class OnboardTenantRequestDto(
     val clientType: String,
     val jurisdiction: String,
     val companyBaseCurrency: String,
-    val adminName: String
+    val adminName: String,
+    val openingCashBalance: String? = null
 )
 
 @Serializable
@@ -374,7 +380,8 @@ data class OnboardTenantResponseDto(
     val tenantId: String,
     val companyId: String,
     val adminUserId: String,
-    val adminMembershipId: String
+    val adminMembershipId: String,
+    val openingBalanceJournalEntryId: String? = null
 )
 
 @Serializable
@@ -382,11 +389,13 @@ data class AddCompanyToTenantRequestDto(
     val companyName: String,
     val clientType: String,
     val jurisdiction: String,
-    val companyBaseCurrency: String
+    val companyBaseCurrency: String,
+    val openingCashBalance: String? = null
 )
 
 @Serializable
 data class AddCompanyToTenantResponseDto(
     val tenantId: String,
-    val companyId: String
+    val companyId: String,
+    val openingBalanceJournalEntryId: String? = null
 )

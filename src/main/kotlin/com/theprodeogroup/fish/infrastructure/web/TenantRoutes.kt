@@ -78,6 +78,12 @@ fun Route.tenantRoutesOnboarding(onboardTenantUseCase: OnboardTenantUseCase) {
             call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "'${request.companyBaseCurrency}' is not a valid ISO currency code"))
             return@post
         }
+        val openingCashBalance = request.openingCashBalance?.let {
+            it.toBigDecimalOrNull() ?: run {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "'$it' is not a valid openingCashBalance"))
+                return@post
+            }
+        }
 
         val result = onboardTenantUseCase.execute(
             OnboardTenantUseCase.Request(
@@ -89,7 +95,8 @@ fun Route.tenantRoutesOnboarding(onboardTenantUseCase: OnboardTenantUseCase) {
                 jurisdiction = request.jurisdiction,
                 companyBaseCurrency = companyBaseCurrency,
                 adminEmail = identity.email,
-                adminName = request.adminName
+                adminName = request.adminName,
+                openingCashBalance = openingCashBalance
             )
         )
 
@@ -99,7 +106,8 @@ fun Route.tenantRoutesOnboarding(onboardTenantUseCase: OnboardTenantUseCase) {
                 tenantId = result.tenant.id.value.toString(),
                 companyId = result.company.id.value.toString(),
                 adminUserId = result.adminUser.id.value.toString(),
-                adminMembershipId = result.adminMembership.id.value.toString()
+                adminMembershipId = result.adminMembership.id.value.toString(),
+                openingBalanceJournalEntryId = result.openingBalanceEntry?.id?.value?.toString()
             )
         )
     }
@@ -133,6 +141,12 @@ fun Route.tenantRoutesAuthenticated(
             call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "'${request.companyBaseCurrency}' is not a valid ISO currency code"))
             return@post
         }
+        val openingCashBalance = request.openingCashBalance?.let {
+            it.toBigDecimalOrNull() ?: run {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "'$it' is not a valid openingCashBalance"))
+                return@post
+            }
+        }
 
         val result = addCompanyToTenantUseCase.execute(
             AddCompanyToTenantUseCase.Request(
@@ -140,7 +154,8 @@ fun Route.tenantRoutesAuthenticated(
                 companyName = request.companyName,
                 clientType = clientType,
                 jurisdiction = request.jurisdiction,
-                companyBaseCurrency = companyBaseCurrency
+                companyBaseCurrency = companyBaseCurrency,
+                openingCashBalance = openingCashBalance
             )
         )
         if (result == null) {
@@ -152,7 +167,8 @@ fun Route.tenantRoutesAuthenticated(
             HttpStatusCode.Created,
             AddCompanyToTenantResponseDto(
                 tenantId = result.tenant.id.value.toString(),
-                companyId = result.company.id.value.toString()
+                companyId = result.company.id.value.toString(),
+                openingBalanceJournalEntryId = result.openingBalanceEntry?.id?.value?.toString()
             )
         )
     }

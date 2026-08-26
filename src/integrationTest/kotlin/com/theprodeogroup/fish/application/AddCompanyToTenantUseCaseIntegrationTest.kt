@@ -5,14 +5,18 @@ import com.theprodeogroup.fish.domain.tenancy.Tenant
 import com.theprodeogroup.fish.domain.tenancy.TenantSegment
 import com.theprodeogroup.fish.infrastructure.persistence.DatabaseConfig
 import com.theprodeogroup.fish.infrastructure.persistence.DatabaseMigrator
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedAccountRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCompanyRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedJournalEntryRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedMembershipRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedPeriodRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTenantRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedUserRepository
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.util.Currency
 import java.util.UUID
 
@@ -30,7 +34,12 @@ class AddCompanyToTenantUseCaseIntegrationTest {
 
     private val tenantRepository = ExposedTenantRepository()
     private val companyRepository = ExposedCompanyRepository()
-    private val useCase = AddCompanyToTenantUseCase(tenantRepository, companyRepository)
+    private val accountRepository = ExposedAccountRepository()
+    private val periodRepository = ExposedPeriodRepository()
+    private val journalEntryRepository = ExposedJournalEntryRepository()
+    private val useCase = AddCompanyToTenantUseCase(
+        tenantRepository, companyRepository, accountRepository, periodRepository, journalEntryRepository
+    )
 
     @BeforeEach
     fun setUp() {
@@ -48,7 +57,8 @@ class AddCompanyToTenantUseCaseIntegrationTest {
         val tenant = Tenant.onboard("Integration Test Venture ${UUID.randomUUID()}", TenantSegment.INTERNAL_VENTURE, GBP)
         tenantRepository.save(tenant)
         val bootstrap = OnboardTenantUseCase(
-            tenantRepository, companyRepository, ExposedUserRepository(), ExposedMembershipRepository()
+            tenantRepository, companyRepository, ExposedUserRepository(), ExposedMembershipRepository(),
+            accountRepository, periodRepository, journalEntryRepository
         ).execute(
             OnboardTenantUseCase.Request(
                 tenantName = tenant.name, tenantSegment = tenant.segment, tenantBaseCurrency = GBP,
@@ -61,7 +71,8 @@ class AddCompanyToTenantUseCaseIntegrationTest {
         val result = useCase.execute(
             AddCompanyToTenantUseCase.Request(
                 tenantId = activeTenant.id, companyName = "Sierra Leone Entity",
-                clientType = ClientType.NON_PROFIT, jurisdiction = "SL", companyBaseCurrency = Currency.getInstance("SLE")
+                clientType = ClientType.NON_PROFIT, jurisdiction = "SL", companyBaseCurrency = Currency.getInstance("SLE"),
+                openingCashBalance = BigDecimal("750.00")
             )
         )
 
@@ -72,5 +83,22 @@ class AddCompanyToTenantUseCaseIntegrationTest {
         val reloadedCompany = requireNotNull(companyRepository.findById(result.company.id))
         reloadedCompany.tenantId shouldBe activeTenant.id
         reloadedCompany.jurisdiction shouldBe "SL"
+
+        // This Company's own books, not the bootstrap Company's.
+        val reloadedAccounts = accountRepository.findAllByCompany(result.company.id)
+        reloadedAccounts.size shouldBe result.chartOfAccounts.size
+        val bootstrapAccounts = accountRepository.findAllByCompany(bootstrap.company.id)
+        (reloadedAccounts.map { it.id } intersect bootstrapAccounts.map { it.id }.toSet()) shouldBe emptySet()
+
+        val reloadedPeriod = requireNotNull(periodRepository.findById(result.openingPeriod.id))
+        reloadedPeriod.companyId shouldBe result.company.id
+        reloadedPeriod.allowsPosting() shouldBe true
+
+        val entry = requireNotNull(result.openingBalanceEntry)
+        val reloadedEntry = requireNotNull(journalEntryRepository.findById(entry.id))
+        reloadedEntry.lines.size shouldBe 2
+        // `hasPostedActivity` is internal (no friend-module access from this
+        // custom source set) - already covered by the fake-backed unit
+        // tests in `src/test`, which do have that access.
     }
 }

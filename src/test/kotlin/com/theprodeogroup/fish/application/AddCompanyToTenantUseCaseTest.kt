@@ -1,13 +1,18 @@
 package com.theprodeogroup.fish.application
 
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.TransactionSide
+import com.theprodeogroup.fish.domain.ledger.ChartOfAccountsTemplate
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.MembershipId
 import com.theprodeogroup.fish.domain.tenancy.Tenant
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.domain.tenancy.TenantSegment
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.util.Currency
 
 private val GBP: Currency = Currency.getInstance("GBP")
@@ -23,7 +28,12 @@ class AddCompanyToTenantUseCaseTest {
 
     private val tenantRepository = FakeTenantRepository()
     private val companyRepository = FakeCompanyRepository()
-    private val useCase = AddCompanyToTenantUseCase(tenantRepository, companyRepository)
+    private val accountRepository = FakeAccountRepository()
+    private val periodRepository = FakePeriodRepository()
+    private val journalEntryRepository = FakeJournalEntryRepository()
+    private val useCase = AddCompanyToTenantUseCase(
+        tenantRepository, companyRepository, accountRepository, periodRepository, journalEntryRepository
+    )
 
     private fun activeTenant(): Tenant {
         val tenant = Tenant.onboard("Purse", TenantSegment.INTERNAL_VENTURE, GBP)
@@ -74,6 +84,7 @@ class AddCompanyToTenantUseCaseTest {
 
         result shouldBe null
         companyRepository.saveCalls shouldBe emptyList()
+        accountRepository.saveCalls shouldBe emptyList()
     }
 
     @Test
@@ -86,6 +97,7 @@ class AddCompanyToTenantUseCaseTest {
 
         result shouldBe null
         companyRepository.saveCalls shouldBe emptyList()
+        accountRepository.saveCalls shouldBe emptyList()
     }
 
     @Test
@@ -96,5 +108,58 @@ class AddCompanyToTenantUseCaseTest {
         useCase.execute(request(tenant.id))
 
         tenantRepository.saveCalls.size shouldBe 1
+    }
+
+    @Test
+    fun `given a successful addition, then this new Company gets its own Chart of Accounts and open Period - not the first Company's`() {
+        val tenant = activeTenant()
+
+        val result = useCase.execute(request(tenant.id))
+
+        checkNotNull(result)
+        result.chartOfAccounts.isNotEmpty() shouldBe true
+        result.chartOfAccounts.all { it.companyId == result.company.id } shouldBe true
+        result.openingPeriod.companyId shouldBe result.company.id
+        result.openingPeriod.allowsPosting() shouldBe true
+        periodRepository.findAllByCompany(result.company.id) shouldBe listOf(result.openingPeriod)
+    }
+
+    @Test
+    fun `given no opening cash balance, when a Company is added, then no opening-balance JournalEntry is posted`() {
+        val tenant = activeTenant()
+
+        val result = useCase.execute(request(tenant.id))
+
+        checkNotNull(result)
+        result.openingBalanceEntry shouldBe null
+        journalEntryRepository.saveCalls shouldBe emptyList()
+    }
+
+    @Test
+    fun `given a positive opening cash balance, when a Company is added, then a balanced JournalEntry debits Cash and credits Opening Balance Equity`() {
+        val tenant = activeTenant()
+
+        val result = useCase.execute(request(tenant.id).copy(openingCashBalance = BigDecimal("250.00")))
+
+        checkNotNull(result)
+        val entry = requireNotNull(result.openingBalanceEntry)
+        val cashAccount = result.chartOfAccounts.single { it.code == ChartOfAccountsTemplate.CASH_CODE }
+        val openingBalanceEquityAccount = result.chartOfAccounts.single { it.code == ChartOfAccountsTemplate.OPENING_BALANCE_EQUITY_CODE }
+
+        val debitLine = entry.lines.single { it.side == TransactionSide.DEBIT }
+        val creditLine = entry.lines.single { it.side == TransactionSide.CREDIT }
+        debitLine.accountId shouldBe cashAccount.id
+        debitLine.amount shouldBe Money(BigDecimal("250.00"), GBP)
+        creditLine.accountId shouldBe openingBalanceEquityAccount.id
+        journalEntryRepository.findById(entry.id) shouldBe entry
+    }
+
+    @Test
+    fun `given a negative opening cash balance, when a Company is added, then it throws rather than posting an invalid entry`() {
+        val tenant = activeTenant()
+
+        shouldThrow<IllegalArgumentException> {
+            useCase.execute(request(tenant.id).copy(openingCashBalance = BigDecimal("-1.00")))
+        }
     }
 }

@@ -5,14 +5,20 @@ import com.theprodeogroup.fish.domain.tenancy.TenantSegment
 import com.theprodeogroup.fish.domain.tenancy.TenantStatus
 import com.theprodeogroup.fish.infrastructure.persistence.DatabaseConfig
 import com.theprodeogroup.fish.infrastructure.persistence.DatabaseMigrator
+import com.theprodeogroup.common.Money
+import com.theprodeogroup.fish.domain.common.TransactionSide
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedAccountRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCompanyRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedJournalEntryRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedMembershipRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedPeriodRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTenantRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedUserRepository
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.util.Currency
 import java.util.UUID
 
@@ -35,7 +41,12 @@ class OnboardTenantUseCaseIntegrationTest {
     private val companyRepository = ExposedCompanyRepository()
     private val userRepository = ExposedUserRepository()
     private val membershipRepository = ExposedMembershipRepository()
-    private val useCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository)
+    private val accountRepository = ExposedAccountRepository()
+    private val periodRepository = ExposedPeriodRepository()
+    private val journalEntryRepository = ExposedJournalEntryRepository()
+    private val useCase = OnboardTenantUseCase(
+        tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository
+    )
 
     @BeforeEach
     fun setUp() {
@@ -75,5 +86,43 @@ class OnboardTenantUseCaseIntegrationTest {
         val reloadedMembership = requireNotNull(membershipRepository.findById(result.adminMembership.id))
         reloadedMembership.tenantId shouldBe result.tenant.id
         reloadedMembership.userId shouldBe result.adminUser.id
+
+        val reloadedAccounts = accountRepository.findAllByCompany(result.company.id)
+        reloadedAccounts.size shouldBe result.chartOfAccounts.size
+        reloadedAccounts.map { it.code }.toSet() shouldBe result.chartOfAccounts.map { it.code }.toSet()
+
+        val reloadedPeriod = requireNotNull(periodRepository.findById(result.openingPeriod.id))
+        reloadedPeriod.companyId shouldBe result.company.id
+        reloadedPeriod.allowsPosting() shouldBe true
+    }
+
+    @Test
+    fun `given an opening cash balance, when executed against a real database, then the opening-balance JournalEntry round-trips`() {
+        val request = OnboardTenantUseCase.Request(
+            tenantName = "Integration Test Venture ${UUID.randomUUID()}",
+            tenantSegment = TenantSegment.INTERNAL_VENTURE,
+            tenantBaseCurrency = GBP,
+            companyName = "Integration Test Co",
+            clientType = ClientType.NON_PROFIT,
+            jurisdiction = "GB",
+            companyBaseCurrency = GBP,
+            adminEmail = "founder-${UUID.randomUUID()}@example.com",
+            adminName = "Founding Admin",
+            openingCashBalance = BigDecimal("1000.00")
+        )
+
+        val result = useCase.execute(request)
+
+        val entry = requireNotNull(result.openingBalanceEntry)
+        val reloadedEntry = requireNotNull(journalEntryRepository.findById(entry.id))
+        reloadedEntry.lines.size shouldBe 2
+        val debitLine = reloadedEntry.lines.single { it.side == TransactionSide.DEBIT }
+        debitLine.amount shouldBe Money(BigDecimal("1000.00"), GBP)
+
+        // `hasPostedActivity` is internal (no friend-module access from this
+        // custom source set) - already covered thoroughly by the fake-backed
+        // unit tests in `src/test`, which do have that access. This test's
+        // job is the real-database round-trip, not that in-memory flag.
+        accountRepository.findAllByCompany(result.company.id).size shouldBe result.chartOfAccounts.size
     }
 }
