@@ -1,7 +1,7 @@
 # GL — AWS Agent Guidance
 
 Scoped to this repo specifically, not `fish`'s top-level `CLAUDE.md` — `GL/` is the
-only repo in this project that does AWS work (`infra/terraform/`, `.github/workflows/ci.yml`'s
+only repo in this project that does AWS work (`infra/terraform/`, `.github/workflows/pipeline.yml`'s
 `deploy` job). The top-level `CLAUDE.md` stays this project's own narrated
 multi-repo history; this file is generic AWS-agent operational guidance, kept
 separate so the two don't blend.

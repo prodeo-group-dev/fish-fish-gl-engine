@@ -14,6 +14,20 @@ name: CI
 # no one noticing, since nothing was watching CI status directly -
 # found and fixed in a production-readiness review, not caught at
 # merge time.
+#
+# Filed as pipeline.yml, not ci.yml, 2026-08-26: the original ci.yml
+# (workflow id 338476737) stopped producing any runs at all after
+# 2026-08-21 23:43 (run #25) - every checkable config (file validity,
+# repo Actions permissions, branch protection, account status,
+# workflow-permissions defaults) looked completely normal, and neither
+# push nor pull_request events triggered anything on it, confirmed via
+# both the GitHub web UI and API. A brand-new workflow file (originally
+# a throwaway ci2.yml diagnostic) triggered immediately on the same
+# commit/branch, isolating the problem to that specific workflow
+# registration being stuck on GitHub's side, not this repo/config. This
+# file is that new registration, carrying the full original pipeline;
+# ci.yml itself is deleted in the same commit rather than left stuck
+# and unused.
 on:
   pull_request:
   push:

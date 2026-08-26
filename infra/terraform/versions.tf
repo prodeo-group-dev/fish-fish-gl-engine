@@ -1,5 +1,5 @@
 # docs/GL_Production_Readiness_Plan.md Phase 1b (CD pipeline) - this
-# directory is the AWS infrastructure `.github/workflows/ci.yml`'s
+# directory is the AWS infrastructure `.github/workflows/pipeline.yml`'s
 # `deploy` job pushes to. Written 2026-08-22 with no `terraform` CLI
 # available, so genuinely unverified at the time; `terraform init`/
 # `fmt`/`validate` were run for real the same day once Terraform was

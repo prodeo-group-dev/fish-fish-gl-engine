@@ -1,6 +1,6 @@
 # After `terraform apply`, set these as GitHub Actions repository
 # variables (Settings -> Secrets and variables -> Actions -> Variables,
-# NOT Secrets - none of these are sensitive) so ci.yml's `deploy` job
+# NOT Secrets - none of these are sensitive) so pipeline.yml's `deploy` job
 # has somewhere real to deploy to. See infra/terraform/README.md.
 
 output "ecr_repository_url" {
@@ -20,7 +20,7 @@ output "ecs_task_definition_family" {
 }
 
 output "container_name" {
-  description = "The container name inside the task definition - needed by ci.yml's render-task-definition step to know which container to update the image for"
+  description = "The container name inside the task definition - needed by pipeline.yml's render-task-definition step to know which container to update the image for"
   value       = var.project_name
 }
 

@@ -184,7 +184,7 @@ the user itself.
     - `ECS_TASK_DEFINITION_FAMILY` — `fish-gl-engine`
     - `ECS_CONTAINER_NAME` — `fish-gl-engine`
 
-11. **Not yet done — the actual next step.** Push to `master`. `ci.yml`'s
+11. **Not yet done — the actual next step.** Push to `master`. `pipeline.yml`'s
     `deploy` job should then build, push, and deploy a real image — check
     the Actions run and, once it succeeds, `https://capital.theprodeogroup.com`
     for where to actually reach it. The database side is ready (real RDS
@@ -217,4 +217,15 @@ the user itself.
   first apply). Flip both once real data exists — not automatically
   revisited by this document, see `rds.tf`'s own comment.
 
-<!-- CI trigger verification, 2026-08-26: confirming push-to-master actually fires ci.yml after finding gh run list showing stale/cached data all session (verified via direct API: zero recorded runs on any of today's 8 pushes, despite the workflow file being confirmed identical to what's live on GitHub) -->
+<!-- CI trigger investigation, 2026-08-26: ci.yml (workflow id 338476737) stopped
+producing any runs at all after run #25 (2026-08-21 23:43, commit b7d448d) -
+confirmed via the GitHub web UI (the reliable source; gh run list and direct
+gh api calls to the Actions endpoints were both giving stale/wrong data this
+session, a separate red herring). Every checkable config looked normal
+(workflow file valid, repo Actions permissions "allow all", no branch
+protection, account in good standing), and neither a direct push, a web-UI
+commit, nor a fresh pull_request (#37) triggered a run on it. A brand-new
+workflow file triggered immediately on the same commit/branch, isolating the
+problem to that specific workflow's registration being stuck on GitHub's
+side. Fixed by retiring ci.yml and re-registering the same pipeline as
+pipeline.yml - see pipeline.yml's own header comment for the full story. -->

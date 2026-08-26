@@ -85,7 +85,7 @@ variable "db_allocated_storage" {
 }
 
 variable "db_engine_version" {
-  description = "Postgres major version - matches the version this codebase's CI already runs against (ci.yml's integration-test job uses postgres:16)."
+  description = "Postgres major version - matches the version this codebase's CI already runs against (pipeline.yml's integration-test job uses postgres:16)."
   type        = string
   default     = "16"
 }

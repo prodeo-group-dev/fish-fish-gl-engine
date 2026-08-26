@@ -27,8 +27,8 @@ resource "aws_ecs_task_definition" "this" {
       # this exact tag. The first `terraform apply` will create a task
       # definition revision that can't actually start (image not
       # found) - expected, not a bug. The first REAL deploy comes from
-      # CI's own `aws ecs register-task-definition` call (deploy.yml's
-      # job in ci.yml), which creates a new revision with a real image
+      # CI's own `aws ecs register-task-definition` call (the `deploy`
+      # job in pipeline.yml), which creates a new revision with a real image
       # and points the service at it - this resource's own
       # container_definitions is then permanently stale, deliberately
       # (see the lifecycle block below).
