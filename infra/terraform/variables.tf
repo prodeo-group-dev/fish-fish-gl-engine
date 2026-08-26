@@ -116,21 +116,10 @@ variable "db_user" {
 
 # --- Application configuration (JWT) ---------------------------------
 #
-# Unlike DB connection details, JWT settings stay required variables
-# with no defaults - they describe an external IdP this config has no
-# way to provision or guess, unlike the database.
-
-variable "jwt_issuer" {
-  description = "FISH_JWT_ISSUER - the external IdP's issuer URL (Auth.kt)."
-  type        = string
-}
-
-variable "jwt_audience" {
-  description = "FISH_JWT_AUDIENCE"
-  type        = string
-}
-
-variable "jwt_jwks_url" {
-  description = "FISH_JWT_JWKS_URL - the external IdP's JWKS endpoint, fetched in-process (confirmed over an API Gateway authorizer, docs/DDD_Design.md Section 10.19)."
-  type        = string
-}
+# Provisioned by this config as of 2026-08-26 (cognito.tf) - previously
+# deliberately out of scope, same reasoning that applied to db_host/
+# db_password before rds.tf: jwt_issuer/jwt_audience/jwt_jwks_url used
+# to be required variables with no default ("this config has no way to
+# provision or guess an external IdP"). Now that a real external IdP
+# (Amazon Cognito) is provisioned directly, they're computed values -
+# see cognito.tf's own `locals` block - not variables at all anymore.

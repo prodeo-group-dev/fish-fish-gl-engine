@@ -48,9 +48,9 @@ resource "aws_ecs_task_definition" "this" {
         { name = "FISH_DB_NAME", value = var.db_name },
         { name = "FISH_DB_USER", value = var.db_user },
         { name = "FISH_HTTP_PORT", value = tostring(var.container_port) },
-        { name = "FISH_JWT_ISSUER", value = var.jwt_issuer },
-        { name = "FISH_JWT_AUDIENCE", value = var.jwt_audience },
-        { name = "FISH_JWT_JWKS_URL", value = var.jwt_jwks_url }
+        { name = "FISH_JWT_ISSUER", value = local.fish_jwt_issuer },
+        { name = "FISH_JWT_AUDIENCE", value = local.fish_jwt_audience },
+        { name = "FISH_JWT_JWKS_URL", value = local.fish_jwt_jwks_url }
       ]
 
       secrets = [

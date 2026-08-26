@@ -33,6 +33,28 @@ output "alb_dns_name" {
   value       = aws_lb.this.dns_name
 }
 
+# Cognito outputs - the frontend's own config needs the pool/client ids
+# directly (not the derived FISH_JWT_* values below, which are for the
+# backend's verifier); nothing here is sensitive, a Cognito app client
+# id/pool id is not a secret (no client secret exists for this public
+# client - see cognito.tf).
+output "cognito_user_pool_id" {
+  value = aws_cognito_user_pool.this.id
+}
+
+output "cognito_user_pool_client_id" {
+  value = aws_cognito_user_pool_client.web.id
+}
+
+output "fish_jwt_issuer" {
+  description = "Matches what GL's own ECS task definition is already configured with (cognito.tf) - included here so it can be double-checked or reused, not because anything still needs to be set by hand."
+  value       = local.fish_jwt_issuer
+}
+
+output "fish_jwt_jwks_url" {
+  value = local.fish_jwt_jwks_url
+}
+
 # theprodeogroup.com's DNS is external (not Route 53 in this account) -
 # this record has to be added by hand wherever that DNS actually lives,
 # BEFORE the second `terraform apply` that creates the HTTPS listener
