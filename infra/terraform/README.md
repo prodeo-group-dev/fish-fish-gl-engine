@@ -124,22 +124,26 @@ steps below are for reference (e.g. a fresh account) or if starting over.
    `ecs.tf`'s own comment on this). That's expected: the first real deploy
    comes from CI, once step 10 is done and something pushes to `master`.
 
-10. **Not yet done for this instance — the actual next step.** Set these as
-    **GitHub Actions repository variables** (Settings → Secrets
+10. **Done for this instance (2026-08-26), via `gh variable set`.** Set these
+    as **GitHub Actions repository variables** (Settings → Secrets
     and variables → Actions → Variables tab — not Secrets, none of these are
     sensitive) on `prodeo-group-dev/fish-fish-gl-engine`, using
     `terraform output`:
     - `AWS_REGION` — `eu-west-2`
-    - `AWS_DEPLOY_ROLE_ARN` — `terraform output github_actions_deploy_role_arn`
-    - `ECR_REPOSITORY` — `terraform output ecr_repository_url`
-    - `ECS_CLUSTER` — `terraform output ecs_cluster_name`
-    - `ECS_SERVICE` — `terraform output ecs_service_name`
-    - `ECS_TASK_DEFINITION_FAMILY` — `terraform output ecs_task_definition_family`
-    - `ECS_CONTAINER_NAME` — `terraform output container_name`
+    - `AWS_DEPLOY_ROLE_ARN` — `arn:aws:iam::827709230476:role/fish-gl-engine-github-actions-deploy`
+    - `ECR_REPOSITORY` — `827709230476.dkr.ecr.eu-west-2.amazonaws.com/fish-gl-engine`
+    - `ECS_CLUSTER` — `fish-gl-engine-production`
+    - `ECS_SERVICE` — `fish-gl-engine-production`
+    - `ECS_TASK_DEFINITION_FAMILY` — `fish-gl-engine`
+    - `ECS_CONTAINER_NAME` — `fish-gl-engine`
 
-11. Push to `master`. `ci.yml`'s `deploy` job should then build, push, and
-    deploy a real image — check the Actions run and, once it succeeds,
-    `https://capital.theprodeogroup.com` for where to actually reach it.
+11. **Not yet done — the actual next step.** Push to `master`. `ci.yml`'s
+    `deploy` job should then build, push, and deploy a real image — check
+    the Actions run and, once it succeeds, `https://capital.theprodeogroup.com`
+    for where to actually reach it. (Note: the service will still crash-loop
+    against `dummy.example.com`/`dummy_password` until the real DB/JWT
+    variables replace the placeholders `apply` was run with — see the
+    "Known gaps" section: database provisioning is still an open decision.)
 
 ## Known gaps, flagged rather than silently accepted
 
