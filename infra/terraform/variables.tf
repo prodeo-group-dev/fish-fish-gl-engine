@@ -58,20 +58,42 @@ variable "domain_name" {
   default     = "capital.theprodeogroup.com"
 }
 
-# --- Application configuration -------------------------------------
+# --- Database (rds.tf) ----------------------------------------------
 #
-# DB/JWT connection details are deliberately variables with no
-# defaults, not hard-coded - confirmed 2026-08-22: database/RDS
-# provisioning is a separate, bigger decision kept out of this CD
-# build's scope (matching docs/GL_Production_Readiness_Plan.md's own
-# treatment of the "backup/DR docs... deferred until the managed-
-# database choice is made" gap). Point these at wherever Postgres
-# actually ends up running - an RDS instance provisioned separately,
-# or anywhere else reachable from this VPC.
+# Provisioned by this config as of 2026-08-26 - previously deliberately
+# out of scope (db_host/db_password were required external variables,
+# no default, "point these at wherever Postgres actually ends up
+# running"). Closed docs/GL_Production_Readiness_Plan.md's last open
+# item for Phase 1b. db_host and db_password are no longer variables -
+# db_host is now `aws_db_instance.this.address` (computed, not
+# supplied), and db_password is a `random_password` resource (rds.tf),
+# generated once at first apply and never typed into a -var flag or
+# .tfvars file at all - closes a real, if minor, credential-hygiene gap
+# the old required-variable shape had (a password passed on the CLI is
+# visible in shell history and the process list).
 
-variable "db_host" {
-  description = "FISH_DB_HOST - hostname/endpoint of the Postgres instance this service connects to. No default: must be supplied, since nothing in this config provisions a database."
+variable "db_instance_class" {
+  description = "RDS instance class - db.t4g.micro, the smallest/cheapest ARM-based option, matching this config's existing 'smallest reasonable size, not capacity-planned' pattern (see task_cpu/task_memory's own comments)."
   type        = string
+  default     = "db.t4g.micro"
+}
+
+variable "db_allocated_storage" {
+  description = "RDS allocated storage in GB - 20, the minimum RDS allows, matching the same minimal-baseline philosophy."
+  type        = number
+  default     = 20
+}
+
+variable "db_engine_version" {
+  description = "Postgres major version - matches the version this codebase's CI already runs against (ci.yml's integration-test job uses postgres:16)."
+  type        = string
+  default     = "16"
+}
+
+variable "db_backup_retention_days" {
+  description = "RDS automated backup retention. Confirmed 2026-08-26: this AWS account is on RDS Free Tier, which caps backup retention lower than the 7 days originally intended here - reduced to 1 to fit within it (a real account-level constraint discovered at apply time, not a design choice). Revisit once the account moves off Free Tier."
+  type        = number
+  default     = 1
 }
 
 variable "db_port" {
@@ -87,15 +109,16 @@ variable "db_name" {
 }
 
 variable "db_user" {
-  description = "FISH_DB_USER"
+  description = "FISH_DB_USER - the RDS master username. Given a sensible default now that this config provisions the instance itself, rather than requiring the caller to already know a username for a database that doesn't exist yet."
   type        = string
+  default     = "fish_app"
 }
 
-variable "db_password" {
-  description = "FISH_DB_PASSWORD - stored in AWS Secrets Manager (see secrets.tf), never in plain Terraform state as an environment variable. Sensitive: Terraform still writes it into state in plaintext by design (a well-known Terraform limitation) - use a remote encrypted backend before this holds a real production credential long-term."
-  type        = string
-  sensitive   = true
-}
+# --- Application configuration (JWT) ---------------------------------
+#
+# Unlike DB connection details, JWT settings stay required variables
+# with no defaults - they describe an external IdP this config has no
+# way to provision or guess, unlike the database.
 
 variable "jwt_issuer" {
   description = "FISH_JWT_ISSUER - the external IdP's issuer URL (Auth.kt)."

@@ -43,7 +43,7 @@ resource "aws_ecs_task_definition" "this" {
       ]
 
       environment = [
-        { name = "FISH_DB_HOST", value = var.db_host },
+        { name = "FISH_DB_HOST", value = aws_db_instance.this.address },
         { name = "FISH_DB_PORT", value = var.db_port },
         { name = "FISH_DB_NAME", value = var.db_name },
         { name = "FISH_DB_USER", value = var.db_user },
@@ -76,6 +76,21 @@ resource "aws_ecs_task_definition" "this" {
     # "bootstrap" on the next `terraform apply`. Terraform still owns
     # everything else about the task definition (cpu/memory/roles) -
     # only the container spec itself is CI's, from here on.
+    #
+    # Real consequence, not just theoretical: ignore_changes applies to
+    # EVERY source of diff, including deliberate edits to this file -
+    # not just externally-caused drift. When FISH_DB_HOST changed from
+    # var.db_host to aws_db_instance.this.address (rds.tf, 2026-08-26),
+    # a plain `terraform apply` did NOT update the already-applied
+    # revision's environment variables, because this ignore_changes
+    # rule treats container_definitions as always matching state,
+    # regardless of what the config now says. Getting a corrected env
+    # var into a real revision needs `terraform apply
+    # -replace=aws_ecs_task_definition.this` - and even then, the
+    # SERVICE won't switch to that new revision on its own either (see
+    # aws_ecs_service.this's own ignore_changes below) until CI's next
+    # deploy explicitly calls update-service, which it does on every
+    # push to master regardless.
     ignore_changes = [container_definitions]
   }
 
