@@ -50,6 +50,20 @@ resource "aws_security_group" "alb" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # frontend.tf adds a further ingress rule (port 8081, CloudFront-only)
+  # as a separate aws_security_group_rule resource, not an inline block
+  # here - that rule needs its own lifecycle (created/destroyed
+  # independently of this resource, from a different file). Without
+  # ignoring `ingress`, this resource's own refresh sees that
+  # externally-added rule as drift from its two inline blocks above and
+  # tries to remove it on every apply, fighting the other resource for
+  # the same rule - confirmed happening on the frontend.tf apply that
+  # introduced it (2026-08-27). aws_security_group_rule already owns
+  # port 8081 for real, so this is a correctness fix, not caution.
+  lifecycle {
+    ignore_changes = [ingress]
+  }
+
   tags = {
     Project = var.project_name
   }

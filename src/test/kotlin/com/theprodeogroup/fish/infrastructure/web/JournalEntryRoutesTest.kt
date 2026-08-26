@@ -174,7 +174,7 @@ class JournalEntryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/journal-entries") {
+        val response = client.post("/api/journal-entries") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -192,7 +192,7 @@ class JournalEntryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/journal-entries") {
+        val response = client.post("/api/journal-entries") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody("""{"periodId": "${fixture.period.id.value}", "date": "$TODAY", "lines": [], "source": "MANUAL"}""")
@@ -207,7 +207,7 @@ class JournalEntryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/journal-entries") {
+        val response = client.post("/api/journal-entries") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -223,7 +223,7 @@ class JournalEntryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/journal-entries") {
+        val response = client.post("/api/journal-entries") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", TenantId.generate().value.toString())
             contentType(ContentType.Application.Json)
@@ -240,7 +240,7 @@ class JournalEntryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/journal-entries") {
+        val response = client.post("/api/journal-entries") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)

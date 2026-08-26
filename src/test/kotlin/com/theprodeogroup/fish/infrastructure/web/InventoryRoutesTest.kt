@@ -169,7 +169,7 @@ class InventoryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/stock-items/${fixture.stockItem.id.value}/receipts") {
+        val response = client.post("/api/stock-items/${fixture.stockItem.id.value}/receipts") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -192,7 +192,7 @@ class InventoryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/stock-items/${fixture.stockItem.id.value}/receipts") {
+        val response = client.post("/api/stock-items/${fixture.stockItem.id.value}/receipts") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(
@@ -211,7 +211,7 @@ class InventoryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/stock-items/${fixture.stockItem.id.value}/receipts") {
+        val response = client.post("/api/stock-items/${fixture.stockItem.id.value}/receipts") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", TenantId.generate().value.toString())
             contentType(ContentType.Application.Json)
@@ -231,7 +231,7 @@ class InventoryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/stock-items/${java.util.UUID.randomUUID()}/receipts") {
+        val response = client.post("/api/stock-items/${java.util.UUID.randomUUID()}/receipts") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -252,7 +252,7 @@ class InventoryRoutesTest {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
-        client.post("/stock-items/${fixture.stockItem.id.value}/receipts") {
+        client.post("/api/stock-items/${fixture.stockItem.id.value}/receipts") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -263,7 +263,7 @@ class InventoryRoutesTest {
             )
         }
 
-        val response = client.post("/stock-items/${fixture.stockItem.id.value}/issues") {
+        val response = client.post("/api/stock-items/${fixture.stockItem.id.value}/issues") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -285,7 +285,7 @@ class InventoryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/stock-items/${fixture.stockItem.id.value}/issues") {
+        val response = client.post("/api/stock-items/${fixture.stockItem.id.value}/issues") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -305,7 +305,7 @@ class InventoryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/stock-items/${fixture.stockItem.id.value}/issues") {
+        val response = client.post("/api/stock-items/${fixture.stockItem.id.value}/issues") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)

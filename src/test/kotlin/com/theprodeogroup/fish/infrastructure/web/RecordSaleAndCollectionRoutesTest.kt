@@ -167,7 +167,7 @@ class RecordSaleAndCollectionRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales/record-sale") {
+        val response = client.post("/api/sales/record-sale") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -190,7 +190,7 @@ class RecordSaleAndCollectionRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales/record-sale") {
+        val response = client.post("/api/sales/record-sale") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(
@@ -210,7 +210,7 @@ class RecordSaleAndCollectionRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales/record-sale") {
+        val response = client.post("/api/sales/record-sale") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", TenantId.generate().value.toString())
             contentType(ContentType.Application.Json)
@@ -231,7 +231,7 @@ class RecordSaleAndCollectionRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales/record-sale") {
+        val response = client.post("/api/sales/record-sale") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -252,7 +252,7 @@ class RecordSaleAndCollectionRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales/record-sale") {
+        val response = client.post("/api/sales/record-sale") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -273,7 +273,7 @@ class RecordSaleAndCollectionRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales/record-sale") {
+        val response = client.post("/api/sales/record-sale") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -294,7 +294,7 @@ class RecordSaleAndCollectionRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales/record-collection") {
+        val response = client.post("/api/sales/record-collection") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -317,7 +317,7 @@ class RecordSaleAndCollectionRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales/record-collection") {
+        val response = client.post("/api/sales/record-collection") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -345,14 +345,14 @@ class RecordSaleAndCollectionRoutesTest {
             |"revenueAccountId": "${fixture.revenueAccount.id.value}", "amount": "45000.00", "currency": "GBP",
             |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
 
-        val first = client.post("/sales/record-sale") {
+        val first = client.post("/api/sales/record-sale") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             header("Idempotency-Key", idempotencyKey)
             contentType(ContentType.Application.Json)
             setBody(requestBody)
         }
-        val second = client.post("/sales/record-sale") {
+        val second = client.post("/api/sales/record-sale") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             header("Idempotency-Key", idempotencyKey)
@@ -374,7 +374,7 @@ class RecordSaleAndCollectionRoutesTest {
         val client = createClient { install(ContentNegotiation) { json() } }
         val idempotencyKey = UUID.randomUUID().toString()
 
-        client.post("/sales/record-sale") {
+        client.post("/api/sales/record-sale") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             header("Idempotency-Key", idempotencyKey)
@@ -386,7 +386,7 @@ class RecordSaleAndCollectionRoutesTest {
                     |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
-        val response = client.post("/sales/record-sale") {
+        val response = client.post("/api/sales/record-sale") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             header("Idempotency-Key", idempotencyKey)
@@ -414,13 +414,13 @@ class RecordSaleAndCollectionRoutesTest {
             |"revenueAccountId": "${fixture.revenueAccount.id.value}", "amount": "45000.00", "currency": "GBP",
             |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
 
-        client.post("/sales/record-sale") {
+        client.post("/api/sales/record-sale") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(requestBody)
         }
-        client.post("/sales/record-sale") {
+        client.post("/api/sales/record-sale") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)

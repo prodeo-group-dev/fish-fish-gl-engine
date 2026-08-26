@@ -64,6 +64,7 @@ import java.net.URI
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.server.response.respond
+import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import org.slf4j.event.Level
 
@@ -263,25 +264,37 @@ fun Application.fishModule(
     installFishJwtAuth(verifier, userRepository, membershipRepository)
 
     routing {
+        // Unprefixed and outside /api deliberately - the ALB target
+        // group's own health check (infra/terraform/alb.tf) hits this
+        // container directly, bypassing CloudFront entirely, so moving
+        // it would need a coordinated Terraform change for no benefit.
         healthRoutes()
-        fishOnboarding {
-            tenantRoutesOnboarding(onboardTenantUseCase)
-        }
-        fishAuthenticated {
-            tenantRoutesAuthenticated(addCompanyToTenantUseCase, tenantRepository)
-            journalEntryRoutes(postJournalEntryUseCase, periodRepository, companyRepository, idempotencyKeyRepository)
-            purchaseOrderRoutes(postPurchaseOrderUseCase, purchaseOrderRepository, companyRepository, idempotencyKeyRepository)
-            payrollRoutes(
-                postPayRunUseCase, payRunRepository,
-                remeasureLeaveAccrualUseCase, utilizeLeaveAccrualUseCase, leaveAccrualRepository,
-                recordPayRunUseCase, getOrCreateLeaveAccrualUseCase,
-                companyRepository, idempotencyKeyRepository
-            )
-            inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, stockItemRepository, companyRepository, idempotencyKeyRepository)
-            salesOrderRoutes(postSalesOrderUseCase, salesOrderRepository, companyRepository, idempotencyKeyRepository)
-            recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, idempotencyKeyRepository)
-            recordVendorObligationAndPaymentRoutes(recordVendorObligationUseCase, recordVendorPaymentUseCase, companyRepository, idempotencyKeyRepository)
-            recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
+
+        // Everything else lives under /api now that CloudFront fronts
+        // this same domain alongside the WEB SPA's static assets
+        // (infra/terraform/frontend.tf) - CloudFront routes /api/*
+        // here and everything else to S3, so this prefix is load-bearing
+        // infrastructure, not cosmetic.
+        route("/api") {
+            fishOnboarding {
+                tenantRoutesOnboarding(onboardTenantUseCase)
+            }
+            fishAuthenticated {
+                tenantRoutesAuthenticated(addCompanyToTenantUseCase, tenantRepository)
+                journalEntryRoutes(postJournalEntryUseCase, periodRepository, companyRepository, idempotencyKeyRepository)
+                purchaseOrderRoutes(postPurchaseOrderUseCase, purchaseOrderRepository, companyRepository, idempotencyKeyRepository)
+                payrollRoutes(
+                    postPayRunUseCase, payRunRepository,
+                    remeasureLeaveAccrualUseCase, utilizeLeaveAccrualUseCase, leaveAccrualRepository,
+                    recordPayRunUseCase, getOrCreateLeaveAccrualUseCase,
+                    companyRepository, idempotencyKeyRepository
+                )
+                inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, stockItemRepository, companyRepository, idempotencyKeyRepository)
+                salesOrderRoutes(postSalesOrderUseCase, salesOrderRepository, companyRepository, idempotencyKeyRepository)
+                recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, idempotencyKeyRepository)
+                recordVendorObligationAndPaymentRoutes(recordVendorObligationUseCase, recordVendorPaymentUseCase, companyRepository, idempotencyKeyRepository)
+                recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
+            }
         }
     }
 }

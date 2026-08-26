@@ -167,7 +167,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/purchasing/record-obligation") {
+        val response = client.post("/api/purchasing/record-obligation") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -190,7 +190,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/purchasing/record-obligation") {
+        val response = client.post("/api/purchasing/record-obligation") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(
@@ -210,7 +210,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/purchasing/record-obligation") {
+        val response = client.post("/api/purchasing/record-obligation") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", TenantId.generate().value.toString())
             contentType(ContentType.Application.Json)
@@ -231,7 +231,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/purchasing/record-obligation") {
+        val response = client.post("/api/purchasing/record-obligation") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -252,7 +252,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/purchasing/record-obligation") {
+        val response = client.post("/api/purchasing/record-obligation") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -273,7 +273,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/purchasing/record-obligation") {
+        val response = client.post("/api/purchasing/record-obligation") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -294,7 +294,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/purchasing/record-payment") {
+        val response = client.post("/api/purchasing/record-payment") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -317,7 +317,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/purchasing/record-payment") {
+        val response = client.post("/api/purchasing/record-payment") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)

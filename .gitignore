@@ -23,5 +23,6 @@ infra/terraform/*.tfstate
 infra/terraform/*.tfstate.*
 infra/terraform/*.tfvars
 infra/terraform/crash.log
+infra/terraform/tfplan*
 infra/terraform/override.tf
 infra/terraform/override.tf.json

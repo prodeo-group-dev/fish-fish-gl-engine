@@ -176,7 +176,7 @@ class SalesOrderRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales-orders/${fixture.order.id.value}/post") {
+        val response = client.post("/api/sales-orders/${fixture.order.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -194,7 +194,7 @@ class SalesOrderRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales-orders/${fixture.order.id.value}/post") {
+        val response = client.post("/api/sales-orders/${fixture.order.id.value}/post") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody("""{"lineIndex": 0, "periodId": "${fixture.period.id.value}", "arControlAccountId": "${fixture.arControlAccount.id.value}"}""")
@@ -209,7 +209,7 @@ class SalesOrderRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales-orders/${fixture.order.id.value}/post") {
+        val response = client.post("/api/sales-orders/${fixture.order.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", TenantId.generate().value.toString())
             contentType(ContentType.Application.Json)
@@ -225,7 +225,7 @@ class SalesOrderRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales-orders/${java.util.UUID.randomUUID()}/post") {
+        val response = client.post("/api/sales-orders/${java.util.UUID.randomUUID()}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -241,14 +241,14 @@ class SalesOrderRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
         val requestBody = """{"lineIndex": 0, "periodId": "${fixture.period.id.value}", "arControlAccountId": "${fixture.arControlAccount.id.value}"}"""
-        client.post("/sales-orders/${fixture.order.id.value}/post") {
+        client.post("/api/sales-orders/${fixture.order.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(requestBody)
         }
 
-        val response = client.post("/sales-orders/${fixture.order.id.value}/post") {
+        val response = client.post("/api/sales-orders/${fixture.order.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -264,7 +264,7 @@ class SalesOrderRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/sales-orders/${fixture.order.id.value}/post") {
+        val response = client.post("/api/sales-orders/${fixture.order.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)

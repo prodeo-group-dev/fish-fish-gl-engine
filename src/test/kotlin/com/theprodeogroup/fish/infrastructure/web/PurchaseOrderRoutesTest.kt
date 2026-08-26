@@ -174,7 +174,7 @@ class PurchaseOrderRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/purchase-orders/${fixture.order.id.value}/post") {
+        val response = client.post("/api/purchase-orders/${fixture.order.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -192,7 +192,7 @@ class PurchaseOrderRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/purchase-orders/${fixture.order.id.value}/post") {
+        val response = client.post("/api/purchase-orders/${fixture.order.id.value}/post") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody("""{"periodId": "${fixture.period.id.value}", "apControlAccountId": "${fixture.apControlAccount.id.value}"}""")
@@ -207,7 +207,7 @@ class PurchaseOrderRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/purchase-orders/${java.util.UUID.randomUUID()}/post") {
+        val response = client.post("/api/purchase-orders/${java.util.UUID.randomUUID()}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -223,14 +223,14 @@ class PurchaseOrderRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
         val requestBody = """{"periodId": "${fixture.period.id.value}", "apControlAccountId": "${fixture.apControlAccount.id.value}"}"""
-        client.post("/purchase-orders/${fixture.order.id.value}/post") {
+        client.post("/api/purchase-orders/${fixture.order.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(requestBody)
         }
 
-        val response = client.post("/purchase-orders/${fixture.order.id.value}/post") {
+        val response = client.post("/api/purchase-orders/${fixture.order.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)

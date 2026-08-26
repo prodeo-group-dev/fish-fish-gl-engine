@@ -181,7 +181,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/pay-runs/${fixture.payRun.id.value}/post") {
+        val response = client.post("/api/pay-runs/${fixture.payRun.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -202,7 +202,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/pay-runs/${fixture.payRun.id.value}/post") {
+        val response = client.post("/api/pay-runs/${fixture.payRun.id.value}/post") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(
@@ -220,7 +220,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/pay-runs/${java.util.UUID.randomUUID()}/post") {
+        val response = client.post("/api/pay-runs/${java.util.UUID.randomUUID()}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -245,14 +245,14 @@ class PayrollRoutesTest {
         val requestBody = """{"periodId": "${fixture.period.id.value}", "wagesExpenseAccountId": "${fixture.wagesExpenseAccount.id.value}",
             |"salariesExpenseAccountId": "${fixture.salariesExpenseAccount.id.value}", "cashAccountId": "${fixture.cashAccount.id.value}"}""".trimMargin()
 
-        val first = client.post("/pay-runs/${fixture.payRun.id.value}/post") {
+        val first = client.post("/api/pay-runs/${fixture.payRun.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             header("Idempotency-Key", idempotencyKey)
             contentType(ContentType.Application.Json)
             setBody(requestBody)
         }
-        val second = client.post("/pay-runs/${fixture.payRun.id.value}/post") {
+        val second = client.post("/api/pay-runs/${fixture.payRun.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             header("Idempotency-Key", idempotencyKey)
@@ -275,7 +275,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
+        val response = client.post("/api/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -297,7 +297,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
+        val response = client.post("/api/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -318,7 +318,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
+        val response = client.post("/api/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", TenantId.generate().value.toString())
             contentType(ContentType.Application.Json)
@@ -338,7 +338,7 @@ class PayrollRoutesTest {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
-        client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
+        client.post("/api/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -348,7 +348,7 @@ class PayrollRoutesTest {
             )
         }
 
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/utilize") {
+        val response = client.post("/api/leave-accruals/${fixture.leaveAccrual.id.value}/utilize") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -369,7 +369,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/utilize") {
+        val response = client.post("/api/leave-accruals/${fixture.leaveAccrual.id.value}/utilize") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -388,7 +388,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/utilize") {
+        val response = client.post("/api/leave-accruals/${fixture.leaveAccrual.id.value}/utilize") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -409,7 +409,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/payroll/record-pay-run") {
+        val response = client.post("/api/payroll/record-pay-run") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -432,7 +432,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/payroll/record-pay-run") {
+        val response = client.post("/api/payroll/record-pay-run") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(
@@ -452,7 +452,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/payroll/record-pay-run") {
+        val response = client.post("/api/payroll/record-pay-run") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -473,7 +473,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/payroll/record-pay-run") {
+        val response = client.post("/api/payroll/record-pay-run") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", TenantId.generate().value.toString())
             contentType(ContentType.Application.Json)
@@ -497,7 +497,7 @@ class PayrollRoutesTest {
         val client = createClient { install(ContentNegotiation) { json() } }
         val employeeId = EmployeeId.generate()
 
-        val response = client.post("/leave-accruals") {
+        val response = client.post("/api/leave-accruals") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -518,13 +518,13 @@ class PayrollRoutesTest {
         val employeeId = EmployeeId.generate()
         val requestBody = """{"companyId": "${fixture.company.id.value}", "employeeId": "${employeeId.value}", "currency": "GBP"}"""
 
-        val first = client.post("/leave-accruals") {
+        val first = client.post("/api/leave-accruals") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(requestBody)
         }
-        val second = client.post("/leave-accruals") {
+        val second = client.post("/api/leave-accruals") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -542,7 +542,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/leave-accruals") {
+        val response = client.post("/api/leave-accruals") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody("""{"companyId": "${fixture.company.id.value}", "employeeId": "${EmployeeId.generate().value}", "currency": "GBP"}""")

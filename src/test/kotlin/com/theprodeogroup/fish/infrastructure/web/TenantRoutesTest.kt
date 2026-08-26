@@ -182,7 +182,7 @@ class TenantRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/tenants") {
+        val response = client.post("/api/tenants") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(NEW_ADMIN_EMAIL)}")
             contentType(ContentType.Application.Json)
             setBody(fixture.onboardRequestBody)
@@ -200,7 +200,7 @@ class TenantRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/tenants") {
+        val response = client.post("/api/tenants") {
             contentType(ContentType.Application.Json)
             setBody(fixture.onboardRequestBody)
         }
@@ -214,7 +214,7 @@ class TenantRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/tenants") {
+        val response = client.post("/api/tenants") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(NEW_ADMIN_EMAIL)}")
             contentType(ContentType.Application.Json)
             setBody(
@@ -234,7 +234,7 @@ class TenantRoutesTest {
         val client = createClient { install(ContentNegotiation) { json() } }
 
         // The existing admin (already a member of fixture.existingTenant) onboards a second, unrelated Tenant.
-        val response = client.post("/tenants") {
+        val response = client.post("/api/tenants") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(EXISTING_ADMIN_EMAIL)}")
             contentType(ContentType.Application.Json)
             setBody(fixture.onboardRequestBody)
@@ -252,7 +252,7 @@ class TenantRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/tenants/${fixture.existingTenant.id.value}/companies") {
+        val response = client.post("/api/tenants/${fixture.existingTenant.id.value}/companies") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(EXISTING_ADMIN_EMAIL)}")
             header("X-Tenant-Id", fixture.existingTenant.id.value.toString())
             contentType(ContentType.Application.Json)
@@ -270,7 +270,7 @@ class TenantRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/tenants/${fixture.existingTenant.id.value}/companies") {
+        val response = client.post("/api/tenants/${fixture.existingTenant.id.value}/companies") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(OUTSIDER_EMAIL)}")
             header("X-Tenant-Id", fixture.existingTenant.id.value.toString())
             contentType(ContentType.Application.Json)

@@ -164,12 +164,18 @@ fun buildJwksVerifier(): JWTVerifier {
  * auth - a thin wrapper over Ktor's own `authenticate(...)`, named for
  * discoverability from route files without every route file needing to
  * know the auth provider's literal name.
+ *
+ * Receiver is [Route], not [Routing], specifically so this can be nested
+ * inside another `route(...) { }` block (e.g. the `/api` prefix in
+ * [com.theprodeogroup.fish.infrastructure.web.fishModule]) and not just
+ * called directly inside the top-level `routing { }` block - [Routing]
+ * itself is a [Route], so every existing call site still resolves.
  */
-fun Routing.fishAuthenticated(build: Route.() -> Unit): Route =
+fun Route.fishAuthenticated(build: Route.() -> Unit): Route =
     authenticate(FISH_JWT_AUTH_NAME, build = build)
 
 /** [fishAuthenticated]'s counterpart for [FISH_JWT_ONBOARDING_AUTH_NAME] - see that constant's KDoc. */
-fun Routing.fishOnboarding(build: Route.() -> Unit): Route =
+fun Route.fishOnboarding(build: Route.() -> Unit): Route =
     authenticate(FISH_JWT_ONBOARDING_AUTH_NAME, build = build)
 
 /**
