@@ -52,6 +52,12 @@ variable "desired_count" {
   default     = 1
 }
 
+variable "domain_name" {
+  description = "FQDN this service is reachable at - confirmed 2026-08-26: capital.theprodeogroup.com. theprodeogroup.com's DNS lives at an external registrar/DNS provider, NOT Route 53 in this AWS account - so this config can request the ACM certificate and build the HTTPS listener, but cannot create the DNS records itself. See outputs.tf's acm_validation_record and alb_dns_name - both need to be added manually at the external DNS provider (the validation CNAME first, then a CNAME for domain_name itself pointing at the ALB, once the certificate is ISSUED)."
+  type        = string
+  default     = "capital.theprodeogroup.com"
+}
+
 # --- Application configuration -------------------------------------
 #
 # DB/JWT connection details are deliberately variables with no

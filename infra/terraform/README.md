@@ -5,11 +5,19 @@ Written 2026-08-22 to close `docs/GL_Production_Readiness_Plan.md`'s Phase 1b
 Terraform was installed the same day, `fmt`/`init`/`validate` were run for
 real and pass — `validate` caught a genuine bug (a hand-typed GitHub OIDC
 thumbprint that was 39 characters, not the required 40; fixed by fetching it
-live via `data "tls_certificate"` instead of hardcoding it at all). A `plan`
-with dummy variable values resolved cleanly up to the point of needing real
-AWS credentials, which weren't available. **Still never run against real
-AWS** — no `plan`/`apply` with real credentials. Review it like any other
-partially-verified code before trusting it with real AWS spend.
+live via `data "tls_certificate"` instead of hardcoding it at all).
+
+**Now plans against real AWS** (2026-08-26) — set up a scoped
+`fish-gl-engine-terraform` IAM user (moved off root credentials once `aws
+login` surfaced it had authenticated as the account root user) with a
+least-privilege customer-managed policy (`bootstrap-iam-policy.json`). A real
+`terraform plan` against that user got to 16 planned resources before
+stopping on a genuinely missing permission (`ec2:DescribeVpcAttribute` — a
+different action from `ec2:DescribeVpcs`, needed by the `aws_vpc` data
+source) — fixed in the policy file, still needs a privileged identity to
+push the new policy version (the scoped user correctly can't modify its own
+permissions). **Still no successful `terraform apply`** — review it like any
+other partially-verified code before trusting it with real AWS spend.
 
 Deliberately out of scope: **database/RDS provisioning**. This config expects
 Postgres to already exist somewhere reachable from the AWS account (an RDS
@@ -23,8 +31,11 @@ reason.
 - An ECS cluster running one Fargate task (`ecs.tf`), in the account's
   **default VPC** (`network.tf` — a deliberate simplification, not a hardened
   network design; see that file's own comments).
-- An Application Load Balancer over **plain HTTP only** — no domain name or
-  ACM certificate exists anywhere in this project yet (`alb.tf`).
+- An Application Load Balancer (`alb.tf`) with a real domain and HTTPS —
+  `capital.theprodeogroup.com` (confirmed 2026-08-26), an ACM certificate
+  (`acm.tf`, DNS-validated), HTTP redirecting to HTTPS. **theprodeogroup.com's
+  DNS is external** (not Route 53 in this account), so this is a genuine
+  two-phase `apply` — see "First-time setup" step 4 below.
 - An IAM role GitHub Actions assumes via OIDC — no long-lived AWS keys in
   GitHub secrets (`iam.tf`).
 - A Secrets Manager secret for `FISH_DB_PASSWORD` (`secrets.tf`) — the only
@@ -51,38 +62,49 @@ reason.
    ```
 
 4. `terraform plan` — read it carefully. This creates real, billed AWS
-   resources (Fargate task, ALB, ECR, CloudWatch Logs, Secrets Manager) —
-   roughly $30-40/month at the smallest sizing configured here (`task_cpu`/
-   `task_memory` default to the smallest Fargate size; `desired_count = 1`
-   means no high availability).
+   resources (Fargate task, ALB, ACM certificate, ECR, CloudWatch Logs,
+   Secrets Manager) — roughly $30-40/month at the smallest sizing configured
+   here (`task_cpu`/`task_memory` default to the smallest Fargate size;
+   `desired_count = 1` means no high availability).
 
-5. `terraform apply`
+5. `terraform apply` (**first pass** — the HTTPS listener can't be created
+   yet, since the ACM certificate starts in `PENDING_VALIDATION`; everything
+   else gets created).
 
-6. **The first apply won't produce a running, healthy service** — the task
-   definition points at an ECR image tag (`bootstrap`) that nothing has ever
-   pushed (see `ecs.tf`'s own comment on this). That's expected: the first
-   real deploy comes from CI, once step 7 is done and something pushes to
-   `master`.
+6. Add the DNS validation record at **theprodeogroup.com's external DNS
+   provider** (not Route 53 in this account) — `terraform output
+   acm_validation_record` gives the exact CNAME name/type/value ACM
+   generated. Wait for it to propagate (usually minutes, occasionally longer).
 
-7. Set these as **GitHub Actions repository variables** (Settings → Secrets
-   and variables → Actions → Variables tab — not Secrets, none of these are
-   sensitive) on `prodeo-group-dev/fish-fish-gl-engine`, using
-   `terraform output`:
-   - `AWS_REGION` — `eu-west-2`
-   - `AWS_DEPLOY_ROLE_ARN` — `terraform output github_actions_deploy_role_arn`
-   - `ECR_REPOSITORY` — `terraform output ecr_repository_url`
-   - `ECS_CLUSTER` — `terraform output ecs_cluster_name`
-   - `ECS_SERVICE` — `terraform output ecs_service_name`
-   - `ECS_TASK_DEFINITION_FAMILY` — `terraform output ecs_task_definition_family`
-   - `ECS_CONTAINER_NAME` — `terraform output container_name`
+7. `terraform apply` **again** — this time `aws_acm_certificate_validation`
+   should find the certificate `ISSUED` and create the HTTPS listener.
 
-8. Push to `master`. `ci.yml`'s `deploy` job should then build, push, and
-   deploy a real image — check the Actions run and, once it succeeds,
-   `terraform output alb_dns_name` for where to actually reach it.
+8. Add a second DNS record at the same external provider: a CNAME for
+   `capital.theprodeogroup.com` pointing at `terraform output alb_dns_name`.
+
+9. **The service still won't be healthy yet** — the task definition points
+   at an ECR image tag (`bootstrap`) that nothing has ever pushed (see
+   `ecs.tf`'s own comment on this). That's expected: the first real deploy
+   comes from CI, once step 10 is done and something pushes to `master`.
+
+10. Set these as **GitHub Actions repository variables** (Settings → Secrets
+    and variables → Actions → Variables tab — not Secrets, none of these are
+    sensitive) on `prodeo-group-dev/fish-fish-gl-engine`, using
+    `terraform output`:
+    - `AWS_REGION` — `eu-west-2`
+    - `AWS_DEPLOY_ROLE_ARN` — `terraform output github_actions_deploy_role_arn`
+    - `ECR_REPOSITORY` — `terraform output ecr_repository_url`
+    - `ECS_CLUSTER` — `terraform output ecs_cluster_name`
+    - `ECS_SERVICE` — `terraform output ecs_service_name`
+    - `ECS_TASK_DEFINITION_FAMILY` — `terraform output ecs_task_definition_family`
+    - `ECS_CONTAINER_NAME` — `terraform output container_name`
+
+11. Push to `master`. `ci.yml`'s `deploy` job should then build, push, and
+    deploy a real image — check the Actions run and, once it succeeds,
+    `https://capital.theprodeogroup.com` for where to actually reach it.
 
 ## Known gaps, flagged rather than silently accepted
 
-- **No HTTPS** — needs a domain + ACM certificate, neither decided yet.
 - **No staging environment** — this is a single-environment (`production`)
   setup; `docs/GL_Production_Readiness_Plan.md`'s suggested build order chose
   auto-deploy-to-production over staging-then-promote for now.

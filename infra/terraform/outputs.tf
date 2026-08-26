@@ -29,6 +29,19 @@ output "github_actions_deploy_role_arn" {
 }
 
 output "alb_dns_name" {
-  description = "Where the app is actually reachable, over plain HTTP, once a real image has been deployed"
+  description = "Where the app is actually reachable once a real image has been deployed AND the DNS steps below are done. Add a CNAME at your external DNS provider: capital.theprodeogroup.com -> this value."
   value       = aws_lb.this.dns_name
+}
+
+# theprodeogroup.com's DNS is external (not Route 53 in this account) -
+# this record has to be added by hand wherever that DNS actually lives,
+# BEFORE the second `terraform apply` that creates the HTTPS listener
+# can succeed (aws_acm_certificate_validation blocks on it). See acm.tf.
+output "acm_validation_record" {
+  description = "DNS validation record to add at the external provider for capital.theprodeogroup.com - a CNAME: name -> value, exactly as ACM generated them. Add this FIRST, before re-running terraform apply."
+  value = {
+    name  = tolist(aws_acm_certificate.this.domain_validation_options)[0].resource_record_name
+    type  = tolist(aws_acm_certificate.this.domain_validation_options)[0].resource_record_type
+    value = tolist(aws_acm_certificate.this.domain_validation_options)[0].resource_record_value
+  }
 }

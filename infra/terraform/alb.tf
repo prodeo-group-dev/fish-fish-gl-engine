@@ -31,14 +31,39 @@ resource "aws_lb_target_group" "this" {
   }
 }
 
-# Plain HTTP only - see network.tf's own caveat: no domain name or ACM
-# certificate exists anywhere in this project yet, so there's no HTTPS
-# listener here. Production traffic (including JWTs in Authorization
-# headers) over plain HTTP is a real, flagged gap, not an oversight.
+# HTTPS closed 2026-08-26 (domain confirmed: capital.theprodeogroup.com,
+# see acm.tf) - HTTP now just redirects, it no longer forwards directly.
+# Kept listening on 80 at all (rather than removed) since that's the
+# standard, expected behavior for a public web service - browsers/
+# clients that only try http:// still reach something, not a dead port.
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.this.arn
   port              = 80
   protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
+# Depends on aws_acm_certificate_validation, not just aws_acm_certificate
+# directly - Terraform would otherwise try to create this listener with
+# a certificate still in PENDING_VALIDATION, which ELB rejects. See
+# acm.tf's own comment on why this is a genuine two-phase apply (the
+# validation CNAME has to be added manually at the external DNS
+# provider in between).
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.this.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = aws_acm_certificate_validation.this.certificate_arn
 
   default_action {
     type             = "forward"

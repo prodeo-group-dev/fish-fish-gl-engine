@@ -22,22 +22,27 @@ data "aws_subnets" "default" {
 
 resource "aws_security_group" "alb" {
   name        = "${var.project_name}-alb"
-  description = "Allow inbound HTTP from the internet to the ALB"
+  description = "Allow inbound HTTP and HTTPS from the internet to the ALB"
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
-    description = "HTTP"
+    description = "HTTP - redirects to HTTPS, see aws_lb_listener.http in alb.tf"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # No HTTPS listener yet - needs a domain name and an ACM certificate,
-  # neither of which exist anywhere in this project yet. Flagged as a
-  # real gap (production traffic over plain HTTP, including JWTs in
-  # Authorization headers, is not acceptable long-term), not silently
-  # left implying HTTPS already works.
+  # HTTPS closed 2026-08-26 - see acm.tf for the certificate (domain
+  # confirmed: capital.theprodeogroup.com) and alb.tf for the listener.
+  ingress {
+    description = "HTTPS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
