@@ -43,7 +43,15 @@
         "ecr:PutImageTagMutability",
         "ecr:TagResource",
         "ecr:UntagResource",
-        "ecr:ListTagsForResource"
+        "ecr:ListTagsForResource",
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage",
+        "ecr:BatchGetImage",
+        "ecr:DescribeImages"
       ],
       "Resource": "*"
     },
