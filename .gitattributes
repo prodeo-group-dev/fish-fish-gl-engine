@@ -1,0 +1,10 @@
+# gradlew is a POSIX shell script - Docker builds run it inside a Linux
+# container regardless of what platform checked the repo out. Windows'
+# core.autocrlf converts it to CRLF on checkout otherwise, which breaks
+# its shebang line inside the container ("./gradlew: not found" -
+# discovered 2026-08-26 building the image locally on Windows for a
+# manual deploy while GitHub Actions was down; Linux-hosted CI runners
+# never hit this, since git there checks it out as LF either way, so
+# this had been a real, latent Windows-only build break the whole time).
+/gradlew text eol=lf
+*.sh text eol=lf
