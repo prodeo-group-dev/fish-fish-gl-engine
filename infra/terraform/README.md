@@ -216,3 +216,5 @@ the user itself.
   instance — correct only while it holds no real data (still true as of
   first apply). Flip both once real data exists — not automatically
   revisited by this document, see `rds.tf`'s own comment.
+
+<!-- CI trigger verification, 2026-08-26: confirming push-to-master actually fires ci.yml after finding gh run list showing stale/cached data all session (verified via direct API: zero recorded runs on any of today's 8 pushes, despite the workflow file being confirmed identical to what's live on GitHub) -->
