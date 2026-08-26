@@ -1,0 +1,23 @@
+name: CI2 Diagnostic
+
+# Temporary diagnostic workflow - 2026-08-26. ci.yml (workflow id 338476737)
+# has not produced a single run since 2026-08-21 23:43 (run #25, commit
+# b7d448d) despite many subsequent pushes to master and a fresh
+# pull_request (#37), even though every checkable config (file validity,
+# repo Actions permissions, branch protection, account status) looks
+# normal. Testing whether a NEW workflow file/id unsticks whatever
+# GitHub-side state ci.yml's registration might be stuck in. Delete this
+# file once the diagnosis is complete either way.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  ping:
+    name: Diagnostic ping
+    runs-on: ubuntu-latest
+    steps:
+      - name: Say hello
+        run: echo "ci2 diagnostic workflow ran successfully"
