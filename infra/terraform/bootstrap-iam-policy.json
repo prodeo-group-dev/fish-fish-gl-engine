@@ -108,7 +108,10 @@
         "logs:TagResource",
         "logs:TagLogGroup",
         "logs:ListTagsLogGroup",
-        "logs:ListTagsForResource"
+        "logs:ListTagsForResource",
+        "logs:FilterLogEvents",
+        "logs:GetLogEvents",
+        "logs:DescribeLogStreams"
       ],
       "Resource": "*"
     },
