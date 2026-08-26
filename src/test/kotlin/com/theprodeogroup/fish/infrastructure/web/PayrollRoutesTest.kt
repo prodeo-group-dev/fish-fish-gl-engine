@@ -13,6 +13,9 @@ import com.theprodeogroup.fish.application.FakePurchaseOrderRepository
 import com.theprodeogroup.fish.application.FakeSalesOrderRepository
 import com.theprodeogroup.fish.application.FakeStockItemRepository
 import com.theprodeogroup.fish.application.FakeUserRepository
+import com.theprodeogroup.fish.application.FakeTenantRepository
+import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
@@ -109,6 +112,9 @@ class PayrollRoutesTest {
         val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
         val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
+        val tenantRepository = FakeTenantRepository()
+        val onboardTenantUseCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository)
+        val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(tenantRepository, companyRepository)
         val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
         val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
 
@@ -159,7 +165,10 @@ class PayrollRoutesTest {
                 recordInventoryIssueUseCase = recordInventoryIssueUseCase,
                 recordPayRunUseCase = recordPayRunUseCase,
                 getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
-                idempotencyKeyRepository = idempotencyKeyRepository
+                idempotencyKeyRepository = idempotencyKeyRepository,
+                tenantRepository = tenantRepository,
+                onboardTenantUseCase = onboardTenantUseCase,
+                addCompanyToTenantUseCase = addCompanyToTenantUseCase
             )
         }
     }

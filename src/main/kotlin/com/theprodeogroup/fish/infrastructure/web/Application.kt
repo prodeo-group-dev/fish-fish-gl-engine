@@ -1,7 +1,9 @@
 package com.theprodeogroup.fish.infrastructure.web
 
 import com.auth0.jwt.interfaces.JWTVerifier
+import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
+import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
 import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
@@ -25,6 +27,7 @@ import com.theprodeogroup.fish.domain.purchasing.PurchaseOrderRepository
 import com.theprodeogroup.fish.domain.sales.SalesOrderRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
+import com.theprodeogroup.fish.domain.tenancy.TenantRepository
 import com.theprodeogroup.fish.domain.tenancy.UserRepository
 import com.theprodeogroup.fish.infrastructure.persistence.DatabaseConfig
 import com.theprodeogroup.fish.infrastructure.persistence.DatabaseMigrator
@@ -41,6 +44,7 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedPeriodRepositor
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedPurchaseOrderRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedSalesOrderRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedStockItemRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedTenantRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedUserRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
 import io.ktor.http.HttpStatusCode
@@ -107,7 +111,10 @@ fun Application.productionModule() {
     val salesOrderRepository = ExposedSalesOrderRepository()
     val customerRepository = ExposedCustomerRepository()
     val idempotencyKeyRepository = ExposedIdempotencyKeyRepository()
+    val tenantRepository = ExposedTenantRepository()
 
+    val onboardTenantUseCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository)
+    val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(tenantRepository, companyRepository)
     val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
     val postPurchaseOrderUseCase = PostPurchaseOrderUseCase(
         purchaseOrderRepository, creditorRepository, stockItemRepository, periodRepository, accountRepository, journalEntryRepository
@@ -134,6 +141,9 @@ fun Application.productionModule() {
         userRepository = userRepository,
         membershipRepository = membershipRepository,
         companyRepository = companyRepository,
+        tenantRepository = tenantRepository,
+        onboardTenantUseCase = onboardTenantUseCase,
+        addCompanyToTenantUseCase = addCompanyToTenantUseCase,
         periodRepository = periodRepository,
         postJournalEntryUseCase = postJournalEntryUseCase,
         purchaseOrderRepository = purchaseOrderRepository,
@@ -174,6 +184,9 @@ fun Application.fishModule(
     userRepository: UserRepository,
     membershipRepository: MembershipRepository,
     companyRepository: CompanyRepository,
+    tenantRepository: TenantRepository,
+    onboardTenantUseCase: OnboardTenantUseCase,
+    addCompanyToTenantUseCase: AddCompanyToTenantUseCase,
     periodRepository: PeriodRepository,
     postJournalEntryUseCase: PostJournalEntryUseCase,
     purchaseOrderRepository: PurchaseOrderRepository,
@@ -219,7 +232,11 @@ fun Application.fishModule(
 
     routing {
         healthRoutes()
+        fishOnboarding {
+            tenantRoutesOnboarding(onboardTenantUseCase)
+        }
         fishAuthenticated {
+            tenantRoutesAuthenticated(addCompanyToTenantUseCase, tenantRepository)
             journalEntryRoutes(postJournalEntryUseCase, periodRepository, companyRepository, idempotencyKeyRepository)
             purchaseOrderRoutes(postPurchaseOrderUseCase, purchaseOrderRepository, companyRepository, idempotencyKeyRepository)
             payrollRoutes(

@@ -30,8 +30,16 @@ import java.security.interfaces.RSAPrivateKey
 import java.security.interfaces.RSAPublicKey
 import java.util.concurrent.TimeUnit
 
-/** The single named JWT auth configuration this app registers - see [installFishJwtAuth]. */
+/** The primary JWT auth configuration this app registers - see [installFishJwtAuth]. */
 const val FISH_JWT_AUTH_NAME = "fish-jwt"
+
+/**
+ * The onboarding-only JWT auth configuration - see [installFishJwtAuth].
+ * Registered separately from [FISH_JWT_AUTH_NAME] because it deliberately
+ * skips that config's "must already have an active Membership" check,
+ * which every route *except* onboarding correctly relies on.
+ */
+const val FISH_JWT_ONBOARDING_AUTH_NAME = "fish-jwt-onboarding"
 
 /**
  * JWT authentication (docs/DDD_Design.md Section 10.19) - **verifies
@@ -80,6 +88,27 @@ fun Application.installFishJwtAuth(
                     .filter { it.status == MembershipStatus.ACTIVE }
                 if (activeMemberships.isEmpty()) return@validate null
                 AuthenticatedCaller(user, activeMemberships)
+            }
+            challenge { _, _ ->
+                call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
+            }
+        }
+
+        // Onboarding's chicken-and-egg problem: FISH_JWT_AUTH_NAME above
+        // requires an existing User with at least one ACTIVE Membership,
+        // but provisioning that User/Membership is exactly what
+        // OnboardTenantUseCase does. This config verifies the token is
+        // genuinely signed by the external IdP (same [verifier]) and
+        // carries an `email` claim - proving *who the caller is* -
+        // without requiring anything to already exist in FiSH's own
+        // User/Membership tables. Identity comes entirely from the
+        // verified token, never from the request body, so a caller
+        // can't onboard a Tenant under an email they don't control.
+        jwt(FISH_JWT_ONBOARDING_AUTH_NAME) {
+            this.verifier(verifier)
+            validate { credential ->
+                val email = credential.payload.getClaim("email").asString() ?: return@validate null
+                VerifiedIdentity(email)
             }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
@@ -138,6 +167,10 @@ fun buildJwksVerifier(): JWTVerifier {
  */
 fun Routing.fishAuthenticated(build: Route.() -> Unit): Route =
     authenticate(FISH_JWT_AUTH_NAME, build = build)
+
+/** [fishAuthenticated]'s counterpart for [FISH_JWT_ONBOARDING_AUTH_NAME] - see that constant's KDoc. */
+fun Routing.fishOnboarding(build: Route.() -> Unit): Route =
+    authenticate(FISH_JWT_ONBOARDING_AUTH_NAME, build = build)
 
 /**
  * Resolves the calling [AuthenticatedCaller.memberships] entry matching

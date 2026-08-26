@@ -350,3 +350,43 @@ data class GetOrCreateLeaveAccrualRequestDto(
     val employeeId: String,
     val currency: String
 )
+
+/**
+ * Section 9.2's onboarding wire shapes. Deliberately no `adminEmail`
+ * field on the request - the admin's identity comes from the verified
+ * JWT's `email` claim ([VerifiedIdentity]), never from caller-supplied
+ * request data, matching [FISH_JWT_ONBOARDING_AUTH_NAME]'s whole point.
+ */
+@Serializable
+data class OnboardTenantRequestDto(
+    val tenantName: String,
+    val tenantSegment: String,
+    val tenantBaseCurrency: String,
+    val companyName: String,
+    val clientType: String,
+    val jurisdiction: String,
+    val companyBaseCurrency: String,
+    val adminName: String
+)
+
+@Serializable
+data class OnboardTenantResponseDto(
+    val tenantId: String,
+    val companyId: String,
+    val adminUserId: String,
+    val adminMembershipId: String
+)
+
+@Serializable
+data class AddCompanyToTenantRequestDto(
+    val companyName: String,
+    val clientType: String,
+    val jurisdiction: String,
+    val companyBaseCurrency: String
+)
+
+@Serializable
+data class AddCompanyToTenantResponseDto(
+    val tenantId: String,
+    val companyId: String
+)
