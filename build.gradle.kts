@@ -83,6 +83,30 @@ tasks.test {
     useJUnitPlatform()
 }
 
+// Ktor's `buildFatJar` task depends on this `shadowJar` task (the
+// Gradle Shadow plugin's own task) to actually build the combined jar.
+// Discovered 2026-08-26, the first time this fat jar was ever
+// actually run outside a test (doing a manual production deploy while
+// CI was down): Flyway 10/11 discover their pluggable components
+// (location resolvers, database-type handlers) via Java's ServiceLoader
+// (registration files under META-INF/services). Shadow's DEFAULT merge behavior is
+// last-one-wins for same-named files across dependency jars, not
+// concatenation - so only ONE of flyway-core's/flyway-database-postgresql's
+// several META-INF/services entries survived the merge, leaving
+// Flyway's location-resolver registry completely empty at runtime
+// (confirmed directly: Flyway 11 throws "Unknown prefix for location
+// (should be one of ): classpath:db/callback" - an empty list of known
+// prefixes - while Flyway 10 fails silently instead, treating every
+// migration filename as unrecognised). `mergeServiceFiles()` is Shadow's
+// standard, documented fix for exactly this class of fat-jar problem -
+// it concatenates same-named META-INF/services files instead of
+// clobbering them. Never caught by tests: `gradle test`/`integrationTest`
+// both run Flyway via Gradle's own runtime classpath (many separate jars
+// on disk), never through a single merged fat jar at all.
+tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
+    mergeServiceFiles()
+}
+
 tasks.register<Test>("integrationTest") {
     description = "Runs tests that need a live Postgres database (FISH_DB_* env vars required)."
     group = "verification"
