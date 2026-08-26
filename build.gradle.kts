@@ -70,6 +70,7 @@ dependencies {
     implementation("io.ktor:ktor-server-auth-jwt:$ktorVersion")
     implementation("io.ktor:ktor-server-status-pages:$ktorVersion")
     implementation("io.ktor:ktor-server-call-logging:$ktorVersion")
+    implementation("io.ktor:ktor-server-cors:$ktorVersion")
     implementation("com.auth0:jwks-rsa:0.22.1")
     implementation("ch.qos.logback:logback-classic:1.5.12")
 }

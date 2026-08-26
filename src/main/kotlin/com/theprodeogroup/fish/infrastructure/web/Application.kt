@@ -47,6 +47,8 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedStockItemReposi
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTenantRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedUserRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -56,7 +58,9 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.callloging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.plugins.cors.routing.CORS
 import io.ktor.server.plugins.statuspages.StatusPages
+import java.net.URI
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.server.response.respond
@@ -213,6 +217,30 @@ fun Application.fishModule(
 ) {
     install(ContentNegotiation) { json() }
     install(CallLogging) { level = Level.INFO }
+    // fish-gl-web (a browser-based PWA) calls this API cross-origin -
+    // discovered missing 2026-08-26 testing the first real deploy
+    // against the new frontend, which every browser would otherwise
+    // silently block regardless of the request itself being valid.
+    // Vite's dev/preview ports are always allowed (harmless - they only
+    // ever run on a developer's own machine); FISH_CORS_ALLOWED_ORIGIN
+    // covers wherever fish-gl-web ends up actually hosted, which isn't
+    // decided yet - unset in production until it is, matching this
+    // codebase's "no guessed default for a security-relevant value"
+    // pattern (same reasoning as the JWT settings before Cognito).
+    install(CORS) {
+        allowMethod(HttpMethod.Post)
+        allowMethod(HttpMethod.Get)
+        allowHeader(HttpHeaders.ContentType)
+        allowHeader(HttpHeaders.Authorization)
+        allowHeader("X-Tenant-Id")
+        allowHeader("Idempotency-Key")
+        allowHost("localhost:5173", schemes = listOf("http"))
+        allowHost("localhost:4173", schemes = listOf("http"))
+        System.getenv("FISH_CORS_ALLOWED_ORIGIN")?.let { origin ->
+            val uri = URI(origin)
+            allowHost(uri.authority, schemes = listOf(uri.scheme))
+        }
+    }
     install(StatusPages) {
         // docs/GL_Production_Readiness_Assessment.md Section 1, critical
         // finding #3 - cause.message previously went straight into the
