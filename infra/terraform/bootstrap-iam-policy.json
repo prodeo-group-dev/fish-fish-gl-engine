@@ -212,7 +212,10 @@
         "cognito-idp:CreateUserPoolClient",
         "cognito-idp:DeleteUserPoolClient",
         "cognito-idp:DescribeUserPoolClient",
-        "cognito-idp:UpdateUserPoolClient"
+        "cognito-idp:UpdateUserPoolClient",
+        "cognito-idp:AdminConfirmSignUp",
+        "cognito-idp:AdminGetUser",
+        "cognito-idp:AdminDeleteUser"
       ],
       "Resource": "*"
     },
