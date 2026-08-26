@@ -7,17 +7,20 @@ real and pass — `validate` caught a genuine bug (a hand-typed GitHub OIDC
 thumbprint that was 39 characters, not the required 40; fixed by fetching it
 live via `data "tls_certificate"` instead of hardcoding it at all).
 
-**Now plans against real AWS** (2026-08-26) — set up a scoped
-`fish-gl-engine-terraform` IAM user (moved off root credentials once `aws
-login` surfaced it had authenticated as the account root user) with a
-least-privilege customer-managed policy (`bootstrap-iam-policy.json`). A real
-`terraform plan` against that user got to 16 planned resources before
-stopping on a genuinely missing permission (`ec2:DescribeVpcAttribute` — a
-different action from `ec2:DescribeVpcs`, needed by the `aws_vpc` data
-source) — fixed in the policy file, still needs a privileged identity to
-push the new policy version (the scoped user correctly can't modify its own
-permissions). **Still no successful `terraform apply`** — review it like any
-other partially-verified code before trusting it with real AWS spend.
+**`terraform plan` now genuinely succeeds against real AWS** (2026-08-26) —
+set up a scoped `fish-gl-engine-terraform` IAM user (moved off root
+credentials once `aws login` surfaced it had authenticated as the account
+root user) with a least-privilege customer-managed policy
+(`bootstrap-iam-policy.json`). First `plan` got to 16 planned resources
+before stopping on a genuinely missing permission (`ec2:DescribeVpcAttribute`
+— a different action from `ec2:DescribeVpcs`, needed by the `aws_vpc` data
+source) — fixed in the policy file, pushing the new policy version needed a
+privileged identity (a second, separate one-time root session, since the
+scoped user correctly can't modify its own permissions). Re-ran clean:
+**23 resources planned, 0 errors.** **Still no successful `terraform apply`**
+— `plan` succeeding is a real signal, but nothing has actually been created
+in AWS yet beyond the IAM bootstrap itself. Review it like any other
+partially-verified code before trusting it with real AWS spend.
 
 Deliberately out of scope: **database/RDS provisioning**. This config expects
 Postgres to already exist somewhere reachable from the AWS account (an RDS
