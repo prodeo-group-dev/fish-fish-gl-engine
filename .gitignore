@@ -5,6 +5,10 @@ build/
 .idea/
 out/
 
+# Claude Code runtime state - process-local, never committed (caught
+# 2026-08-26 after landing in a commit via git add -A)
+.claude/scheduled_tasks.lock
+
 # Local database credentials (docs/DDD_Design.md Section 10) - never committed
 .env
 .env.local
