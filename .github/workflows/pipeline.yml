@@ -32,6 +32,12 @@ on:
   pull_request:
   push:
     branches: [master]
+  # Added 2026-08-26 as a diagnostic/stopgap alongside the ongoing
+  # GitHub Support investigation into push/pull_request not triggering
+  # runs (see GL/infra/terraform/README.md's own note) - workflow_dispatch
+  # is a REST API call, not a webhook-driven event, so it's worth
+  # testing whether it's affected by the same underlying issue or not.
+  workflow_dispatch:
 
 jobs:
   test:
