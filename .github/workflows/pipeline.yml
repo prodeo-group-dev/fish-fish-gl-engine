@@ -148,13 +148,21 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push the image
+        # No `:latest` tag - discovered 2026-08-26 doing the first-ever
+        # real deploy manually (CI was down): the ECR repo is
+        # imageTagMutability = IMMUTABLE (ecr.tf, deliberate), so
+        # `:latest` can only ever be pushed successfully once - every
+        # deploy after the first would fail right here. It was also
+        # never actually consumed downstream (the task definition
+        # always references the specific sha-<commit> tag below), so
+        # there's nothing to lose by dropping it entirely rather than
+        # working around the immutability.
         env:
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
           IMAGE_TAG: sha-${{ github.sha }}
         run: |
-          docker build -t "$ECR_REPOSITORY:$IMAGE_TAG" -t "$ECR_REPOSITORY:latest" .
+          docker build -t "$ECR_REPOSITORY:$IMAGE_TAG" .
           docker push "$ECR_REPOSITORY:$IMAGE_TAG"
-          docker push "$ECR_REPOSITORY:latest"
 
       - name: Fetch the current task definition (Terraform owns everything except the container image - see infra/terraform/ecs.tf)
         run: |
