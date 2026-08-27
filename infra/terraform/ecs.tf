@@ -50,7 +50,16 @@ resource "aws_ecs_task_definition" "this" {
         { name = "FISH_HTTP_PORT", value = tostring(var.container_port) },
         { name = "FISH_JWT_ISSUER", value = local.fish_jwt_issuer },
         { name = "FISH_JWT_AUDIENCE", value = local.fish_jwt_audience },
-        { name = "FISH_JWT_JWKS_URL", value = local.fish_jwt_jwks_url }
+        { name = "FISH_JWT_JWKS_URL", value = local.fish_jwt_jwks_url },
+        # Was unset ("wherever fish-gl-web ends up actually hosted,
+        # which isn't decided yet" - Application.kt's own comment) until
+        # frontend.tf decided it: same domain as the API, via CloudFront.
+        # Needed even though the browser now sees this as same-origin -
+        # Ktor's CORS plugin (unlike a browser) actively 403s any request
+        # whose Origin header isn't allowlisted, and some browsers send
+        # Origin on same-origin POSTs too. Confirmed missing 2026-08-27
+        # (POST /api/tenants 403ing for a real onboarding attempt).
+        { name = "FISH_CORS_ALLOWED_ORIGIN", value = "https://${var.domain_name}" }
       ]
 
       secrets = [
