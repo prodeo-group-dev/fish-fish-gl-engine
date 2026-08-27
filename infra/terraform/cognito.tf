@@ -69,6 +69,27 @@ resource "aws_cognito_user_pool" "this" {
     allow_admin_create_user_only = false
   }
 
+  # Replaces the default COGNITO_DEFAULT sender (rate-limited, not
+  # meant for production use - confirmed 2026-08-27 as the real reason
+  # verification codes weren't reliably arriving) with SES, via the
+  # domain identity notifications.tf provisions. Two-phase-apply
+  # dependency, same shape as acm.tf: aws_ses_domain_identity must
+  # actually be verified (the TXT record added at the external DNS
+  # provider) before Cognito will accept this source_arn.
+  email_configuration {
+    email_sending_account = "DEVELOPER"
+    source_arn            = aws_ses_domain_identity.this.arn
+    from_email_address    = "FiSH <noreply@${aws_ses_domain_identity.this.domain}>"
+  }
+
+  # SMS verification for the admin phone number requirement
+  # (tenant.kt's adminPhoneVerificationStatus, added 2026-08-27) - the
+  # role Cognito assumes to actually send the code via SNS.
+  sms_configuration {
+    external_id    = "${var.project_name}-${var.environment}-cognito-sms"
+    sns_caller_arn = aws_iam_role.cognito_sms.arn
+  }
+
   tags = {
     Project = var.project_name
   }

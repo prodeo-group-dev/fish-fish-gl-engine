@@ -399,3 +399,12 @@ data class AddCompanyToTenantResponseDto(
     val companyId: String,
     val openingBalanceJournalEntryId: String? = null
 )
+
+@Serializable
+data class RecordAdminPhoneNumberRequestDto(val phoneNumber: String)
+
+@Serializable
+data class RecordAdminPhoneNumberResponseDto(
+    val tenantId: String,
+    val adminPhoneVerificationStatus: String
+)

@@ -73,6 +73,15 @@ dependencies {
     implementation("io.ktor:ktor-server-cors:$ktorVersion")
     implementation("com.auth0:jwks-rsa:0.22.1")
     implementation("ch.qos.logback:logback-classic:1.5.12")
+
+    // RecordAdminPhoneNumberUseCase's own check that Cognito genuinely
+    // verified a phone number before GL's database records it as such
+    // (never trusting the caller's own claim - see that use case's
+    // KDoc). Credentials come from the ECS task role automatically
+    // (DefaultCredentialsProvider's container-credentials step) -
+    // nothing to configure here beyond the dependency itself.
+    implementation(platform("software.amazon.awssdk:bom:2.29.11"))
+    implementation("software.amazon.awssdk:cognitoidentityprovider")
 }
 
 kotlin {

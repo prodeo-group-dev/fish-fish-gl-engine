@@ -3,7 +3,9 @@ package com.theprodeogroup.fish.infrastructure.web
 import com.auth0.jwt.interfaces.JWTVerifier
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
+import com.theprodeogroup.fish.application.KybGracePeriodSweep
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
+import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
 import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
@@ -47,6 +49,7 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedStockItemReposi
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTenantRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedUserRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
+import com.theprodeogroup.fish.infrastructure.identity.CognitoAdminPhoneVerificationChecker
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -66,7 +69,11 @@ import io.ktor.server.request.path
 import io.ktor.server.response.respond
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import org.slf4j.event.Level
+import java.time.Duration
 
 /**
  * The GL Engine's HTTP entry point (docs/DDD_Design.md Section 10.19/10.20) -
@@ -145,6 +152,36 @@ fun Application.productionModule() {
     val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
     val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
 
+    val cognitoUserPoolId = System.getenv("FISH_COGNITO_USER_POOL_ID")
+        ?: error("FISH_COGNITO_USER_POOL_ID environment variable is required - no default for a security-relevant value")
+    val recordAdminPhoneNumberUseCase = RecordAdminPhoneNumberUseCase(
+        tenantRepository, CognitoAdminPhoneVerificationChecker(cognitoUserPoolId)
+    )
+
+    // In-process scheduler for KybGracePeriodSweep (docs/DDD_Design.md
+    // Section 9.4, extended 2026-08-27 to also cover the admin phone
+    // number's 14-day sub-deadline) - safe as a simple background loop
+    // tied to this Application's own coroutine scope specifically
+    // because desired_count = 1 (ecs.tf) means there is only ever one
+    // running instance; a second concurrent instance would double-run
+    // this on every tick, which a real scheduled-task/EventBridge
+    // approach wouldn't. Revisit if desired_count ever grows past 1.
+    val kybGracePeriodSweep = KybGracePeriodSweep(tenantRepository)
+    launch {
+        delay(Duration.ofMinutes(1).toMillis()) // let the app finish starting up first
+        while (isActive) {
+            try {
+                val result = kybGracePeriodSweep.run()
+                if (result.suspended.isNotEmpty()) {
+                    log.info("KybGracePeriodSweep suspended ${result.suspended.size} tenant(s) for expired KYB/phone verification")
+                }
+            } catch (e: Throwable) {
+                log.error("KybGracePeriodSweep run failed", e)
+            }
+            delay(Duration.ofHours(24).toMillis())
+        }
+    }
+
     fishModule(
         verifier = buildJwksVerifier(),
         userRepository = userRepository,
@@ -175,7 +212,8 @@ fun Application.productionModule() {
         recordInventoryIssueUseCase = recordInventoryIssueUseCase,
         recordPayRunUseCase = recordPayRunUseCase,
         getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
-        idempotencyKeyRepository = idempotencyKeyRepository
+        idempotencyKeyRepository = idempotencyKeyRepository,
+        recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase
     )
 }
 
@@ -218,7 +256,8 @@ fun Application.fishModule(
     recordInventoryIssueUseCase: RecordInventoryIssueUseCase,
     recordPayRunUseCase: RecordPayRunUseCase,
     getOrCreateLeaveAccrualUseCase: GetOrCreateLeaveAccrualUseCase,
-    idempotencyKeyRepository: IdempotencyKeyRepository
+    idempotencyKeyRepository: IdempotencyKeyRepository,
+    recordAdminPhoneNumberUseCase: RecordAdminPhoneNumberUseCase
 ) {
     install(ContentNegotiation) { json() }
     install(CallLogging) { level = Level.INFO }
@@ -281,6 +320,7 @@ fun Application.fishModule(
             }
             fishAuthenticated {
                 tenantRoutesAuthenticated(addCompanyToTenantUseCase, tenantRepository)
+                adminPhoneRoutes(recordAdminPhoneNumberUseCase)
                 journalEntryRoutes(postJournalEntryUseCase, periodRepository, companyRepository, idempotencyKeyRepository)
                 purchaseOrderRoutes(postPurchaseOrderUseCase, purchaseOrderRepository, companyRepository, idempotencyKeyRepository)
                 payrollRoutes(

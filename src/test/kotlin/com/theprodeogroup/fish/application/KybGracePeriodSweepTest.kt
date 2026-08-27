@@ -3,6 +3,7 @@ package com.theprodeogroup.fish.application
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.KybGracePeriodExpired
 import com.theprodeogroup.fish.domain.tenancy.MembershipId
+import com.theprodeogroup.fish.domain.tenancy.PhoneNumber
 import com.theprodeogroup.fish.domain.tenancy.Tenant
 import com.theprodeogroup.fish.domain.tenancy.TenantSegment
 import com.theprodeogroup.fish.domain.tenancy.TenantStatus
@@ -25,6 +26,7 @@ class KybGracePeriodSweepTest {
     private fun activatedTenant(
         kybStatus: VerificationStatus = VerificationStatus.PENDING,
         adminKycStatus: VerificationStatus = VerificationStatus.PENDING,
+        adminPhoneVerificationStatus: VerificationStatus = VerificationStatus.PENDING,
         activatedAt: Instant = Instant.now()
     ): Tenant {
         val tenant = Tenant.onboard("Purse", TenantSegment.INTERNAL_VENTURE, GBP)
@@ -33,6 +35,10 @@ class KybGracePeriodSweepTest {
         tenant.recordKybOutcome(kybStatus)
         tenant.recordAdminKycOutcome(adminKycStatus)
         tenant.activate(activatedAt)
+        if (adminPhoneVerificationStatus != VerificationStatus.PENDING) {
+            tenant.recordAdminPhoneNumber(PhoneNumber("+15550123456"))
+            tenant.recordAdminPhoneVerificationOutcome(adminPhoneVerificationStatus)
+        }
         tenant.pullDomainEvents() // drain the activation events - the sweep's own events are what we're testing
         tenantRepository.save(tenant)
         return tenant
@@ -61,8 +67,24 @@ class KybGracePeriodSweepTest {
     }
 
     @Test
-    fun `given a Tenant past its deadline but both fields Verified, when the sweep runs, then it is left Active`() {
+    fun `given a Tenant past its deadline but all three fields Verified - including admin phone, when the sweep runs, then it is left Active`() {
         val activatedAt = Instant.now().minus(181, ChronoUnit.DAYS)
+        val tenant = activatedTenant(
+            kybStatus = VerificationStatus.VERIFIED,
+            adminKycStatus = VerificationStatus.VERIFIED,
+            adminPhoneVerificationStatus = VerificationStatus.VERIFIED,
+            activatedAt = activatedAt
+        )
+
+        val result = sweep.run()
+
+        result.suspended.map { it.tenant.id } shouldBe emptyList()
+        tenantRepository.findById(tenant.id)?.status shouldBe TenantStatus.ACTIVE
+    }
+
+    @Test
+    fun `given KYB and admin KYC Verified but admin phone still Pending past only the 14-day phone deadline, when the sweep runs, then it is suspended - phone is part of KYB`() {
+        val activatedAt = Instant.now().minus(15, ChronoUnit.DAYS)
         val tenant = activatedTenant(
             kybStatus = VerificationStatus.VERIFIED,
             adminKycStatus = VerificationStatus.VERIFIED,
@@ -71,8 +93,8 @@ class KybGracePeriodSweepTest {
 
         val result = sweep.run()
 
-        result.suspended.map { it.tenant.id } shouldBe emptyList()
-        tenantRepository.findById(tenant.id)?.status shouldBe TenantStatus.ACTIVE
+        result.suspended.map { it.tenant.id } shouldContain tenant.id
+        tenantRepository.findById(tenant.id)?.status shouldBe TenantStatus.SUSPENDED
     }
 
     @Test

@@ -18,6 +18,9 @@ object TenantsTable : Table("tenants") {
     val kybStatus = varchar("kyb_status", 20)
     val adminKycStatus = varchar("admin_kyc_status", 20)
     val kybVerificationDeadline = timestamp("kyb_verification_deadline").nullable()
+    val adminPhoneNumber = varchar("admin_phone_number", 20).nullable()
+    val adminPhoneVerificationStatus = varchar("admin_phone_verification_status", 20)
+    val phoneVerificationDeadline = timestamp("phone_verification_deadline").nullable()
 
     override val primaryKey = PrimaryKey(id)
 }

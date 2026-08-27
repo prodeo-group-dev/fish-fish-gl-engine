@@ -48,6 +48,36 @@ class Tenant private constructor(
     var kybVerificationDeadline: Instant? = null
         private set
 
+    /**
+     * The founding admin's mobile number - part of KYB, not a separate
+     * verification track (2026-08-27 requirement: a verified admin phone
+     * number closes the same "who controls this business" gap
+     * [adminKycStatus]'s own KDoc describes, just via a channel that's
+     * fast to supply and fast to verify). Null until [recordAdminPhoneNumber]
+     * is called - unlike [kybStatus]/[adminKycStatus], there's no
+     * "outcome of a check FiSH didn't perform" to default to, since no
+     * check has been requested until a number exists to check.
+     */
+    var adminPhoneNumber: PhoneNumber? = null
+        private set
+
+    /** Outcome of verifying [adminPhoneNumber] - PENDING until a number is recorded, then whatever Cognito's own SMS verification reports. */
+    var adminPhoneVerificationStatus: VerificationStatus = VerificationStatus.PENDING
+        private set
+
+    /**
+     * Deadline for [adminPhoneVerificationStatus] to reach VERIFIED -
+     * deliberately much tighter than [kybVerificationDeadline] (14 days,
+     * not 180): supplying and verifying a phone number is fast enough
+     * that it doesn't need the same runway as a full KYB check, and
+     * catching a missing phone number early is the whole point of
+     * giving it its own shorter clock rather than letting it hide
+     * inside the 180-day one. Still the same consequence either way -
+     * see [isKybGracePeriodExpired].
+     */
+    var phoneVerificationDeadline: Instant? = null
+        private set
+
     private val _companyIds = mutableSetOf<CompanyId>()
     val companyIds: Set<CompanyId> get() = _companyIds.toSet()
 
@@ -107,6 +137,29 @@ class Tenant private constructor(
     }
 
     /**
+     * Records the founding admin's mobile number once they supply it
+     * (necessarily after [activate] - see [adminPhoneNumber]'s own KDoc
+     * on why there's nothing to record before then). Recording a number
+     * again (e.g. correcting a typo) resets [adminPhoneVerificationStatus]
+     * back to PENDING - a previously-verified OLD number does not carry
+     * over to a new one that hasn't itself been verified yet.
+     */
+    fun recordAdminPhoneNumber(phoneNumber: PhoneNumber) {
+        adminPhoneNumber = phoneNumber
+        adminPhoneVerificationStatus = VerificationStatus.PENDING
+    }
+
+    /**
+     * Records the outcome of verifying [adminPhoneNumber] - same
+     * "FiSH records, never performs the check" rationale as
+     * [recordAdminKycOutcome], except here the check is Cognito's own
+     * SMS verification, not an external KYC provider.
+     */
+    fun recordAdminPhoneVerificationOutcome(newStatus: VerificationStatus) {
+        adminPhoneVerificationStatus = newStatus
+    }
+
+    /**
      * Section 9.2 step 7. Only a Draft tenant can be activated this way -
      * a Suspended tenant must go through [reactivate] instead. Resolved
      * per Section 9.2: Pending kybStatus/adminKycStatus does not block
@@ -148,6 +201,7 @@ class Tenant private constructor(
 
         status = TenantStatus.ACTIVE
         kybVerificationDeadline = now.plus(KYB_GRACE_PERIOD_DAYS, ChronoUnit.DAYS)
+        phoneVerificationDeadline = now.plus(PHONE_VERIFICATION_GRACE_PERIOD_DAYS, ChronoUnit.DAYS)
         _domainEvents.add(TenantActivated(id, now))
         _domainEvents.add(TenantOnboarded(id, now))
         return ValidationResult.success()
@@ -185,25 +239,50 @@ class Tenant private constructor(
 
     /**
      * True once an Active tenant is past [kybVerificationDeadline] with
-     * either [kybStatus] or [adminKycStatus] still not Verified - what the
-     * scheduled sweep in Section 9.4 checks for. Never true for a tenant
-     * that was never activated (no deadline set) or one that's already
-     * fully Verified/no longer Active.
+     * [kybStatus], [adminKycStatus], or [adminPhoneVerificationStatus]
+     * still not Verified - the phone number is part of KYB (2026-08-27),
+     * not a separate track, so it counts here alongside the other two,
+     * even though [isPhoneVerificationOverdue] below will almost always
+     * catch a missing phone number first, given its much shorter deadline.
+     * Never true for a tenant that was never activated (no deadline set)
+     * or one that's already fully Verified/no longer Active.
      */
     fun isKybGracePeriodExpired(asOf: Instant = Instant.now()): Boolean {
         val deadline = kybVerificationDeadline ?: return false
-        val bothVerified = kybStatus == VerificationStatus.VERIFIED && adminKycStatus == VerificationStatus.VERIFIED
-        return status == TenantStatus.ACTIVE && !bothVerified && asOf.isAfter(deadline)
+        return status == TenantStatus.ACTIVE && !isFullyVerified() && asOf.isAfter(deadline)
     }
+
+    /**
+     * True once an Active tenant is past [phoneVerificationDeadline] with
+     * [adminPhoneVerificationStatus] still not Verified - the 14-day
+     * sub-check within KYB (see [phoneVerificationDeadline]'s own KDoc
+     * on why it's tighter than [kybVerificationDeadline]). Never true for
+     * a tenant that hasn't been activated yet (no deadline set).
+     */
+    fun isPhoneVerificationOverdue(asOf: Instant = Instant.now()): Boolean {
+        val deadline = phoneVerificationDeadline ?: return false
+        return status == TenantStatus.ACTIVE &&
+            adminPhoneVerificationStatus != VerificationStatus.VERIFIED &&
+            asOf.isAfter(deadline)
+    }
+
+    private fun isFullyVerified(): Boolean =
+        kybStatus == VerificationStatus.VERIFIED &&
+            adminKycStatus == VerificationStatus.VERIFIED &&
+            adminPhoneVerificationStatus == VerificationStatus.VERIFIED
 
     /**
      * The scheduled sweep's action (Section 9.4): automated suspension
      * distinct from [suspend], raising [KybGracePeriodExpired] instead of
      * [TenantSuspended] so billing/notifications can tell them apart.
+     * Triggered by either [isKybGracePeriodExpired] (the 180-day check) or
+     * [isPhoneVerificationOverdue] (the 14-day one) - both are KYB
+     * non-compliance, just on different clocks, so both raise the same
+     * event rather than needing a phone-specific one.
      */
     fun suspendForExpiredKyb(now: Instant = Instant.now()): ValidationResult {
-        if (!isKybGracePeriodExpired(now)) {
-            return ValidationResult.failure("KYB/KYC grace period has not expired, or tenant is not eligible for automated suspension")
+        if (!isKybGracePeriodExpired(now) && !isPhoneVerificationOverdue(now)) {
+            return ValidationResult.failure("KYB/KYC/phone-verification grace period has not expired, or tenant is not eligible for automated suspension")
         }
         status = TenantStatus.SUSPENDED
         _domainEvents.add(KybGracePeriodExpired(id, now))
@@ -212,6 +291,7 @@ class Tenant private constructor(
 
     companion object {
         const val KYB_GRACE_PERIOD_DAYS = 180L
+        const val PHONE_VERIFICATION_GRACE_PERIOD_DAYS = 14L
 
         /** Section 9.2 steps 1-2: capture identity, create in Draft. No Companies/Memberships yet. */
         fun onboard(
@@ -241,7 +321,10 @@ class Tenant private constructor(
             adminKycStatus: VerificationStatus,
             kybVerificationDeadline: Instant?,
             companyIds: Set<CompanyId>,
-            adminMembershipIds: Set<MembershipId>
+            adminMembershipIds: Set<MembershipId>,
+            adminPhoneNumber: PhoneNumber? = null,
+            adminPhoneVerificationStatus: VerificationStatus = VerificationStatus.PENDING,
+            phoneVerificationDeadline: Instant? = null
         ): Tenant {
             val tenant = Tenant(id, name, segment, baseCurrency)
             tenant.status = status
@@ -250,6 +333,9 @@ class Tenant private constructor(
             tenant.kybVerificationDeadline = kybVerificationDeadline
             tenant._companyIds.addAll(companyIds)
             tenant._adminMembershipIds.addAll(adminMembershipIds)
+            tenant.adminPhoneNumber = adminPhoneNumber
+            tenant.adminPhoneVerificationStatus = adminPhoneVerificationStatus
+            tenant.phoneVerificationDeadline = phoneVerificationDeadline
             return tenant
         }
     }

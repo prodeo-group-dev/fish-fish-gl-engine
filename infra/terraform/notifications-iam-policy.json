@@ -1,0 +1,31 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Ses",
+      "Effect": "Allow",
+      "Action": [
+        "ses:VerifyDomainIdentity",
+        "ses:GetIdentityVerificationAttributes",
+        "ses:DeleteIdentity",
+        "ses:VerifyDomainDkim",
+        "ses:GetIdentityDkimAttributes",
+        "ses:SetIdentityDkimEnabled",
+        "ses:ListIdentities",
+        "ses:TagResource",
+        "ses:UntagResource",
+        "ses:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SnsSmsPreferences",
+      "Effect": "Allow",
+      "Action": [
+        "sns:SetSMSAttributes",
+        "sns:GetSMSAttributes"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

@@ -58,6 +58,12 @@ variable "domain_name" {
   default     = "capital.theprodeogroup.com"
 }
 
+variable "root_domain" {
+  description = "The registered domain itself (not the capital. subdomain domain_name points at) - used by notifications.tf's SES identity (mail.<root_domain>). Same external-DNS-provider caveat as domain_name applies to its verification/DKIM records."
+  type        = string
+  default     = "theprodeogroup.com"
+}
+
 # --- Database (rds.tf) ----------------------------------------------
 #
 # Provisioned by this config as of 2026-08-26 - previously deliberately

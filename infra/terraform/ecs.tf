@@ -59,7 +59,12 @@ resource "aws_ecs_task_definition" "this" {
         # whose Origin header isn't allowlisted, and some browsers send
         # Origin on same-origin POSTs too. Confirmed missing 2026-08-27
         # (POST /api/tenants 403ing for a real onboarding attempt).
-        { name = "FISH_CORS_ALLOWED_ORIGIN", value = "https://${var.domain_name}" }
+        { name = "FISH_CORS_ALLOWED_ORIGIN", value = "https://${var.domain_name}" },
+        # CognitoAdminPhoneVerificationChecker's own lookup target (the
+        # 2026-08-27 admin-phone KYB extension - see tenant.kt) - the
+        # ECS task role's IAM policy (notifications.tf) is scoped to
+        # exactly this one user pool's AdminGetUser action.
+        { name = "FISH_COGNITO_USER_POOL_ID", value = aws_cognito_user_pool.this.id }
       ]
 
       secrets = [

@@ -2,12 +2,11 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.FakeAccountRepository
+import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeCompanyRepository
 import com.theprodeogroup.fish.application.FakeCreditorRepository
 import com.theprodeogroup.fish.application.FakeCustomerRepository
-import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
-import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.FakeJournalEntryRepository
 import com.theprodeogroup.fish.application.FakeLeaveAccrualRepository
 import com.theprodeogroup.fish.application.FakeMembershipRepository
@@ -26,6 +25,7 @@ import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
+import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
@@ -35,13 +35,12 @@ import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
 import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
-import com.theprodeogroup.fish.domain.common.ClientType
-import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.Tenant
 import com.theprodeogroup.fish.domain.tenancy.TenantSegment
 import com.theprodeogroup.fish.domain.tenancy.User
+import com.theprodeogroup.fish.domain.tenancy.VerificationStatus
 import io.kotest.matchers.shouldBe
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -59,17 +58,10 @@ import org.junit.jupiter.api.Test
 import java.util.Currency
 
 private val GBP: Currency = Currency.getInstance("GBP")
-private const val NEW_ADMIN_EMAIL = "new-admin@example.com"
-private const val EXISTING_ADMIN_EMAIL = "existing-admin@example.com"
-private const val OUTSIDER_EMAIL = "outsider@example.com"
+private const val ADMIN_EMAIL = "founder@example.com"
 
-/**
- * `POST /tenants` (Section 9.2) and `POST /tenants/{tenantId}/companies`
- * (Section 9.1) via Ktor's `testApplication` - mirrors [PurchaseOrderRoutesTest]'s
- * structure, the first coverage for this codebase's newest auth path,
- * [FISH_JWT_ONBOARDING_AUTH_NAME].
- */
-class TenantRoutesTest {
+/** `POST /tenants/{tenantId}/admin-phone` - see AdminPhoneRoutes.kt's own KDoc. */
+class AdminPhoneRoutesTest {
 
     private class Fixture {
         val userRepository = FakeUserRepository()
@@ -108,31 +100,23 @@ class TenantRoutesTest {
         val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
         val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
         val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
-
-        // An already-onboarded Tenant, for the AddCompanyToTenant tests -
-        // separate from whatever OnboardTenant itself creates fresh.
-        val existingTenant = Tenant.onboard("Existing Co", TenantSegment.EXTERNAL_B2B, GBP).also { tenantRepository.save(it) }
-        val existingCompany = Company.create(existingTenant.id, "Existing Co UK", ClientType.NON_PROFIT, "GB", GBP).also { companyRepository.save(it) }
-        val existingUser = User.create(EXISTING_ADMIN_EMAIL, "Existing Admin").also { userRepository.save(it) }
-        val existingMembership = Membership.grant(existingUser.id, existingTenant.id, Role.OWNER_ADMIN).also { membershipRepository.save(it) }
-        val existingTenantSetup = run {
-            existingTenant.addCompany(existingCompany.id)
-            existingTenant.addAdminMembership(existingMembership.id)
-            existingTenant.activate()
-            tenantRepository.save(existingTenant)
-        }
-
-        // A genuinely different Tenant, so the "authenticated but wrong
-        // Tenant" 403 case can be tested without also tripping the
-        // separate "no User/Membership at all" 401 case.
-        val otherTenant = Tenant.onboard("Other Co", TenantSegment.EXTERNAL_B2B, GBP).also { tenantRepository.save(it) }
-        val outsiderUser = User.create(OUTSIDER_EMAIL, "Outsider Admin").also { userRepository.save(it) }
-        val outsiderMembership = Membership.grant(outsiderUser.id, otherTenant.id, Role.OWNER_ADMIN).also { membershipRepository.save(it) }
-
         val adminPhoneVerificationChecker = FakeAdminPhoneVerificationChecker()
-
         val recordAdminPhoneNumberUseCase = RecordAdminPhoneNumberUseCase(tenantRepository, adminPhoneVerificationChecker)
 
+        val tenant = Tenant.onboard("Purse", TenantSegment.INTERNAL_VENTURE, GBP)
+        val adminUser = User.create(ADMIN_EMAIL, "Founding Admin").also { userRepository.save(it) }
+        val adminSetup = run {
+            val company = com.theprodeogroup.fish.domain.tenancy.Company.create(
+                tenant.id, "Purse UK", com.theprodeogroup.fish.domain.common.ClientType.NON_PROFIT, "GB", GBP
+            )
+            companyRepository.save(company)
+            val membership = Membership.grant(adminUser.id, tenant.id, Role.OWNER_ADMIN)
+            membershipRepository.save(membership)
+            tenant.addCompany(company.id)
+            tenant.addAdminMembership(membership.id)
+            tenant.activate()
+            tenantRepository.save(tenant)
+        }
 
         fun installInto(app: Application) {
             app.fishModule(
@@ -169,122 +153,71 @@ class TenantRoutesTest {
                 recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase
             )
         }
-
-        val onboardRequestBody = """
-            {
-              "tenantName": "New Co",
-              "tenantSegment": "EXTERNAL_B2B",
-              "tenantBaseCurrency": "GBP",
-              "companyName": "New Co UK",
-              "clientType": "NON_PROFIT",
-              "jurisdiction": "GB",
-              "companyBaseCurrency": "GBP",
-              "adminName": "New Admin"
-            }
-        """.trimIndent()
     }
 
     @Test
-    fun `given a valid onboarding request with a bearer token, when posted, then it returns 201 with the new Tenant's identifiers`() = testApplication {
+    fun `given a verified phone number, when posted with a matching bearer token and X-Tenant-Id, then it returns 200 with Verified status`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/api/tenants") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(NEW_ADMIN_EMAIL)}")
+        val response = client.post("/api/tenants/${fixture.tenant.id.value}/admin-phone") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.id.value.toString())
             contentType(ContentType.Application.Json)
-            setBody(fixture.onboardRequestBody)
+            setBody("""{"phoneNumber": "+15550123456"}""")
         }
 
-        response.status shouldBe HttpStatusCode.Created
-        val body: OnboardTenantResponseDto = response.body()
-        body.tenantId.isNotBlank() shouldBe true
-        fixture.userRepository.findByEmail(NEW_ADMIN_EMAIL)?.email shouldBe NEW_ADMIN_EMAIL
+        response.status shouldBe HttpStatusCode.OK
+        val body: RecordAdminPhoneNumberResponseDto = response.body()
+        body.adminPhoneVerificationStatus shouldBe VerificationStatus.VERIFIED.name
     }
 
     @Test
-    fun `given no bearer token, when onboarding is posted, then it returns 401`() = testApplication {
+    fun `given Cognito has not verified this phone number, when posted, then it returns 400`() = testApplication {
         val fixture = Fixture()
+        fixture.adminPhoneVerificationChecker.alwaysReject()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/api/tenants") {
+        val response = client.post("/api/tenants/${fixture.tenant.id.value}/admin-phone") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.id.value.toString())
             contentType(ContentType.Application.Json)
-            setBody(fixture.onboardRequestBody)
-        }
-
-        response.status shouldBe HttpStatusCode.Unauthorized
-    }
-
-    @Test
-    fun `given an invalid tenantSegment, when onboarding is posted, then it returns 400`() = testApplication {
-        val fixture = Fixture()
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.post("/api/tenants") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(NEW_ADMIN_EMAIL)}")
-            contentType(ContentType.Application.Json)
-            setBody(
-                """{"tenantName": "New Co", "tenantSegment": "NOT_A_REAL_SEGMENT", "tenantBaseCurrency": "GBP",
-                    "companyName": "New Co UK", "clientType": "NON_PROFIT", "jurisdiction": "GB",
-                    "companyBaseCurrency": "GBP", "adminName": "New Admin"}"""
-            )
+            setBody("""{"phoneNumber": "+15550123456"}""")
         }
 
         response.status shouldBe HttpStatusCode.BadRequest
     }
 
     @Test
-    fun `given a caller who already has a Membership elsewhere, when they onboard a brand new Tenant, then a fresh Membership is granted regardless`() = testApplication {
+    fun `given a malformed phone number, when posted, then it returns 400 without calling Cognito`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        // The existing admin (already a member of fixture.existingTenant) onboards a second, unrelated Tenant.
-        val response = client.post("/api/tenants") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(EXISTING_ADMIN_EMAIL)}")
+        val response = client.post("/api/tenants/${fixture.tenant.id.value}/admin-phone") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.id.value.toString())
             contentType(ContentType.Application.Json)
-            setBody(fixture.onboardRequestBody)
+            setBody("""{"phoneNumber": "07700 900123"}""")
         }
 
-        response.status shouldBe HttpStatusCode.Created
-        val body: OnboardTenantResponseDto = response.body()
-        body.tenantId shouldBe body.tenantId // sanity - a second, distinct Tenant was created
-        (body.tenantId == fixture.existingTenant.id.value.toString()) shouldBe false
+        response.status shouldBe HttpStatusCode.BadRequest
     }
 
     @Test
-    fun `given a valid add-company request with a bearer token and matching X-Tenant-Id, when posted, then it returns 201`() = testApplication {
+    fun `given no bearer token, when posted, then it returns 401`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/api/tenants/${fixture.existingTenant.id.value}/companies") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(EXISTING_ADMIN_EMAIL)}")
-            header("X-Tenant-Id", fixture.existingTenant.id.value.toString())
+        val response = client.post("/api/tenants/${fixture.tenant.id.value}/admin-phone") {
+            header("X-Tenant-Id", fixture.tenant.id.value.toString())
             contentType(ContentType.Application.Json)
-            setBody("""{"companyName": "Existing Co SL", "clientType": "NON_PROFIT", "jurisdiction": "SL", "companyBaseCurrency": "GBP"}""")
+            setBody("""{"phoneNumber": "+15550123456"}""")
         }
 
-        response.status shouldBe HttpStatusCode.Created
-        val body: AddCompanyToTenantResponseDto = response.body()
-        body.tenantId shouldBe fixture.existingTenant.id.value.toString()
-    }
-
-    @Test
-    fun `given a caller authenticated in a different Tenant, when add-company is posted, then it returns 403`() = testApplication {
-        val fixture = Fixture()
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.post("/api/tenants/${fixture.existingTenant.id.value}/companies") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(OUTSIDER_EMAIL)}")
-            header("X-Tenant-Id", fixture.existingTenant.id.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody("""{"companyName": "Existing Co SL", "clientType": "NON_PROFIT", "jurisdiction": "SL", "companyBaseCurrency": "GBP"}""")
-        }
-
-        response.status shouldBe HttpStatusCode.Forbidden
+        response.status shouldBe HttpStatusCode.Unauthorized
     }
 }

@@ -175,6 +175,17 @@
       "Resource": "arn:aws:iam::*:role/aws-service-role/rds.amazonaws.com/AWSServiceRoleForRDS*"
     },
     {
+      "Sid": "CognitoEmailServiceLinkedRole",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "arn:aws:iam::*:role/aws-service-role/email.cognito-idp.amazonaws.com/*",
+      "Condition": {
+        "StringEquals": {
+          "iam:AWSServiceName": "email.cognito-idp.amazonaws.com"
+        }
+      }
+    },
+    {
       "Sid": "ElasticLoadBalancing",
       "Effect": "Allow",
       "Action": [
