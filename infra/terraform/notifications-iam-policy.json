@@ -5,6 +5,8 @@
       "Sid": "Ses",
       "Effect": "Allow",
       "Action": [
+        "ses:GetAccount",
+        "ses:PutAccountDetails",
         "ses:VerifyDomainIdentity",
         "ses:GetIdentityVerificationAttributes",
         "ses:DeleteIdentity",
@@ -15,6 +17,15 @@
         "ses:TagResource",
         "ses:UntagResource",
         "ses:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SupportCaseCorrespondence",
+      "Effect": "Allow",
+      "Action": [
+        "support:AddCommunicationToCase",
+        "support:DescribeCases"
       ],
       "Resource": "*"
     },

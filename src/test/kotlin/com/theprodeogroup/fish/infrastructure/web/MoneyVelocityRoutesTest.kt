@@ -1,9 +1,14 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import com.theprodeogroup.common.Money
+import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
 import com.theprodeogroup.fish.application.FakeAccountRepository
+import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeCompanyRepository
 import com.theprodeogroup.fish.application.FakeCreditorRepository
 import com.theprodeogroup.fish.application.FakeCustomerRepository
+import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
 import com.theprodeogroup.fish.application.FakeJournalEntryRepository
 import com.theprodeogroup.fish.application.FakeLeaveAccrualRepository
 import com.theprodeogroup.fish.application.FakeMembershipRepository
@@ -12,9 +17,9 @@ import com.theprodeogroup.fish.application.FakePeriodRepository
 import com.theprodeogroup.fish.application.FakePurchaseOrderRepository
 import com.theprodeogroup.fish.application.FakeSalesOrderRepository
 import com.theprodeogroup.fish.application.FakeStockItemRepository
-import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.FakeTenantRepository
-import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.FakeUserRepository
+import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
 import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
@@ -22,11 +27,7 @@ import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
-import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
-import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
-import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
 import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
-import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
@@ -37,31 +38,28 @@ import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
-import com.theprodeogroup.fish.domain.common.LineItemType
+import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.PeriodType
+import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.Account
-import com.theprodeogroup.fish.domain.ledger.AccountClassification
+import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountType
-import com.theprodeogroup.common.Money
+import com.theprodeogroup.fish.domain.ledger.JournalEntry
+import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Period
-import com.theprodeogroup.fish.domain.purchasing.Creditor
-import com.theprodeogroup.fish.domain.purchasing.PurchaseOrder
-import com.theprodeogroup.fish.domain.purchasing.PurchaseOrderLine
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
-import com.theprodeogroup.fish.domain.tenancy.TenantId
+import com.theprodeogroup.fish.domain.tenancy.Tenant
+import com.theprodeogroup.fish.domain.tenancy.TenantSegment
 import com.theprodeogroup.fish.domain.tenancy.User
 import io.kotest.matchers.shouldBe
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.get
 import io.ktor.client.request.header
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.testing.testApplication
@@ -71,26 +69,25 @@ import java.time.LocalDate
 import java.util.Currency
 
 private val GBP: Currency = Currency.getInstance("GBP")
-private val TODAY = LocalDate.of(2026, 8, 26)
-private const val TEST_EMAIL = "accountant2@example.com"
+private const val ADMIN_EMAIL = "founder@example.com"
+private val TODAY = LocalDate.of(2026, 8, 27)
 
-/**
- * `POST /purchase-orders/{id}/post` via Ktor's `testApplication` -
- * mirrors [JournalEntryRoutesTest]'s structure, the "ecosystem"-shaped
- * counterpart to that core-Ledger example.
- */
-class PurchaseOrderRoutesTest {
+/** `GET /companies/{companyId}/money-velocity` - see MoneyVelocityRoutes.kt's own KDoc. */
+class MoneyVelocityRoutesTest {
 
     private class Fixture {
         val userRepository = FakeUserRepository()
         val membershipRepository = FakeMembershipRepository()
         val companyRepository = FakeCompanyRepository()
+        val tenantRepository = FakeTenantRepository()
         val periodRepository = FakePeriodRepository()
         val accountRepository = FakeAccountRepository()
         val journalEntryRepository = FakeJournalEntryRepository()
         val creditorRepository = FakeCreditorRepository()
         val stockItemRepository = FakeStockItemRepository()
         val purchaseOrderRepository = FakePurchaseOrderRepository()
+        val onboardTenantUseCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository)
+        val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(tenantRepository, companyRepository, accountRepository, periodRepository, journalEntryRepository)
         val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
         val postPurchaseOrderUseCase = PostPurchaseOrderUseCase(
             purchaseOrderRepository, creditorRepository, stockItemRepository, periodRepository, accountRepository, journalEntryRepository
@@ -113,36 +110,43 @@ class PurchaseOrderRoutesTest {
         val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
         val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
-        val tenantRepository = FakeTenantRepository()
-        val onboardTenantUseCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository)
-        val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(tenantRepository, companyRepository, accountRepository, periodRepository, journalEntryRepository)
         val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
         val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
+        val adminPhoneVerificationChecker = FakeAdminPhoneVerificationChecker()
+        val recordAdminPhoneNumberUseCase = RecordAdminPhoneNumberUseCase(tenantRepository, adminPhoneVerificationChecker)
+        val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
 
-        val tenantId = TenantId.generate()
-        val user = User.create(TEST_EMAIL, "Test Accountant").also { userRepository.save(it) }
-        val membership = Membership.grant(user.id, tenantId, Role.ACCOUNTANT).also { membershipRepository.save(it) }
-        val company = Company.create(tenantId, "Test Co", ClientType.NON_PROFIT, "GB", GBP).also { companyRepository.save(it) }
-        val period = Period.create(company.id, PeriodType.MONTH, TODAY, TODAY.plusDays(30)).also {
+        val tenant = Tenant.onboard("Purse", TenantSegment.INTERNAL_VENTURE, GBP)
+        val company = Company.create(tenant.id, "Purse UK", ClientType.NON_PROFIT, "GB", GBP)
+        val adminUser = User.create(ADMIN_EMAIL, "Founding Admin").also { userRepository.save(it) }
+        val adminSetup = run {
+            companyRepository.save(company)
+            val membership = Membership.grant(adminUser.id, tenant.id, Role.OWNER_ADMIN)
+            membershipRepository.save(membership)
+            tenant.addCompany(company.id)
+            tenant.addAdminMembership(membership.id)
+            tenant.activate()
+            tenantRepository.save(tenant)
+        }
+
+        val period = Period.create(company.id, PeriodType.MONTH, TODAY.minusDays(10), TODAY.plusDays(20)).also {
             it.open()
             periodRepository.save(it)
         }
-        val expenseAccount = Account.create(company.id, AccountType.EXPENSE, null, "5000", "Test Expense").also { accountRepository.save(it) }
-        val apControlAccount = Account.create(company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2100", "Accounts Payable").also { accountRepository.save(it) }
-        val supplier = Creditor.create(company.id, "Test Supplier", GBP).also { creditorRepository.save(it) }
-        val order = PurchaseOrder.create(
-            company.id, supplier.id, TODAY,
-            listOf(PurchaseOrderLine("Consulting", expenseAccount.id, Money(BigDecimal("500.00"), GBP), LineItemType.SERVICE))
-        ).also { purchaseOrderRepository.save(it) }
+        val revenueAccount = Account.create(company.id, AccountType.REVENUE, null, "4000", "Revenue").also { accountRepository.save(it) }
 
-        val adminPhoneVerificationChecker = FakeAdminPhoneVerificationChecker()
-
-        val recordAdminPhoneNumberUseCase = RecordAdminPhoneNumberUseCase(tenantRepository, adminPhoneVerificationChecker)
-
-
-        val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
-
-
+        fun postRevenue(amount: String) {
+            val entry = JournalEntry.create(
+                period.id, TODAY,
+                listOf(
+                    JournalLine(AccountId.generate(), Money(BigDecimal(amount), GBP), TransactionSide.DEBIT),
+                    JournalLine(revenueAccount.id, Money(BigDecimal(amount), GBP), TransactionSide.CREDIT)
+                ),
+                JournalSource.MANUAL
+            )
+            entry.post()
+            journalEntryRepository.save(entry)
+        }
 
         fun installInto(app: Application) {
             app.fishModule(
@@ -150,6 +154,9 @@ class PurchaseOrderRoutesTest {
                 userRepository = userRepository,
                 membershipRepository = membershipRepository,
                 companyRepository = companyRepository,
+                tenantRepository = tenantRepository,
+                onboardTenantUseCase = onboardTenantUseCase,
+                addCompanyToTenantUseCase = addCompanyToTenantUseCase,
                 periodRepository = periodRepository,
                 postJournalEntryUseCase = postJournalEntryUseCase,
                 purchaseOrderRepository = purchaseOrderRepository,
@@ -174,83 +181,74 @@ class PurchaseOrderRoutesTest {
                 getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
                 idempotencyKeyRepository = idempotencyKeyRepository,
                 recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
-                computeMoneyVelocityUseCase = computeMoneyVelocityUseCase,
-                tenantRepository = tenantRepository,
-                onboardTenantUseCase = onboardTenantUseCase,
-                addCompanyToTenantUseCase = addCompanyToTenantUseCase
+                computeMoneyVelocityUseCase = computeMoneyVelocityUseCase
             )
         }
     }
 
     @Test
-    fun `given a valid request with a bearer token and matching X-Tenant-Id, when posted, then it returns 200 with SENT status`() = testApplication {
+    fun `given a matching X-Tenant-Id and bearer token, when GET money-velocity is called, then it returns the daily rate`() = testApplication {
         val fixture = Fixture()
+        fixture.postRevenue("500.00")
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/api/purchase-orders/${fixture.order.id.value}/post") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody("""{"periodId": "${fixture.period.id.value}", "apControlAccountId": "${fixture.apControlAccount.id.value}"}""")
+        val response = client.get("/api/companies/${fixture.company.id.value}/money-velocity") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.id.value.toString())
         }
 
         response.status shouldBe HttpStatusCode.OK
-        val body: PostPurchaseOrderResponseDto = response.body()
-        body.status shouldBe "SENT"
+        val body: MoneyVelocityResponseDto = response.body()
+        body.netIncome shouldBe "500.00"
+        body.currency shouldBe "GBP"
+        body.daysElapsed shouldBe 10L
+        body.dailyRate shouldBe "50.00"
     }
 
     @Test
-    fun `given no bearer token, when posted, then it returns 401`() = testApplication {
+    fun `given no bearer token, when GET money-velocity is called, then it returns 401`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/api/purchase-orders/${fixture.order.id.value}/post") {
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody("""{"periodId": "${fixture.period.id.value}", "apControlAccountId": "${fixture.apControlAccount.id.value}"}""")
+        val response = client.get("/api/companies/${fixture.company.id.value}/money-velocity") {
+            header("X-Tenant-Id", fixture.tenant.id.value.toString())
         }
 
         response.status shouldBe HttpStatusCode.Unauthorized
     }
 
     @Test
-    fun `given a nonexistent PurchaseOrder id, when posted, then it returns 404`() = testApplication {
+    fun `given a caller authenticated in a different Tenant, when GET money-velocity is called, then it returns 403`() = testApplication {
         val fixture = Fixture()
+        val outsiderTenant = Tenant.onboard("Other Co", TenantSegment.EXTERNAL_B2B, GBP)
+        val outsiderUser = User.create("outsider@example.com", "Outsider").also { fixture.userRepository.save(it) }
+        val outsiderMembership = Membership.grant(outsiderUser.id, outsiderTenant.id, Role.OWNER_ADMIN)
+        fixture.membershipRepository.save(outsiderMembership)
+        fixture.tenantRepository.save(outsiderTenant)
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/api/purchase-orders/${java.util.UUID.randomUUID()}/post") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody("""{"periodId": "${fixture.period.id.value}", "apControlAccountId": "${fixture.apControlAccount.id.value}"}""")
+        val response = client.get("/api/companies/${fixture.company.id.value}/money-velocity") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken("outsider@example.com")}")
+            header("X-Tenant-Id", fixture.tenant.id.value.toString())
         }
 
-        response.status shouldBe HttpStatusCode.NotFound
+        response.status shouldBe HttpStatusCode.Forbidden
     }
 
     @Test
-    fun `given the PurchaseOrder already posted once, when posted again, then it returns 409`() = testApplication {
+    fun `given a nonexistent Company, when GET money-velocity is called, then it returns 404`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
-        val requestBody = """{"periodId": "${fixture.period.id.value}", "apControlAccountId": "${fixture.apControlAccount.id.value}"}"""
-        client.post("/api/purchase-orders/${fixture.order.id.value}/post") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody(requestBody)
+
+        val response = client.get("/api/companies/${java.util.UUID.randomUUID()}/money-velocity") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.id.value.toString())
         }
 
-        val response = client.post("/api/purchase-orders/${fixture.order.id.value}/post") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody(requestBody)
-        }
-
-        response.status shouldBe HttpStatusCode.Conflict
+        response.status shouldBe HttpStatusCode.NotFound
     }
 }

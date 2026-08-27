@@ -25,6 +25,7 @@ import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
+import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
 import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
@@ -118,6 +119,9 @@ class AdminPhoneRoutesTest {
             tenantRepository.save(tenant)
         }
 
+        val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+
+
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
@@ -150,7 +154,8 @@ class AdminPhoneRoutesTest {
                 recordPayRunUseCase = recordPayRunUseCase,
                 getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
                 idempotencyKeyRepository = idempotencyKeyRepository,
-                recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase
+                recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
+                computeMoneyVelocityUseCase = computeMoneyVelocityUseCase
             )
         }
     }

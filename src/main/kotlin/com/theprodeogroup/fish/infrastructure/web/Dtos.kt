@@ -408,3 +408,34 @@ data class RecordAdminPhoneNumberResponseDto(
     val tenantId: String,
     val adminPhoneVerificationStatus: String
 )
+
+@Serializable
+data class MyTenantDto(
+    val tenantId: String,
+    val tenantName: String,
+    val role: String,
+    val tenantStatus: String,
+    val kybStatus: String,
+    val adminKycStatus: String,
+    val adminPhoneNumber: String?,
+    val adminPhoneVerificationStatus: String,
+    val phoneVerificationDeadline: String?,
+    val companyIds: List<String>
+)
+
+@Serializable
+data class MyProfileResponseDto(
+    val email: String,
+    val name: String,
+    val tenants: List<MyTenantDto>
+)
+
+@Serializable
+data class MoneyVelocityResponseDto(
+    val periodId: String,
+    val periodStartDate: String,
+    val netIncome: String,
+    val dailyRate: String,
+    val currency: String,
+    val daysElapsed: Long
+)

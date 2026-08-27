@@ -2,6 +2,7 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.auth0.jwt.interfaces.JWTVerifier
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.KybGracePeriodSweep
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
@@ -157,6 +158,7 @@ fun Application.productionModule() {
     val recordAdminPhoneNumberUseCase = RecordAdminPhoneNumberUseCase(
         tenantRepository, CognitoAdminPhoneVerificationChecker(cognitoUserPoolId)
     )
+    val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
 
     // In-process scheduler for KybGracePeriodSweep (docs/DDD_Design.md
     // Section 9.4, extended 2026-08-27 to also cover the admin phone
@@ -213,7 +215,8 @@ fun Application.productionModule() {
         recordPayRunUseCase = recordPayRunUseCase,
         getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
         idempotencyKeyRepository = idempotencyKeyRepository,
-        recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase
+        recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
+        computeMoneyVelocityUseCase = computeMoneyVelocityUseCase
     )
 }
 
@@ -257,7 +260,8 @@ fun Application.fishModule(
     recordPayRunUseCase: RecordPayRunUseCase,
     getOrCreateLeaveAccrualUseCase: GetOrCreateLeaveAccrualUseCase,
     idempotencyKeyRepository: IdempotencyKeyRepository,
-    recordAdminPhoneNumberUseCase: RecordAdminPhoneNumberUseCase
+    recordAdminPhoneNumberUseCase: RecordAdminPhoneNumberUseCase,
+    computeMoneyVelocityUseCase: ComputeMoneyVelocityUseCase
 ) {
     install(ContentNegotiation) { json() }
     install(CallLogging) { level = Level.INFO }
@@ -334,6 +338,8 @@ fun Application.fishModule(
                 recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, idempotencyKeyRepository)
                 recordVendorObligationAndPaymentRoutes(recordVendorObligationUseCase, recordVendorPaymentUseCase, companyRepository, idempotencyKeyRepository)
                 recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
+                meRoutes(tenantRepository)
+                moneyVelocityRoutes(computeMoneyVelocityUseCase, companyRepository)
             }
         }
     }

@@ -7,6 +7,7 @@ import com.theprodeogroup.fish.application.FakeCreditorRepository
 import com.theprodeogroup.fish.application.FakeCustomerRepository
 import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
+import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
 import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.FakeJournalEntryRepository
 import com.theprodeogroup.fish.application.FakeLeaveAccrualRepository
@@ -134,6 +135,10 @@ class TenantRoutesTest {
         val recordAdminPhoneNumberUseCase = RecordAdminPhoneNumberUseCase(tenantRepository, adminPhoneVerificationChecker)
 
 
+        val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+
+
+
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
@@ -166,7 +171,8 @@ class TenantRoutesTest {
                 recordPayRunUseCase = recordPayRunUseCase,
                 getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
                 idempotencyKeyRepository = idempotencyKeyRepository,
-                recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase
+                recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
+                computeMoneyVelocityUseCase = computeMoneyVelocityUseCase
             )
         }
 

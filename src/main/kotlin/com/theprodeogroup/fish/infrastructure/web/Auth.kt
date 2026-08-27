@@ -216,6 +216,30 @@ suspend fun ApplicationCall.authorizeTenantForWrite(tenantId: TenantId): Authent
 }
 
 /**
+ * [authorizeTenantForWrite]'s counterpart for a route that only reads
+ * data - same Membership-in-Tenant check, but deliberately without the
+ * [Role.READ_ONLY] rejection, since blocking a READ_ONLY member from a
+ * *read* would contradict what that role name promises. Added for the
+ * money-velocity KPI route (2026-08-27) - this codebase's first
+ * read-only, Company-scoped `GET` endpoint; every prior route was
+ * either a write ([authorizeTenantForWrite]) or needed no Tenant scope
+ * at all ([MeRoutes]).
+ */
+suspend fun ApplicationCall.authorizeTenantForRead(tenantId: TenantId): AuthenticatedCaller? {
+    val caller = principal<AuthenticatedCaller>()
+    if (caller == null) {
+        respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
+        return null
+    }
+    val membership = caller.memberships.firstOrNull { it.tenantId == tenantId }
+    if (membership == null) {
+        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "No active Membership in the requested Tenant"))
+        return null
+    }
+    return caller
+}
+
+/**
  * Resolves which [TenantId] owns [companyId] - `Membership` is
  * Tenant-scoped only (Section 3.2, no per-Company role granularity
  * exists in the domain model), so authorizing a request that targets a
