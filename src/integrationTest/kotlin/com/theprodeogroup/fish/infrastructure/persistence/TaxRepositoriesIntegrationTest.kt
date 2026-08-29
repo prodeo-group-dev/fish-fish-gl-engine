@@ -112,11 +112,14 @@ class TaxRepositoriesIntegrationTest {
         otherwise.tiers[1].upperBound shouldBe null
         requireNotNull(otherwise.marginalRelief).fraction shouldEqualNumerically BigDecimal("0.015")
 
-        // and it computes the same as the original, unreloaded structure
+        // and it computes the same as the original, unreloaded structure would:
+        // turnover (150M) exceeds maxTurnover (100M) so the exemption test fails,
+        // taxableAmount (50M) is above the marginal-relief upperLimit (250000), so
+        // the whole amount is taxed at the main rate: 50,000,000 * 0.25 = 12,500,000
         reloadedStructure.computeTaxDue(
             BigDecimal("50000000"),
             TaxComputationInputs(turnover = BigDecimal("150000000"), fixedAssets = BigDecimal("200000000"))
-        ) shouldEqualNumerically BigDecimal("15000000")
+        ) shouldEqualNumerically BigDecimal("12500000")
     }
 
     @Test
