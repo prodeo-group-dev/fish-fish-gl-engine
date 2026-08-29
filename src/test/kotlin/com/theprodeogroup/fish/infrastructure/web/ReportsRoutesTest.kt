@@ -2,19 +2,18 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
+import com.theprodeogroup.fish.application.ComputeCashFlowUseCase
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeInventoryScheduleUseCase
-import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
-import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
 import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
-import com.theprodeogroup.fish.application.ComputeCashFlowUseCase
+import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
+import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeCompanyRepository
 import com.theprodeogroup.fish.application.FakeCreditorRepository
-import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
-import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.FakeCustomerRepository
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
 import com.theprodeogroup.fish.application.FakeJournalEntryRepository
@@ -30,6 +29,7 @@ import com.theprodeogroup.fish.application.FakeStockShortageEscalationRepository
 import com.theprodeogroup.fish.application.FakeTenantRepository
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
+import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
 import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
@@ -52,14 +52,12 @@ import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.PeriodType
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.Account
-import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountType
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.Membership
-import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.Tenant
 import com.theprodeogroup.fish.domain.tenancy.TenantSegment
@@ -81,15 +79,19 @@ import java.util.Currency
 
 private val GBP: Currency = Currency.getInstance("GBP")
 private const val ADMIN_EMAIL = "founder@example.com"
-// LocalDate.now(), not a hardcoded date - this fixture's Period/JournalEntry
-// dates must track whatever "now" actually is, since the route itself always
-// computes daysElapsed against the real LocalDate.now() (no fake-clock
-// injection point exists for a route test) - a hardcoded date here silently
-// breaks daysElapsed assertions as real time passes past it.
 private val TODAY: LocalDate = LocalDate.now()
 
-/** `GET /companies/{companyId}/money-velocity` - see MoneyVelocityRoutes.kt's own KDoc. */
-class MoneyVelocityRoutesTest {
+/**
+ * `GET /companies/{companyId}/reports/{balance-sheet,profit-and-loss,cash-flow}` -
+ * see ReportsRoutes.kt's own KDoc. One shared Fixture posts a small,
+ * hand-checkable set of entries (owner investment, a cash sale, a cash
+ * expense, a credit purchase) once, then each report is asserted against
+ * the same known state - cheaper to keep in sync than three unrelated
+ * scenarios, and the numbers cross-check each other (Balance Sheet's
+ * [isBalanced] only means something if the same entries also produce the
+ * expected P&L/Cash Flow totals).
+ */
+class ReportsRoutesTest {
 
     private class Fixture {
         val userRepository = FakeUserRepository()
@@ -157,21 +159,26 @@ class MoneyVelocityRoutesTest {
             tenantRepository.save(tenant)
         }
 
-        val period = Period.create(company.id, PeriodType.MONTH, TODAY.minusDays(10), TODAY.plusDays(20)).also {
+        val period = Period.create(company.id, PeriodType.MONTH, TODAY.minusDays(5), TODAY.plusDays(25)).also {
             it.open()
             periodRepository.save(it)
         }
-        val revenueAccount = Account.create(company.id, AccountType.REVENUE, null, "4000", "Revenue").also { accountRepository.save(it) }
+        val cashAccount = Account.create(company.id, AccountType.ASSET, com.theprodeogroup.fish.domain.ledger.AccountClassification.CURRENT, "1000", "Cash").also { accountRepository.save(it) }
+        val payableAccount = Account.create(company.id, AccountType.LIABILITY, com.theprodeogroup.fish.domain.ledger.AccountClassification.CURRENT, "2000", "Accounts Payable").also { accountRepository.save(it) }
+        val equityAccount = Account.create(company.id, AccountType.EQUITY, null, "3000", "Share Capital").also { accountRepository.save(it) }
+        val revenueAccount = Account.create(company.id, AccountType.REVENUE, null, "4000", "Sales Revenue").also { accountRepository.save(it) }
+        val expenseAccount = Account.create(company.id, AccountType.EXPENSE, null, "5000", "Operating Expenses").also { accountRepository.save(it) }
 
-        fun postRevenue(amount: String) {
-            val entry = JournalEntry.create(
-                period.id, TODAY,
-                listOf(
-                    JournalLine(AccountId.generate(), Money(BigDecimal(amount), GBP), TransactionSide.DEBIT),
-                    JournalLine(revenueAccount.id, Money(BigDecimal(amount), GBP), TransactionSide.CREDIT)
-                ),
-                JournalSource.MANUAL
-            )
+        /** Owner invests 1000, a 500 cash sale, a 200 cash expense, a 100 credit purchase - all hand-checkable. */
+        fun postSampleActivity() {
+            post(listOf(JournalLine(cashAccount.id, Money(BigDecimal("1000.00"), GBP), TransactionSide.DEBIT), JournalLine(equityAccount.id, Money(BigDecimal("1000.00"), GBP), TransactionSide.CREDIT)))
+            post(listOf(JournalLine(cashAccount.id, Money(BigDecimal("500.00"), GBP), TransactionSide.DEBIT), JournalLine(revenueAccount.id, Money(BigDecimal("500.00"), GBP), TransactionSide.CREDIT)))
+            post(listOf(JournalLine(expenseAccount.id, Money(BigDecimal("200.00"), GBP), TransactionSide.DEBIT), JournalLine(cashAccount.id, Money(BigDecimal("200.00"), GBP), TransactionSide.CREDIT)))
+            post(listOf(JournalLine(expenseAccount.id, Money(BigDecimal("100.00"), GBP), TransactionSide.DEBIT), JournalLine(payableAccount.id, Money(BigDecimal("100.00"), GBP), TransactionSide.CREDIT)))
+        }
+
+        private fun post(lines: List<JournalLine>) {
+            val entry = JournalEntry.create(period.id, TODAY, lines, JournalSource.MANUAL)
             entry.post()
             journalEntryRepository.save(entry)
         }
@@ -226,32 +233,36 @@ class MoneyVelocityRoutesTest {
     }
 
     @Test
-    fun `given a matching X-Tenant-Id and bearer token, when GET money-velocity is called, then it returns the daily rate`() = testApplication {
+    fun `given the sample activity, when GET reports balance-sheet is called, then it returns a balanced sheet with retained earnings`() = testApplication {
         val fixture = Fixture()
-        fixture.postRevenue("500.00")
+        fixture.postSampleActivity()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.get("/api/companies/${fixture.company.id.value}/money-velocity") {
+        val response = client.get("/api/companies/${fixture.company.id.value}/reports/balance-sheet") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
             header("X-Tenant-Id", fixture.tenant.id.value.toString())
         }
 
         response.status shouldBe HttpStatusCode.OK
-        val body: MoneyVelocityResponseDto = response.body()
-        body.netIncome shouldBe "500.00"
-        body.currency shouldBe "GBP"
-        body.daysElapsed shouldBe 10L
-        body.dailyRate shouldBe "50.00"
+        val body: BalanceSheetResponseDto = response.body()
+        body.assetLines.single().balance shouldBe "1300.00"
+        body.liabilityLines.single().balance shouldBe "100.00"
+        body.equityLines.single().balance shouldBe "1000.00"
+        body.retainedEarnings shouldBe "200.00"
+        body.totalAssets shouldBe "1300.00"
+        body.totalLiabilities shouldBe "100.00"
+        body.totalEquity shouldBe "1200.00"
+        body.isBalanced shouldBe true
     }
 
     @Test
-    fun `given no bearer token, when GET money-velocity is called, then it returns 401`() = testApplication {
+    fun `given no bearer token, when GET reports balance-sheet is called, then it returns 401`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.get("/api/companies/${fixture.company.id.value}/money-velocity") {
+        val response = client.get("/api/companies/${fixture.company.id.value}/reports/balance-sheet") {
             header("X-Tenant-Id", fixture.tenant.id.value.toString())
         }
 
@@ -259,52 +270,66 @@ class MoneyVelocityRoutesTest {
     }
 
     @Test
-    fun `given a caller authenticated in a different Tenant, when GET money-velocity is called, then it returns 403`() = testApplication {
+    fun `given the sample activity, when GET reports profit-and-loss is called, then it returns revenue, expense and net income`() = testApplication {
         val fixture = Fixture()
-        val outsiderTenant = Tenant.onboard("Other Co", TenantSegment.EXTERNAL_B2B, GBP)
-        val outsiderUser = User.create("outsider@example.com", "Outsider").also { fixture.userRepository.save(it) }
-        val outsiderMembership = Membership.grant(outsiderUser.id, outsiderTenant.id, Role.OWNER_ADMIN)
-        fixture.membershipRepository.save(outsiderMembership)
-        fixture.tenantRepository.save(outsiderTenant)
+        fixture.postSampleActivity()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.get("/api/companies/${fixture.company.id.value}/money-velocity") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken("outsider@example.com")}")
-            header("X-Tenant-Id", fixture.tenant.id.value.toString())
-        }
-
-        response.status shouldBe HttpStatusCode.Forbidden
-    }
-
-    @Test
-    fun `given a Membership with AccessLevel NONE in the correct Tenant, when GET money-velocity is called, then it returns 403`() = testApplication {
-        val fixture = Fixture()
-        val noAccessUser = User.create("no-access@example.com", "No Access").also { fixture.userRepository.save(it) }
-        val noAccessMembership = Membership.grant(noAccessUser.id, fixture.tenant.id, Role.READ_ONLY, AccessLevel.NONE)
-        fixture.membershipRepository.save(noAccessMembership)
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.get("/api/companies/${fixture.company.id.value}/money-velocity") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken("no-access@example.com")}")
-            header("X-Tenant-Id", fixture.tenant.id.value.toString())
-        }
-
-        response.status shouldBe HttpStatusCode.Forbidden
-    }
-
-    @Test
-    fun `given a nonexistent Company, when GET money-velocity is called, then it returns 404`() = testApplication {
-        val fixture = Fixture()
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.get("/api/companies/${java.util.UUID.randomUUID()}/money-velocity") {
+        val response = client.get("/api/companies/${fixture.company.id.value}/reports/profit-and-loss") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
             header("X-Tenant-Id", fixture.tenant.id.value.toString())
         }
 
-        response.status shouldBe HttpStatusCode.NotFound
+        response.status shouldBe HttpStatusCode.OK
+        val body: ProfitAndLossResponseDto = response.body()
+        body.totalRevenue shouldBe "500.00"
+        body.totalExpense shouldBe "300.00"
+        body.netIncome shouldBe "200.00"
+    }
+
+    @Test
+    fun `given no bearer token, when GET reports profit-and-loss is called, then it returns 401`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/reports/profit-and-loss") {
+            header("X-Tenant-Id", fixture.tenant.id.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.Unauthorized
+    }
+
+    @Test
+    fun `given the sample activity, when GET reports cash-flow is called, then it returns the cash movement`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleActivity()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/reports/cash-flow") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.id.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: CashFlowResponseDto = response.body()
+        body.openingBalance shouldBe "0.00"
+        body.closingBalance shouldBe "1300.00"
+        body.netCashFlow shouldBe "1300.00"
+    }
+
+    @Test
+    fun `given no bearer token, when GET reports cash-flow is called, then it returns 401`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/reports/cash-flow") {
+            header("X-Tenant-Id", fixture.tenant.id.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.Unauthorized
     }
 }
