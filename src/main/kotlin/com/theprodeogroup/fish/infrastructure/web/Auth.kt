@@ -5,11 +5,11 @@ import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
 import com.auth0.jwt.interfaces.JWTVerifier
 import com.auth0.jwt.interfaces.RSAKeyProvider
+import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
 import com.theprodeogroup.fish.domain.tenancy.MembershipStatus
-import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.domain.tenancy.UserRepository
 import io.ktor.http.HttpStatusCode
@@ -180,22 +180,17 @@ fun Route.fishOnboarding(build: Route.() -> Unit): Route =
 
 /**
  * Resolves the calling [AuthenticatedCaller.memberships] entry matching
- * [tenantId] and requires a role that isn't [Role.READ_ONLY] - the
- * minimal, honest authorization policy for this first pass (docs/DDD_Design.md
- * Section 10.19): `Role` itself is documented as "a label enum only,
- * carrying no behavior; permission enforcement is explicitly an
- * API-layer concern" with no permissions matrix defined anywhere in the
- * spec. Rather than inventing a speculative fine-grained matrix nobody
- * has asked for, this applies the one distinction the `Role` enum
- * itself already documents unambiguously - [Role.READ_ONLY] means
- * read-only - and defers a richer matrix to whenever a real
- * requirement for one shows up.
+ * [tenantId] and requires [AccessLevel.WRITE] or above (2026-08-29,
+ * replacing the old `Role.READ_ONLY` check - see [AccessLevel]'s own
+ * KDoc for why enforcement moved off `Role` entirely: `Role` is
+ * documented as "a label enum only, carrying no behavior," and never
+ * had a permissions matrix defined for it in the spec).
  *
  * Responds and returns `null` on failure (401 - no `AuthenticatedCaller`
- * at all; 403 - authenticated but no Membership in this Tenant, or a
- * `READ_ONLY` one), matching the "respond inline, caller checks for
- * null" idiom every route in this package uses to keep route bodies
- * linear rather than nested.
+ * at all; 403 - authenticated but no Membership in this Tenant, or one
+ * below [AccessLevel.WRITE]), matching the "respond inline, caller
+ * checks for null" idiom every route in this package uses to keep route
+ * bodies linear rather than nested.
  */
 suspend fun ApplicationCall.authorizeTenantForWrite(tenantId: TenantId): AuthenticatedCaller? {
     val caller = principal<AuthenticatedCaller>()
@@ -208,8 +203,8 @@ suspend fun ApplicationCall.authorizeTenantForWrite(tenantId: TenantId): Authent
         respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "No active Membership in the requested Tenant"))
         return null
     }
-    if (membership.role == Role.READ_ONLY) {
-        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "READ_ONLY Membership cannot perform this action"))
+    if (!membership.accessLevel.atLeast(AccessLevel.WRITE)) {
+        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership's access level cannot perform this action"))
         return null
     }
     return caller
@@ -217,9 +212,13 @@ suspend fun ApplicationCall.authorizeTenantForWrite(tenantId: TenantId): Authent
 
 /**
  * [authorizeTenantForWrite]'s counterpart for a route that only reads
- * data - same Membership-in-Tenant check, but deliberately without the
- * [Role.READ_ONLY] rejection, since blocking a READ_ONLY member from a
- * *read* would contradict what that role name promises. Added for the
+ * data - same Membership-in-Tenant check, but the floor is
+ * [AccessLevel.READ] rather than [AccessLevel.WRITE]. Before
+ * [AccessLevel.NONE] existed (2026-08-29) every real Membership implied
+ * at least read access, so this had no rejection of its own; now a
+ * Membership can genuinely sit below read (e.g. a placeholder for a
+ * named-but-not-yet-onboarded module delegate), so this needs its own
+ * explicit floor rather than inheriting one for free. Added for the
  * money-velocity KPI route (2026-08-27) - this codebase's first
  * read-only, Company-scoped `GET` endpoint; every prior route was
  * either a write ([authorizeTenantForWrite]) or needed no Tenant scope
@@ -234,6 +233,10 @@ suspend fun ApplicationCall.authorizeTenantForRead(tenantId: TenantId): Authenti
     val membership = caller.memberships.firstOrNull { it.tenantId == tenantId }
     if (membership == null) {
         respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "No active Membership in the requested Tenant"))
+        return null
+    }
+    if (!membership.accessLevel.atLeast(AccessLevel.READ)) {
+        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership's access level cannot perform this action"))
         return null
     }
     return caller

@@ -1,0 +1,136 @@
+Subject: GitHub Actions workflow runs not being created (repo: prodeo-group-dev/fish-fish-gl-engine)
+
+Summary
+-------
+Since 2026-08-21 23:43 UTC+1 (the last successful Actions run, #25, triggered
+by commit b7d448d), no new Actions run has been created for this repository
+on ANY trigger type - direct git push, a commit made entirely through the
+GitHub web UI, and a freshly opened pull request all failed to produce a
+run. This has persisted for 5 days across ~10 real commits and 2 separate
+workflow files. Every account/repo-level setting we can check via the API
+and web UI looks completely normal.
+
+Repository: prodeo-group-dev/fish-fish-gl-engine (public)
+
+Timeline / what was tried, in order
+------------------------------------
+1. Last known-good run: #25, commit b7d448d, 2026-08-21 23:43 UTC+1,
+   workflow "CI" (id 338476737, path .github/workflows/ci.yml).
+
+2. Between 2026-08-21 and 2026-08-26, ~9 further commits were pushed to
+   master (the workflow's push trigger is `branches: [master]`). None
+   produced a run. This includes a commit made specifically to test
+   triggering (856ec1105eab90ed2e9cdfef83fb5f018ce506a6).
+
+3. A commit made entirely through the GitHub web UI (not git push at all -
+   commit 2e7bd5ccd828c14534864a5ed2ef16d99a5f4cab, "Create README.md")
+   also produced no run - ruling out anything about our local git client
+   or credentials.
+
+4. A fresh pull request was opened against master (PR #37, branch
+   test/ci-trigger-diagnostic) to test the pull_request trigger
+   specifically. It also produced no run.
+
+5. Config checked and confirmed normal throughout:
+   - `GET /repos/.../actions/workflows/338476737` -> state: "active"
+   - `GET /repos/.../actions/permissions` -> {"enabled":true,"allowed_actions":"all"}
+   - No branch protection on master
+   - Repo: public, not archived, not disabled
+   - Account (prodeo-group-dev): in good standing, active contribution
+     history, no suspension/restriction banners visible anywhere in the UI
+   - Workflow file itself: no "invalid workflow file" banner shown on
+     https://github.com/prodeo-group-dev/fish-fish-gl-engine/actions/workflows/ci.yml
+   - No relevant ongoing incident on githubstatus.com at the time (checked
+     2026-08-26; nearest related incident was 2026-08-24 "Actions Delays",
+     already resolved same day, and described as partial delays/failures,
+     not a full stop)
+
+6. As a workaround test, a brand-new workflow file (.github/workflows/ci2.yml,
+   minimal single-job content) was added in commit 399f484 alongside the
+   still-present ci.yml. This DID trigger a run immediately - confirmed
+   visually in the Actions tab. This seemed to isolate the problem to
+   workflow id 338476737's specific registration being stuck.
+
+7. However, that ci2.yml run has since disappeared from the Actions run
+   history entirely (confirmed via hard refresh, ruling out browser
+   caching) - it no longer appears in the "All workflows" list, and the
+   "All workflows" total run count remains frozen at 25.
+
+8. ci.yml and ci2.yml were then deleted and replaced with a new workflow
+   file, .github/workflows/pipeline.yml (commit 26e5656), carrying the
+   same jobs as the original ci.yml. GitHub registered it as a new
+   workflow, id 342808713, state "active". Four further pushes to master
+   since then have produced zero runs for it.
+
+9. UPDATE, 2026-08-26 (later): added a `workflow_dispatch:` trigger to
+   pipeline.yml (commit 16c759e) specifically to test whether manual/API-
+   triggered dispatch is affected by the same issue as push/pull_request.
+   Running `gh workflow run pipeline.yml --repo prodeo-group-dev/fish-fish-gl-engine --ref master`
+   returned a DIRECT, EXPLICIT error, unlike every prior symptom in this
+   report:
+
+       could not create workflow dispatch event: HTTP 422: Actions has
+       been disabled for this user.
+       (https://api.github.com/repos/prodeo-group-dev/fish-fish-gl-engine/actions/workflows/342808713/dispatches)
+
+   This is the first unambiguous, machine-readable statement of a root
+   cause in this entire investigation. It directly says Actions is
+   disabled for the ACCOUNT (prodeo-group-dev), not something repo- or
+   workflow-specific. This was re-confirmed identically after a full
+   local machine reboot (ruling out any client-side cause), and is
+   consistent with every earlier symptom: push/PR events silently doing
+   nothing (rather than erroring) is exactly what you'd expect if the
+   account-level Actions capability itself is off, and would also
+   explain why the one ci2.yml run that appeared to succeed later
+   vanished from history.
+
+   We could not find where to see or change this "Actions disabled for
+   this user" state ourselves via the account's own Settings pages
+   (checked Settings -> general profile settings; a plain
+   `github.com/settings/actions` URL 404s for this account, which may
+   itself be relevant) - this looks like something only support can see
+   into or reverse.
+
+10. UPDATE, 2026-08-26 (same day, later still): as a stopgap while
+    waiting on this ticket, we deployed manually (built the Docker
+    image locally, pushed to ECR, updated the ECS service directly -
+    bypassing Actions entirely, using AWS credentials, not GitHub). That
+    succeeded completely normally. This confirms the account's other
+    capabilities (git push/pull, repo read/write, AWS access via a
+    separate OIDC-federated IAM role tied to this same GitHub identity)
+    are all unaffected - the restriction is specific to Actions itself,
+    not a broader account suspension. We're no longer blocked on
+    shipping changes, but obviously still need Actions itself working
+    again for CI/CD to be sustainable - this ticket's ask is unchanged,
+    just no longer maximally urgent on our end.
+
+11. NOTE, 2026-08-26 15:1x UTC: aware of the concurrent GitHub Status
+    incidents starting around this time ("Incident with Actions" /
+    "Disruption with some GitHub services" - degraded Actions/Pages
+    availability). Re-tested `gh workflow run` immediately after seeing
+    those incidents post: identical error, word-for-word, to item 9
+    above. Given our issue is a consistent, deterministic 422 with a
+    specific message (not timeouts/intermittent 5xxs) and has persisted
+    unchanged for 5 days before these incidents started, we don't think
+    it's the same root cause - flagging only so it isn't mistaken for
+    one, or conflated with it during triage.
+
+What we need
+-------------
+- Please tell us why Actions has been disabled for this account
+  (prodeo-group-dev) and, assuming there's no policy violation on our
+  end, please re-enable it. This is now our primary ask - item 9 above
+  gives a direct, quotable API error to work from.
+- If there IS a compliance/policy reason Actions was disabled, please
+  tell us what it is so we can address it.
+- Separately, we'd still appreciate understanding why the one ci2.yml
+  run that appeared to succeed (item 6/7 above) later vanished from the
+  run history - that's the one detail that doesn't obviously follow
+  from a simple account-level Actions toggle.
+
+Account: prodeo-group-dev
+Repository: fish-fish-gl-engine
+Affected workflow IDs: 338476737 (deleted), 342808713 (currently registered, zero runs)
+Last successful run: #25, commit b7d448d, 2026-08-21T23:43+01:00
+Direct API error (2026-08-26): "Actions has been disabled for this user."
+  (POST .../actions/workflows/342808713/dispatches -> HTTP 422)

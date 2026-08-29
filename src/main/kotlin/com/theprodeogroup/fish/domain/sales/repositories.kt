@@ -19,3 +19,9 @@ interface SalesOrderRepository {
     fun findById(id: SalesOrderId): SalesOrder?
     fun findAllByCompany(companyId: CompanyId): List<SalesOrder>
 }
+
+/** Persistence contract for [SalesInvoiceRecord] - append-only, no update path. */
+interface SalesInvoiceRecordRepository {
+    fun save(record: SalesInvoiceRecord)
+    fun findAllByCompany(companyId: CompanyId): List<SalesInvoiceRecord>
+}

@@ -22,7 +22,8 @@ class Company private constructor(
     val name: String,
     val clientType: ClientType,
     val jurisdiction: String,
-    val baseCurrency: Currency
+    val baseCurrency: Currency,
+    val moduleManagementPreferences: List<ModuleManagementPreference> = emptyList()
 ) {
     /**
      * Defaults to ASSUMED - the standard accounting default, not a special
@@ -52,8 +53,9 @@ class Company private constructor(
             clientType: ClientType,
             jurisdiction: String,
             baseCurrency: Currency,
-            id: CompanyId = CompanyId.generate()
-        ): Company = Company(id, tenantId, name, clientType, jurisdiction, baseCurrency)
+            id: CompanyId = CompanyId.generate(),
+            moduleManagementPreferences: List<ModuleManagementPreference> = emptyList()
+        ): Company = Company(id, tenantId, name, clientType, jurisdiction, baseCurrency, moduleManagementPreferences)
 
         /**
          * Rebuilds an already-valid Company from persisted state (Section 10) -
@@ -67,9 +69,10 @@ class Company private constructor(
             clientType: ClientType,
             jurisdiction: String,
             baseCurrency: Currency,
-            goingConcernStatus: GoingConcernStatus
+            goingConcernStatus: GoingConcernStatus,
+            moduleManagementPreferences: List<ModuleManagementPreference> = emptyList()
         ): Company {
-            val company = Company(id, tenantId, name, clientType, jurisdiction, baseCurrency)
+            val company = Company(id, tenantId, name, clientType, jurisdiction, baseCurrency, moduleManagementPreferences)
             company.goingConcernStatus = goingConcernStatus
             return company
         }

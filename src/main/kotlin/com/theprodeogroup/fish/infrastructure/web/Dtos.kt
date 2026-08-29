@@ -221,6 +221,104 @@ data class RecordCollectionResponseDto(
 )
 
 /**
+ * Wire shapes for `CreateSalesInvoiceUseCase` - the business-owner-
+ * facing "record a sale" form behind the SOP dashboard tab. Unlike
+ * [RecordSaleRequestDto], the caller supplies no `periodId`/account
+ * IDs/`customerId` - just what a person filling out a form actually
+ * knows (sale type, a customer name, an amount, an optional item
+ * description). `date` is optional and defaults to today server-side
+ * when blank.
+ */
+@Serializable
+data class CreateSalesInvoiceRequestDto(
+    val companyId: String,
+    val saleType: String,
+    val saleMethod: String,
+    val customerName: String? = null,
+    val amount: String,
+    val currency: String,
+    val date: String? = null,
+    val description: String? = null,
+    /** Required (with [quantity]) when [saleType] is GOODS - which StockItem is being sold. */
+    val stockItemId: String? = null,
+    val quantity: String? = null
+)
+
+/** `GET /companies/{companyId}/stock-items` - just enough for a "pick an item" UI, not the full StockItem shape. */
+@Serializable
+data class StockItemSummaryDto(
+    val stockItemId: String,
+    val name: String,
+    val quantityOnHand: String,
+    val currency: String
+)
+
+/** `GET /companies/{companyId}/inventory-schedule` - the "Schedule of Inventory" report. */
+@Serializable
+data class InventoryScheduleLineDto(
+    val stockItemId: String,
+    val name: String,
+    val stage: String,
+    val quantityOnHand: String,
+    val unitCost: String,
+    val totalValue: String,
+    val nrvWriteDownPerUnit: String,
+    val carryingValuePerUnit: String,
+    val totalCarryingValue: String
+)
+
+@Serializable
+data class InventoryScheduleResponseDto(
+    val asOfDate: String,
+    val currency: String,
+    val lines: List<InventoryScheduleLineDto>,
+    val totalCost: String,
+    val totalCarryingValue: String
+)
+
+/** `GET /companies/{companyId}/customers` - the "Schedule of Customers," and the SOP sale form's customer picker source. */
+@Serializable
+data class CustomerSummaryDto(
+    val customerId: String,
+    val name: String,
+    val balance: String,
+    val currency: String
+)
+
+/** `GET /companies/{companyId}/sales-invoices` - the "listing of sales (each timestamped)." */
+@Serializable
+data class SalesInvoiceRecordDto(
+    val invoiceNumber: String,
+    val journalEntryId: String,
+    val customerId: String,
+    val customerName: String,
+    val saleType: String,
+    val saleMethod: String,
+    val amount: String,
+    val currency: String,
+    val paid: Boolean,
+    val description: String?,
+    val recordedAt: String
+)
+
+@Serializable
+data class CreateSalesInvoiceResponseDto(
+    val invoiceNumber: String,
+    val journalEntryId: String,
+    val status: String,
+    val paid: Boolean,
+    val date: String,
+    val companyId: String,
+    val companyName: String,
+    val customerName: String,
+    val saleType: String,
+    val saleMethod: String,
+    val description: String?,
+    val amount: String,
+    val currency: String
+)
+
+/**
  * Wire shapes for `RecordVendorObligationUseCase`/`RecordVendorPaymentUseCase`
  * (docs/Purchase_Order_Processing_DDD_Design.md Section 0) - the
  * Purchasing mirror of `RecordSaleRequestDto`/`RecordCollectionRequestDto`
@@ -362,6 +460,21 @@ data class GetOrCreateLeaveAccrualRequestDto(
  * opening trial balance, so this shouldn't be a mandatory field forcing
  * a value nobody has yet (see `OnboardTenantUseCase`'s own KDoc).
  */
+/**
+ * "Will you manage this yourself, or will someone else?" per
+ * ManagedModule (docs/DDD_Design.md-adjacent, 2026-08-29) - see
+ * ModuleManagementPreference's own KDoc. [delegateName]/[delegateEmail]
+ * are required together when [selfManaged] is false; the route validates
+ * that pairing before it ever reaches the domain factory.
+ */
+@Serializable
+data class ModuleManagementPreferenceDto(
+    val module: String,
+    val selfManaged: Boolean,
+    val delegateName: String? = null,
+    val delegateEmail: String? = null
+)
+
 @Serializable
 data class OnboardTenantRequestDto(
     val tenantName: String,
@@ -372,7 +485,8 @@ data class OnboardTenantRequestDto(
     val jurisdiction: String,
     val companyBaseCurrency: String,
     val adminName: String,
-    val openingCashBalance: String? = null
+    val openingCashBalance: String? = null,
+    val moduleManagementPreferences: List<ModuleManagementPreferenceDto> = emptyList()
 )
 
 @Serializable
@@ -438,4 +552,24 @@ data class MoneyVelocityResponseDto(
     val dailyRate: String,
     val currency: String,
     val daysElapsed: Long
+)
+
+@Serializable
+data class ExpenseVelocityResponseDto(
+    val periodId: String,
+    val periodStartDate: String,
+    val operatingExpense: String,
+    val dailyRate: String,
+    val currency: String,
+    val daysElapsed: Long
+)
+
+@Serializable
+data class SalesToExpenseRatioResponseDto(
+    val periodId: String,
+    val periodStartDate: String,
+    val totalRevenue: String,
+    val operatingExpense: String,
+    val currency: String,
+    val ratio: String
 )

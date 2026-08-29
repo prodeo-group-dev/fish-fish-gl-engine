@@ -1,0 +1,67 @@
+Subject: Update requested - SES production access review (Case 178782151300385) - no movement since addendum submitted
+
+Summary
+-------
+We're following up on Case 178782151300385 (Amazon SES production access
+request for account 827709230476, region eu-west-2). The request was
+initially denied with no reason given; we submitted a detailed addendum
+addressing the likely gaps in our original application, and the case has
+sat at "Pending" with no further response since. We'd appreciate a status
+update, and are happy to answer any further questions that would help move
+this forward.
+
+Who we are and what this is for
+--------------------------------
+We're The Prodeo Group, operating in financial services under Prodeo
+Capital. We're building FiSH - a General Ledger engine that will power
+small and medium businesses in our target markets, alongside our own
+ventures - starting with Purse, a credit union operating in the UK,
+Northern Ireland, and the Republic of Ireland, with an agrifinance
+expansion underway in Sierra Leone, and several sibling ventures under
+the same group. Nigeria and further West African markets are part of our
+planned expansion, not yet live.
+
+FiSH is also being offered as a standalone B2B ledger/accounting product,
+with a go-to-market focus on the Mano River region (Sierra Leone,
+Liberia, Guinea, Cote d'Ivoire).
+
+SES sits behind Amazon Cognito (DEVELOPER email configuration) and is used
+for exactly one purpose: transactional account-verification email tied to
+KYB/AML onboarding for a regulated credit union -
+  - A 6-digit email verification code at sign-up (required before an
+    admin can proceed with business onboarding).
+  - Password-reset codes.
+
+There is no marketing, newsletter, or bulk/promotional email of any kind
+sent through this identity, and none is planned. Every message SES sends
+here corresponds to a specific, user-initiated action inside the product
+(sign-up, password reset) - never a batch job or campaign.
+
+Sending domain: mail.theprodeogroup.com - both domain identity and DKIM
+show VerificationStatus: Success in the SES console.
+
+What we're asking
+------------------
+- A status update on the addendum we submitted, and re-review against it
+  if that hasn't happened yet.
+- If there's still a specific concern (use case clarity, expected volume,
+  bounce/complaint handling, something else) - please tell us directly so
+  we can address it precisely, rather than another generic denial.
+
+Future intentions, so this doesn't need re-litigating as we grow
+------------------------------------------------------------------
+Volume today is small - we're in early onboarding with a handful of real
+admin users. It will grow as Purse and the sibling ventures (Scrip, Osusu,
+and a not-yet-launched e-money product) onboard more businesses, and as the
+Mano River B2B product goes to market - but it stays proportional to actual
+account activity (one email per sign-up, one per password reset), not
+volume-driven. We're glad to start under a conservative sending-rate limit
+and demonstrate clean bounce/complaint metrics over time rather than be
+granted a high limit up front - whatever review posture makes this easiest
+to approve.
+
+Account: 827709230476 (fish-gl-engine, eu-west-2)
+Case: 178782151300385
+Sending identity: mail.theprodeogroup.com (domain + DKIM verified)
+Current status: SES sandbox (ProductionAccessEnabled: false), confirmed
+  via `aws sesv2 get-account` as of 2026-08-28

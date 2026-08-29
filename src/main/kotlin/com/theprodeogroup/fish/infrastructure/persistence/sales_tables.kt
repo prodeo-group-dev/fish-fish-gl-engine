@@ -2,6 +2,7 @@ package com.theprodeogroup.fish.infrastructure.persistence
 
 import org.jetbrains.exposed.sql.Table
 import org.jetbrains.exposed.sql.javatime.date
+import org.jetbrains.exposed.sql.javatime.timestamp
 
 /**
  * Exposed table definitions for Sales Order Processing
@@ -54,4 +55,26 @@ object SalesOrderDeliveredLinesTable : Table("sales_order_delivered_lines") {
     val lineIndex = integer("line_index")
 
     override val primaryKey = PrimaryKey(salesOrderId, lineIndex)
+}
+
+/**
+ * Exposed table definition for [com.theprodeogroup.fish.domain.sales.SalesInvoiceRecord]
+ * (`V14__sales_invoice_records.sql`) - append-only, no update path.
+ */
+object SalesInvoiceRecordsTable : Table("sales_invoice_records") {
+    val id = uuid("id")
+    val companyId = uuid("company_id")
+    val journalEntryId = uuid("journal_entry_id")
+    val invoiceNumber = varchar("invoice_number", 32)
+    val customerId = uuid("customer_id")
+    val customerName = varchar("customer_name", 255)
+    val saleType = varchar("sale_type", 10)
+    val saleMethod = varchar("sale_method", 10)
+    val amount = decimal("amount", 19, 4)
+    val currency = varchar("currency", 3)
+    val paid = bool("paid")
+    val description = varchar("description", 500).nullable()
+    val recordedAt = timestamp("recorded_at")
+
+    override val primaryKey = PrimaryKey(id)
 }

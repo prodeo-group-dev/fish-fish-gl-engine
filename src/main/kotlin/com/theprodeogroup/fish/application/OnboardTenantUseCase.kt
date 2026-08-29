@@ -18,6 +18,7 @@ import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.domain.tenancy.Membership
 import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
+import com.theprodeogroup.fish.domain.tenancy.ModuleManagementPreference
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.Tenant
 import com.theprodeogroup.fish.domain.tenancy.TenantRepository
@@ -120,7 +121,8 @@ class OnboardTenantUseCase(
         val companyBaseCurrency: Currency,
         val adminEmail: String,
         val adminName: String,
-        val openingCashBalance: BigDecimal? = null
+        val openingCashBalance: BigDecimal? = null,
+        val moduleManagementPreferences: List<ModuleManagementPreference> = emptyList()
     )
 
     data class Result(
@@ -139,7 +141,8 @@ class OnboardTenantUseCase(
         tenantRepository.save(tenant)
 
         val company = Company.create(
-            tenant.id, request.companyName, request.clientType, request.jurisdiction, request.companyBaseCurrency
+            tenant.id, request.companyName, request.clientType, request.jurisdiction, request.companyBaseCurrency,
+            moduleManagementPreferences = request.moduleManagementPreferences
         )
         companyRepository.save(company)
 

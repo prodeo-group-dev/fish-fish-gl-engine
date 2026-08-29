@@ -3,6 +3,8 @@ package com.theprodeogroup.fish.application
 import com.theprodeogroup.fish.domain.inventory.StockItem
 import com.theprodeogroup.fish.domain.inventory.StockItemId
 import com.theprodeogroup.fish.domain.inventory.StockItemRepository
+import com.theprodeogroup.fish.domain.inventory.StockShortageEscalation
+import com.theprodeogroup.fish.domain.inventory.StockShortageEscalationRepository
 import com.theprodeogroup.fish.domain.purchasing.Creditor
 import com.theprodeogroup.fish.domain.purchasing.CreditorId
 import com.theprodeogroup.fish.domain.purchasing.CreditorRepository
@@ -12,6 +14,8 @@ import com.theprodeogroup.fish.domain.purchasing.PurchaseOrderRepository
 import com.theprodeogroup.fish.domain.sales.Customer
 import com.theprodeogroup.fish.domain.sales.CustomerId
 import com.theprodeogroup.fish.domain.sales.CustomerRepository
+import com.theprodeogroup.fish.domain.sales.SalesInvoiceRecord
+import com.theprodeogroup.fish.domain.sales.SalesInvoiceRecordRepository
 import com.theprodeogroup.fish.domain.sales.SalesOrder
 import com.theprodeogroup.fish.domain.sales.SalesOrderId
 import com.theprodeogroup.fish.domain.sales.SalesOrderRepository
@@ -56,6 +60,14 @@ class FakeStockItemRepository : StockItemRepository {
     override fun findAllByCompany(companyId: CompanyId): List<StockItem> = store.values.filter { it.companyId == companyId }
 }
 
+class FakeStockShortageEscalationRepository : StockShortageEscalationRepository {
+    val saveCalls = mutableListOf<StockShortageEscalation>()
+    override fun save(escalation: StockShortageEscalation) {
+        saveCalls.add(escalation)
+    }
+    override fun findAllByCompany(companyId: CompanyId): List<StockShortageEscalation> = saveCalls.filter { it.companyId == companyId }
+}
+
 class FakeCustomerRepository : CustomerRepository {
     val saveCalls = mutableListOf<CustomerId>()
     private val store = mutableMapOf<CustomerId, Customer>()
@@ -65,6 +77,15 @@ class FakeCustomerRepository : CustomerRepository {
     }
     override fun findById(id: CustomerId): Customer? = store[id]
     override fun findAllByCompany(companyId: CompanyId): List<Customer> = store.values.filter { it.companyId == companyId }
+}
+
+class FakeSalesInvoiceRecordRepository : SalesInvoiceRecordRepository {
+    val saveCalls = mutableListOf<SalesInvoiceRecord>()
+    override fun save(record: SalesInvoiceRecord) {
+        saveCalls.add(record)
+    }
+    override fun findAllByCompany(companyId: CompanyId): List<SalesInvoiceRecord> =
+        saveCalls.filter { it.companyId == companyId }.sortedByDescending { it.recordedAt }
 }
 
 class FakeSalesOrderRepository : SalesOrderRepository {

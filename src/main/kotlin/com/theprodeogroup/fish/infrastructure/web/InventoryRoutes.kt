@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import com.theprodeogroup.fish.application.ComputeInventoryScheduleUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueResult
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
 import com.theprodeogroup.fish.application.PostInventoryReceiptResult
@@ -10,6 +11,7 @@ import com.theprodeogroup.fish.domain.inventory.StockItemRepository
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
+import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
 import io.ktor.http.HttpStatusCode
@@ -18,6 +20,7 @@ import io.ktor.server.application.call
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
@@ -44,14 +47,76 @@ import java.util.Currency
  * **Idempotency-Key support** (docs/GL_Production_Readiness_Plan.md) -
  * both routes route their final execute-and-respond step through
  * [respondIdempotently].
+ *
+ * **`GET /companies/{companyId}/stock-items` (2026-08-29)** - added for
+ * the SOP dashboard tab's GOODS-sale item picker (`CreateSalesInvoiceUseCase`'s
+ * stock check needs a real `stockItemId`) - [authorizeTenantForRead], not
+ * [authorizeTenantForWrite], matching `moneyVelocityRoutes`'s reasoning
+ * that a READ_ONLY Membership should still be able to view this.
  */
 fun Route.inventoryRoutes(
     postInventoryReceiptUseCase: PostInventoryReceiptUseCase,
     postInventoryIssueUseCase: PostInventoryIssueUseCase,
+    computeInventoryScheduleUseCase: ComputeInventoryScheduleUseCase,
     stockItemRepository: StockItemRepository,
     companyRepository: CompanyRepository,
     idempotencyKeyRepository: IdempotencyKeyRepository
 ) {
+    get("/companies/{companyId}/stock-items") {
+        val companyIdRaw = call.parameters["companyId"]
+        if (companyIdRaw == null) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "companyId path parameter is required"))
+            return@get
+        }
+        val companyUuid = call.parseUuid(companyIdRaw) ?: return@get
+        val companyId = CompanyId(companyUuid)
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
+        if (!call.verifyClaimedTenant(tenantId)) return@get
+        call.authorizeTenantForRead(tenantId) ?: return@get
+
+        val items = stockItemRepository.findAllByCompany(companyId).map {
+            StockItemSummaryDto(it.id.value.toString(), it.name, it.quantityOnHand.toString(), it.currency.currencyCode)
+        }
+        call.respond(items)
+    }
+
+    get("/companies/{companyId}/inventory-schedule") {
+        val companyIdRaw = call.parameters["companyId"]
+        if (companyIdRaw == null) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "companyId path parameter is required"))
+            return@get
+        }
+        val companyUuid = call.parseUuid(companyIdRaw) ?: return@get
+        val companyId = CompanyId(companyUuid)
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
+        if (!call.verifyClaimedTenant(tenantId)) return@get
+        call.authorizeTenantForRead(tenantId) ?: return@get
+
+        when (val result = computeInventoryScheduleUseCase.execute(companyId)) {
+            is ComputeInventoryScheduleUseCase.Result.Success -> {
+                val schedule = result.schedule
+                call.respond(
+                    InventoryScheduleResponseDto(
+                        asOfDate = schedule.asOfDate.toString(),
+                        currency = schedule.currency.currencyCode,
+                        lines = schedule.lines.map {
+                            InventoryScheduleLineDto(
+                                it.stockItemId.value.toString(), it.name, it.stage.name, it.quantityOnHand.toString(),
+                                it.unitCost.amount.toPlainString(), it.totalValue.amount.toPlainString(),
+                                it.nrvWriteDownPerUnit.amount.toPlainString(), it.carryingValuePerUnit.amount.toPlainString(),
+                                it.totalCarryingValue.amount.toPlainString()
+                            )
+                        },
+                        totalCost = schedule.totalCost.amount.toPlainString(),
+                        totalCarryingValue = schedule.totalCarryingValue.amount.toPlainString()
+                    )
+                )
+            }
+            ComputeInventoryScheduleUseCase.Result.CompanyNotFound ->
+                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
+        }
+    }
+
     post("/stock-items/{stockItemId}/receipts") {
         val stockItem = call.loadStockItem(stockItemRepository) ?: return@post
         val tenantId = call.resolveTenantForCompany(stockItem.companyId, companyRepository) ?: return@post

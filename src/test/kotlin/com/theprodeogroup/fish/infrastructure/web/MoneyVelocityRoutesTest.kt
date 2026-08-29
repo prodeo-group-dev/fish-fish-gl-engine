@@ -2,11 +2,16 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
+import com.theprodeogroup.fish.application.ComputeInventoryScheduleUseCase
+import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeCompanyRepository
 import com.theprodeogroup.fish.application.FakeCreditorRepository
+import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
+import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.FakeCustomerRepository
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
 import com.theprodeogroup.fish.application.FakeJournalEntryRepository
@@ -15,8 +20,10 @@ import com.theprodeogroup.fish.application.FakeMembershipRepository
 import com.theprodeogroup.fish.application.FakePayRunRepository
 import com.theprodeogroup.fish.application.FakePeriodRepository
 import com.theprodeogroup.fish.application.FakePurchaseOrderRepository
+import com.theprodeogroup.fish.application.FakeSalesInvoiceRecordRepository
 import com.theprodeogroup.fish.application.FakeSalesOrderRepository
 import com.theprodeogroup.fish.application.FakeStockItemRepository
+import com.theprodeogroup.fish.application.FakeStockShortageEscalationRepository
 import com.theprodeogroup.fish.application.FakeTenantRepository
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
@@ -49,6 +56,7 @@ import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.Membership
+import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.Tenant
 import com.theprodeogroup.fish.domain.tenancy.TenantSegment
@@ -70,7 +78,12 @@ import java.util.Currency
 
 private val GBP: Currency = Currency.getInstance("GBP")
 private const val ADMIN_EMAIL = "founder@example.com"
-private val TODAY = LocalDate.of(2026, 8, 27)
+// LocalDate.now(), not a hardcoded date - this fixture's Period/JournalEntry
+// dates must track whatever "now" actually is, since the route itself always
+// computes daysElapsed against the real LocalDate.now() (no fake-clock
+// injection point exists for a route test) - a hardcoded date here silently
+// breaks daysElapsed assertions as real time passes past it.
+private val TODAY: LocalDate = LocalDate.now()
 
 /** `GET /companies/{companyId}/money-velocity` - see MoneyVelocityRoutes.kt's own KDoc. */
 class MoneyVelocityRoutesTest {
@@ -99,11 +112,18 @@ class MoneyVelocityRoutesTest {
         val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
         val postInventoryReceiptUseCase = PostInventoryReceiptUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
         val postInventoryIssueUseCase = PostInventoryIssueUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeInventoryScheduleUseCase = ComputeInventoryScheduleUseCase(companyRepository, stockItemRepository)
         val salesOrderRepository = FakeSalesOrderRepository()
         val postSalesOrderUseCase = PostSalesOrderUseCase(
             salesOrderRepository, FakeCustomerRepository(), stockItemRepository, periodRepository, accountRepository, journalEntryRepository
         )
+        val customerRepository = FakeCustomerRepository()
         val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val salesInvoiceRecordRepository = FakeSalesInvoiceRecordRepository()
+        val createSalesInvoiceUseCase = CreateSalesInvoiceUseCase(
+            periodRepository, accountRepository, customerRepository, journalEntryRepository, stockItemRepository, FakeStockShortageEscalationRepository(), salesInvoiceRecordRepository
+        )
+        val listSalesInvoicesUseCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
         val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -115,6 +135,8 @@ class MoneyVelocityRoutesTest {
         val adminPhoneVerificationChecker = FakeAdminPhoneVerificationChecker()
         val recordAdminPhoneNumberUseCase = RecordAdminPhoneNumberUseCase(tenantRepository, adminPhoneVerificationChecker)
         val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeSalesToExpenseRatioUseCase = ComputeSalesToExpenseRatioUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
 
         val tenant = Tenant.onboard("Purse", TenantSegment.INTERNAL_VENTURE, GBP)
         val company = Company.create(tenant.id, "Purse UK", ClientType.NON_PROFIT, "GB", GBP)
@@ -169,9 +191,13 @@ class MoneyVelocityRoutesTest {
                 stockItemRepository = stockItemRepository,
                 postInventoryReceiptUseCase = postInventoryReceiptUseCase,
                 postInventoryIssueUseCase = postInventoryIssueUseCase,
+                computeInventoryScheduleUseCase = computeInventoryScheduleUseCase,
                 salesOrderRepository = salesOrderRepository,
                 postSalesOrderUseCase = postSalesOrderUseCase,
                 recordSaleUseCase = recordSaleUseCase,
+                createSalesInvoiceUseCase = createSalesInvoiceUseCase,
+                listSalesInvoicesUseCase = listSalesInvoicesUseCase,
+                customerRepository = customerRepository,
                 recordCollectionUseCase = recordCollectionUseCase,
                 recordVendorObligationUseCase = recordVendorObligationUseCase,
                 recordVendorPaymentUseCase = recordVendorPaymentUseCase,
@@ -181,7 +207,9 @@ class MoneyVelocityRoutesTest {
                 getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
                 idempotencyKeyRepository = idempotencyKeyRepository,
                 recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
-                computeMoneyVelocityUseCase = computeMoneyVelocityUseCase
+                computeMoneyVelocityUseCase = computeMoneyVelocityUseCase,
+                computeExpenseVelocityUseCase = computeExpenseVelocityUseCase,
+                computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase
             )
         }
     }
@@ -232,6 +260,23 @@ class MoneyVelocityRoutesTest {
 
         val response = client.get("/api/companies/${fixture.company.id.value}/money-velocity") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken("outsider@example.com")}")
+            header("X-Tenant-Id", fixture.tenant.id.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.Forbidden
+    }
+
+    @Test
+    fun `given a Membership with AccessLevel NONE in the correct Tenant, when GET money-velocity is called, then it returns 403`() = testApplication {
+        val fixture = Fixture()
+        val noAccessUser = User.create("no-access@example.com", "No Access").also { fixture.userRepository.save(it) }
+        val noAccessMembership = Membership.grant(noAccessUser.id, fixture.tenant.id, Role.READ_ONLY, AccessLevel.NONE)
+        fixture.membershipRepository.save(noAccessMembership)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/money-velocity") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken("no-access@example.com")}")
             header("X-Tenant-Id", fixture.tenant.id.value.toString())
         }
 

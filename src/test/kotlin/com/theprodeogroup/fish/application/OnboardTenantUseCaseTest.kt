@@ -6,6 +6,8 @@ import com.theprodeogroup.fish.domain.common.PostingStatus
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountType
 import com.theprodeogroup.fish.domain.ledger.ChartOfAccountsTemplate
+import com.theprodeogroup.fish.domain.tenancy.ManagedModule
+import com.theprodeogroup.fish.domain.tenancy.ModuleManagementPreference
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantOnboarded
 import com.theprodeogroup.fish.domain.tenancy.TenantSegment
@@ -64,6 +66,19 @@ class OnboardTenantUseCaseTest {
         result.tenant.status shouldBe TenantStatus.ACTIVE
         result.tenant.companyIds shouldBe setOf(result.company.id)
         result.tenant.adminMembershipIds shouldBe setOf(result.adminMembership.id)
+    }
+
+    @Test
+    fun `given moduleManagementPreferences in the request, when executed, then the Company stores them`() {
+        val preferences = listOf(
+            ModuleManagementPreference.selfManaged(ManagedModule.GL),
+            ModuleManagementPreference.delegatedTo(ManagedModule.HR, "Jane Doe", "jane@example.com")
+        )
+
+        val result = useCase.execute(validRequest().copy(moduleManagementPreferences = preferences))
+
+        result.company.moduleManagementPreferences shouldBe preferences
+        companyRepository.findById(result.company.id)?.moduleManagementPreferences shouldBe preferences
     }
 
     @Test

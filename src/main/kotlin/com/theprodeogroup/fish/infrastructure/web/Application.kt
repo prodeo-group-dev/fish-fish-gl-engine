@@ -2,7 +2,12 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.auth0.jwt.interfaces.JWTVerifier
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
+import com.theprodeogroup.fish.application.ComputeInventoryScheduleUseCase
+import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
+import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
+import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.KybGracePeriodSweep
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
@@ -27,6 +32,7 @@ import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.payroll.LeaveAccrualRepository
 import com.theprodeogroup.fish.domain.payroll.PayRunRepository
 import com.theprodeogroup.fish.domain.purchasing.PurchaseOrderRepository
+import com.theprodeogroup.fish.domain.sales.CustomerRepository
 import com.theprodeogroup.fish.domain.sales.SalesOrderRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
@@ -38,6 +44,7 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedAccountReposito
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCompanyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCreditorRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCustomerRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedSalesInvoiceRecordRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedIdempotencyKeyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedJournalEntryRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedLeaveAccrualRepository
@@ -47,6 +54,7 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedPeriodRepositor
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedPurchaseOrderRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedSalesOrderRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedStockItemRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedStockShortageEscalationRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTenantRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedUserRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
@@ -118,6 +126,7 @@ fun Application.productionModule() {
     val membershipRepository = ExposedMembershipRepository()
     val creditorRepository = ExposedCreditorRepository()
     val stockItemRepository = ExposedStockItemRepository()
+    val stockShortageEscalationRepository = ExposedStockShortageEscalationRepository()
     val purchaseOrderRepository = ExposedPurchaseOrderRepository()
     val payRunRepository = ExposedPayRunRepository()
     val leaveAccrualRepository = ExposedLeaveAccrualRepository()
@@ -141,10 +150,17 @@ fun Application.productionModule() {
     val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
     val postInventoryReceiptUseCase = PostInventoryReceiptUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
     val postInventoryIssueUseCase = PostInventoryIssueUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
+    val computeInventoryScheduleUseCase = ComputeInventoryScheduleUseCase(companyRepository, stockItemRepository)
     val postSalesOrderUseCase = PostSalesOrderUseCase(
         salesOrderRepository, customerRepository, stockItemRepository, periodRepository, accountRepository, journalEntryRepository
     )
     val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
+    val salesInvoiceRecordRepository = ExposedSalesInvoiceRecordRepository()
+    val createSalesInvoiceUseCase = CreateSalesInvoiceUseCase(
+        periodRepository, accountRepository, customerRepository, journalEntryRepository, stockItemRepository,
+        stockShortageEscalationRepository, salesInvoiceRecordRepository
+    )
+    val listSalesInvoicesUseCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
     val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -159,6 +175,8 @@ fun Application.productionModule() {
         tenantRepository, CognitoAdminPhoneVerificationChecker(cognitoUserPoolId)
     )
     val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+    val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+    val computeSalesToExpenseRatioUseCase = ComputeSalesToExpenseRatioUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
 
     // In-process scheduler for KybGracePeriodSweep (docs/DDD_Design.md
     // Section 9.4, extended 2026-08-27 to also cover the admin phone
@@ -204,9 +222,13 @@ fun Application.productionModule() {
         stockItemRepository = stockItemRepository,
         postInventoryReceiptUseCase = postInventoryReceiptUseCase,
         postInventoryIssueUseCase = postInventoryIssueUseCase,
+        computeInventoryScheduleUseCase = computeInventoryScheduleUseCase,
         salesOrderRepository = salesOrderRepository,
         postSalesOrderUseCase = postSalesOrderUseCase,
         recordSaleUseCase = recordSaleUseCase,
+        createSalesInvoiceUseCase = createSalesInvoiceUseCase,
+        listSalesInvoicesUseCase = listSalesInvoicesUseCase,
+        customerRepository = customerRepository,
         recordCollectionUseCase = recordCollectionUseCase,
         recordVendorObligationUseCase = recordVendorObligationUseCase,
         recordVendorPaymentUseCase = recordVendorPaymentUseCase,
@@ -216,7 +238,9 @@ fun Application.productionModule() {
         getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
         idempotencyKeyRepository = idempotencyKeyRepository,
         recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
-        computeMoneyVelocityUseCase = computeMoneyVelocityUseCase
+        computeMoneyVelocityUseCase = computeMoneyVelocityUseCase,
+        computeExpenseVelocityUseCase = computeExpenseVelocityUseCase,
+        computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase
     )
 }
 
@@ -249,9 +273,13 @@ fun Application.fishModule(
     stockItemRepository: StockItemRepository,
     postInventoryReceiptUseCase: PostInventoryReceiptUseCase,
     postInventoryIssueUseCase: PostInventoryIssueUseCase,
+    computeInventoryScheduleUseCase: ComputeInventoryScheduleUseCase,
     salesOrderRepository: SalesOrderRepository,
     postSalesOrderUseCase: PostSalesOrderUseCase,
     recordSaleUseCase: RecordSaleUseCase,
+    createSalesInvoiceUseCase: CreateSalesInvoiceUseCase,
+    listSalesInvoicesUseCase: ListSalesInvoicesUseCase,
+    customerRepository: CustomerRepository,
     recordCollectionUseCase: RecordCollectionUseCase,
     recordVendorObligationUseCase: RecordVendorObligationUseCase,
     recordVendorPaymentUseCase: RecordVendorPaymentUseCase,
@@ -261,7 +289,9 @@ fun Application.fishModule(
     getOrCreateLeaveAccrualUseCase: GetOrCreateLeaveAccrualUseCase,
     idempotencyKeyRepository: IdempotencyKeyRepository,
     recordAdminPhoneNumberUseCase: RecordAdminPhoneNumberUseCase,
-    computeMoneyVelocityUseCase: ComputeMoneyVelocityUseCase
+    computeMoneyVelocityUseCase: ComputeMoneyVelocityUseCase,
+    computeExpenseVelocityUseCase: ComputeExpenseVelocityUseCase,
+    computeSalesToExpenseRatioUseCase: ComputeSalesToExpenseRatioUseCase
 ) {
     install(ContentNegotiation) { json() }
     install(CallLogging) { level = Level.INFO }
@@ -333,13 +363,16 @@ fun Application.fishModule(
                     recordPayRunUseCase, getOrCreateLeaveAccrualUseCase,
                     companyRepository, idempotencyKeyRepository
                 )
-                inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, stockItemRepository, companyRepository, idempotencyKeyRepository)
+                inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, computeInventoryScheduleUseCase, stockItemRepository, companyRepository, idempotencyKeyRepository)
                 salesOrderRoutes(postSalesOrderUseCase, salesOrderRepository, companyRepository, idempotencyKeyRepository)
                 recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, idempotencyKeyRepository)
+                createSalesInvoiceRoutes(createSalesInvoiceUseCase, listSalesInvoicesUseCase, companyRepository, customerRepository, idempotencyKeyRepository)
                 recordVendorObligationAndPaymentRoutes(recordVendorObligationUseCase, recordVendorPaymentUseCase, companyRepository, idempotencyKeyRepository)
                 recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
                 meRoutes(tenantRepository)
                 moneyVelocityRoutes(computeMoneyVelocityUseCase, companyRepository)
+                expenseVelocityRoutes(computeExpenseVelocityUseCase, companyRepository)
+                salesToExpenseRatioRoutes(computeSalesToExpenseRatioUseCase, companyRepository)
             }
         }
     }

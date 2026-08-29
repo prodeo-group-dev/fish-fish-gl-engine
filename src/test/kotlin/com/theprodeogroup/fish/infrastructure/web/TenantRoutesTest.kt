@@ -4,9 +4,14 @@ import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeCompanyRepository
 import com.theprodeogroup.fish.application.FakeCreditorRepository
+import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
+import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.FakeCustomerRepository
 import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
+import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
+import com.theprodeogroup.fish.application.ComputeInventoryScheduleUseCase
+import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
 import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.FakeJournalEntryRepository
@@ -15,8 +20,10 @@ import com.theprodeogroup.fish.application.FakeMembershipRepository
 import com.theprodeogroup.fish.application.FakePayRunRepository
 import com.theprodeogroup.fish.application.FakePeriodRepository
 import com.theprodeogroup.fish.application.FakePurchaseOrderRepository
+import com.theprodeogroup.fish.application.FakeSalesInvoiceRecordRepository
 import com.theprodeogroup.fish.application.FakeSalesOrderRepository
 import com.theprodeogroup.fish.application.FakeStockItemRepository
+import com.theprodeogroup.fish.application.FakeStockShortageEscalationRepository
 import com.theprodeogroup.fish.application.FakeTenantRepository
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
@@ -96,11 +103,18 @@ class TenantRoutesTest {
         val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
         val postInventoryReceiptUseCase = PostInventoryReceiptUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
         val postInventoryIssueUseCase = PostInventoryIssueUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeInventoryScheduleUseCase = ComputeInventoryScheduleUseCase(companyRepository, stockItemRepository)
         val salesOrderRepository = FakeSalesOrderRepository()
         val postSalesOrderUseCase = PostSalesOrderUseCase(
             salesOrderRepository, FakeCustomerRepository(), stockItemRepository, periodRepository, accountRepository, journalEntryRepository
         )
+        val customerRepository = FakeCustomerRepository()
         val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val salesInvoiceRecordRepository = FakeSalesInvoiceRecordRepository()
+        val createSalesInvoiceUseCase = CreateSalesInvoiceUseCase(
+            periodRepository, accountRepository, customerRepository, journalEntryRepository, stockItemRepository, FakeStockShortageEscalationRepository(), salesInvoiceRecordRepository
+        )
+        val listSalesInvoicesUseCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
         val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -136,6 +150,8 @@ class TenantRoutesTest {
 
 
         val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeSalesToExpenseRatioUseCase = ComputeSalesToExpenseRatioUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
 
 
 
@@ -160,9 +176,13 @@ class TenantRoutesTest {
                 stockItemRepository = stockItemRepository,
                 postInventoryReceiptUseCase = postInventoryReceiptUseCase,
                 postInventoryIssueUseCase = postInventoryIssueUseCase,
+                computeInventoryScheduleUseCase = computeInventoryScheduleUseCase,
                 salesOrderRepository = salesOrderRepository,
                 postSalesOrderUseCase = postSalesOrderUseCase,
                 recordSaleUseCase = recordSaleUseCase,
+                createSalesInvoiceUseCase = createSalesInvoiceUseCase,
+                listSalesInvoicesUseCase = listSalesInvoicesUseCase,
+                customerRepository = customerRepository,
                 recordCollectionUseCase = recordCollectionUseCase,
                 recordVendorObligationUseCase = recordVendorObligationUseCase,
                 recordVendorPaymentUseCase = recordVendorPaymentUseCase,
@@ -172,7 +192,9 @@ class TenantRoutesTest {
                 getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
                 idempotencyKeyRepository = idempotencyKeyRepository,
                 recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
-                computeMoneyVelocityUseCase = computeMoneyVelocityUseCase
+                computeMoneyVelocityUseCase = computeMoneyVelocityUseCase,
+                computeExpenseVelocityUseCase = computeExpenseVelocityUseCase,
+                computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase
             )
         }
 
@@ -220,6 +242,69 @@ class TenantRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.Unauthorized
+    }
+
+    @Test
+    fun `given a mix of self-managed and delegated moduleManagementPreferences, when onboarding is posted, then it returns 201`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/tenants") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(NEW_ADMIN_EMAIL)}")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"tenantName": "New Co", "tenantSegment": "EXTERNAL_B2B", "tenantBaseCurrency": "GBP",
+                    "companyName": "New Co UK", "clientType": "NON_PROFIT", "jurisdiction": "GB",
+                    "companyBaseCurrency": "GBP", "adminName": "New Admin",
+                    "moduleManagementPreferences": [
+                        {"module": "GL", "selfManaged": true},
+                        {"module": "HR", "selfManaged": false, "delegateName": "Jane Doe", "delegateEmail": "jane@example.com"}
+                    ]}"""
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.Created
+    }
+
+    @Test
+    fun `given an invalid module in moduleManagementPreferences, when onboarding is posted, then it returns 400`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/tenants") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(NEW_ADMIN_EMAIL)}")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"tenantName": "New Co", "tenantSegment": "EXTERNAL_B2B", "tenantBaseCurrency": "GBP",
+                    "companyName": "New Co UK", "clientType": "NON_PROFIT", "jurisdiction": "GB",
+                    "companyBaseCurrency": "GBP", "adminName": "New Admin",
+                    "moduleManagementPreferences": [{"module": "NOT_A_REAL_MODULE", "selfManaged": true}]}"""
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.BadRequest
+    }
+
+    @Test
+    fun `given a delegated module with no delegateEmail, when onboarding is posted, then it returns 400`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/tenants") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(NEW_ADMIN_EMAIL)}")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"tenantName": "New Co", "tenantSegment": "EXTERNAL_B2B", "tenantBaseCurrency": "GBP",
+                    "companyName": "New Co UK", "clientType": "NON_PROFIT", "jurisdiction": "GB",
+                    "companyBaseCurrency": "GBP", "adminName": "New Admin",
+                    "moduleManagementPreferences": [{"module": "SOP", "selfManaged": false, "delegateName": "Jane Doe"}]}"""
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.BadRequest
     }
 
     @Test

@@ -59,6 +59,32 @@ class CompanyTest {
         company.goingConcernStatus shouldBe GoingConcernStatus.SUBSTANTIAL_DOUBT
     }
 
+    @Test
+    fun `given no moduleManagementPreferences argument, when a Company is created, then it defaults to an empty list`() {
+        val company = readyCompany()
+
+        company.moduleManagementPreferences shouldBe emptyList()
+    }
+
+    @Test
+    fun `given a mix of self-managed and delegated modules, when a Company is created, then it stores them all`() {
+        val preferences = listOf(
+            ModuleManagementPreference.selfManaged(ManagedModule.GL),
+            ModuleManagementPreference.delegatedTo(ManagedModule.HR, "Jane Doe", "jane@example.com")
+        )
+
+        val company = Company.create(
+            tenantId = TenantId.generate(),
+            name = "Acme Trading Ltd",
+            clientType = ClientType.COMPANY_LIMITED,
+            jurisdiction = "UK",
+            baseCurrency = GBP,
+            moduleManagementPreferences = preferences
+        )
+
+        company.moduleManagementPreferences shouldBe preferences
+    }
+
     private fun readyCompany(): Company = Company.create(
         tenantId = TenantId.generate(),
         name = "Acme Trading Ltd",
