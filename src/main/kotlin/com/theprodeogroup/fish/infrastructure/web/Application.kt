@@ -2,8 +2,11 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.auth0.jwt.interfaces.JWTVerifier
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
+import com.theprodeogroup.fish.application.ComputeCashFlowUseCase
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeInventoryScheduleUseCase
+import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
 import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
@@ -179,6 +182,9 @@ fun Application.productionModule() {
     val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
     val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
     val computeSalesToExpenseRatioUseCase = ComputeSalesToExpenseRatioUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+    val computeBalanceSheetUseCase = ComputeBalanceSheetUseCase(companyRepository, accountRepository, journalEntryRepository)
+    val computeProfitAndLossUseCase = ComputeProfitAndLossUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+    val computeCashFlowUseCase = ComputeCashFlowUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
 
     // In-process scheduler for KybGracePeriodSweep (docs/DDD_Design.md
     // Section 9.4, extended 2026-08-27 to also cover the admin phone
@@ -244,7 +250,10 @@ fun Application.productionModule() {
         recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
         computeMoneyVelocityUseCase = computeMoneyVelocityUseCase,
         computeExpenseVelocityUseCase = computeExpenseVelocityUseCase,
-        computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase
+        computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase,
+        computeBalanceSheetUseCase = computeBalanceSheetUseCase,
+        computeProfitAndLossUseCase = computeProfitAndLossUseCase,
+        computeCashFlowUseCase = computeCashFlowUseCase
     )
 }
 
@@ -297,7 +306,10 @@ fun Application.fishModule(
     recordAdminPhoneNumberUseCase: RecordAdminPhoneNumberUseCase,
     computeMoneyVelocityUseCase: ComputeMoneyVelocityUseCase,
     computeExpenseVelocityUseCase: ComputeExpenseVelocityUseCase,
-    computeSalesToExpenseRatioUseCase: ComputeSalesToExpenseRatioUseCase
+    computeSalesToExpenseRatioUseCase: ComputeSalesToExpenseRatioUseCase,
+    computeBalanceSheetUseCase: ComputeBalanceSheetUseCase,
+    computeProfitAndLossUseCase: ComputeProfitAndLossUseCase,
+    computeCashFlowUseCase: ComputeCashFlowUseCase
 ) {
     install(ContentNegotiation) { json() }
     install(CallLogging) { level = Level.INFO }
@@ -381,6 +393,7 @@ fun Application.fishModule(
                 moneyVelocityRoutes(computeMoneyVelocityUseCase, companyRepository)
                 expenseVelocityRoutes(computeExpenseVelocityUseCase, companyRepository)
                 salesToExpenseRatioRoutes(computeSalesToExpenseRatioUseCase, companyRepository)
+                reportsRoutes(computeBalanceSheetUseCase, computeProfitAndLossUseCase, computeCashFlowUseCase, companyRepository)
             }
         }
     }

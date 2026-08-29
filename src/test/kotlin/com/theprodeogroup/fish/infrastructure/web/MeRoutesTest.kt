@@ -5,6 +5,9 @@ import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeInventoryScheduleUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
+import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
+import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
+import com.theprodeogroup.fish.application.ComputeCashFlowUseCase
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeCompanyRepository
@@ -119,6 +122,9 @@ class MeRoutesTest {
         val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeSalesToExpenseRatioUseCase = ComputeSalesToExpenseRatioUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeBalanceSheetUseCase = ComputeBalanceSheetUseCase(companyRepository, accountRepository, journalEntryRepository)
+        val computeProfitAndLossUseCase = ComputeProfitAndLossUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeCashFlowUseCase = ComputeCashFlowUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
 
         val tenant = Tenant.onboard("Purse", TenantSegment.INTERNAL_VENTURE, GBP)
         val adminUser = User.create(ADMIN_EMAIL, "Founding Admin").also { userRepository.save(it) }
@@ -174,7 +180,10 @@ class MeRoutesTest {
                 recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
                 computeMoneyVelocityUseCase = computeMoneyVelocityUseCase,
                 computeExpenseVelocityUseCase = computeExpenseVelocityUseCase,
-                computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase
+                computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase,
+                computeBalanceSheetUseCase = computeBalanceSheetUseCase,
+                computeProfitAndLossUseCase = computeProfitAndLossUseCase,
+                computeCashFlowUseCase = computeCashFlowUseCase
             )
         }
     }

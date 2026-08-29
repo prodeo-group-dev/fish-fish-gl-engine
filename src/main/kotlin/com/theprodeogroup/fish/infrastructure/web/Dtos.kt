@@ -603,3 +603,57 @@ data class SalesToExpenseRatioResponseDto(
     val currency: String,
     val ratio: String
 )
+
+/** One line within a [BalanceSheetResponseDto]'s asset/liability/equity section. */
+@Serializable
+data class BalanceSheetLineDto(
+    val accountId: String,
+    val code: String,
+    val name: String,
+    val classification: String?,
+    val balance: String
+)
+
+/** `GET /companies/{companyId}/reports/balance-sheet` - the "Reports" sub-page's Balance sheet report. */
+@Serializable
+data class BalanceSheetResponseDto(
+    val currency: String,
+    val assetLines: List<BalanceSheetLineDto>,
+    val liabilityLines: List<BalanceSheetLineDto>,
+    val equityLines: List<BalanceSheetLineDto>,
+    val retainedEarnings: String,
+    val totalAssets: String,
+    val totalLiabilities: String,
+    val totalEquity: String,
+    val isBalanced: Boolean
+)
+
+/** `GET /companies/{companyId}/reports/profit-and-loss` - the "Reports" sub-page's Profit and loss report. */
+@Serializable
+data class ProfitAndLossResponseDto(
+    val periodId: String,
+    val currency: String,
+    val totalRevenue: String,
+    val totalExpense: String,
+    val netIncome: String
+)
+
+/** One IAS 7 activity category's net movement within a [CashFlowResponseDto]. */
+@Serializable
+data class CashFlowActivityAmountDto(
+    val activity: String,
+    val netAmount: String
+)
+
+/** `GET /companies/{companyId}/reports/cash-flow` - the "Reports" sub-page's Cash flow report. */
+@Serializable
+data class CashFlowResponseDto(
+    val currency: String,
+    val startDate: String,
+    val endDate: String,
+    val openingBalance: String,
+    val closingBalance: String,
+    val netCashFlow: String,
+    val activityAmounts: List<CashFlowActivityAmountDto>,
+    val uncategorizedAmount: String
+)
