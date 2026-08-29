@@ -162,6 +162,7 @@ class InventoryRoutesTest {
                 companyRepository = companyRepository,
                 periodRepository = periodRepository,
                 accountRepository = accountRepository,
+                journalEntryRepository = journalEntryRepository,
                 postJournalEntryUseCase = postJournalEntryUseCase,
                 purchaseOrderRepository = purchaseOrderRepository,
                 postPurchaseOrderUseCase = postPurchaseOrderUseCase,

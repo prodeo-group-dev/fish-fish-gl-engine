@@ -7,6 +7,7 @@ import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
+import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
 import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
@@ -55,11 +56,22 @@ import java.util.UUID
  * journal entry form's line-item account picker. Active accounts only,
  * sorted by code. [authorizeTenantForRead], matching every other read
  * route in this package.
+ *
+ * **`GET /companies/{companyId}/journal-entries` (2026-08-29, "treat
+ * the journal posting page like we did the SOP's subpages")** - the
+ * "Journal timeline" sub-page, every entry ever posted for this
+ * Company, newest first. Mirrors [CreateSalesInvoiceRoutes]'s
+ * `GET /companies/{companyId}/sales-invoices`: each line's `accountId`
+ * is resolved to its code/name here (via [accountRepository]) rather
+ * than left for the client to join against the accounts picker's own
+ * list - a reader shouldn't need to cross-reference two responses to
+ * see what a past entry actually touched.
  */
 fun Route.journalEntryRoutes(
     postJournalEntryUseCase: PostJournalEntryUseCase,
     periodRepository: PeriodRepository,
     accountRepository: AccountRepository,
+    journalEntryRepository: JournalEntryRepository,
     companyRepository: CompanyRepository,
     idempotencyKeyRepository: IdempotencyKeyRepository
 ) {
@@ -80,6 +92,42 @@ fun Route.journalEntryRoutes(
             .sortedBy { it.code }
             .map { AccountSummaryDto(it.id.value.toString(), it.code, it.name, it.type.name) }
         call.respond(accounts)
+    }
+
+    get("/companies/{companyId}/journal-entries") {
+        val companyIdRaw = call.parameters["companyId"]
+        if (companyIdRaw == null) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "companyId path parameter is required"))
+            return@get
+        }
+        val companyUuid = call.parseUuid(companyIdRaw) ?: return@get
+        val companyId = CompanyId(companyUuid)
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
+        if (!call.verifyClaimedTenant(tenantId)) return@get
+        call.authorizeTenantForRead(tenantId) ?: return@get
+
+        val entries = journalEntryRepository.findAllByCompany(companyId)
+            .sortedByDescending { it.date }
+            .map { entry ->
+                JournalEntryRecordDto(
+                    id = entry.id.value.toString(),
+                    date = entry.date.toString(),
+                    description = entry.description,
+                    status = entry.status.name,
+                    source = entry.source.name,
+                    lines = entry.lines.map { line ->
+                        val account = accountRepository.findById(line.accountId)
+                        JournalEntryRecordLineDto(
+                            accountCode = account?.code ?: "",
+                            accountName = account?.name ?: "Unknown account",
+                            side = line.side.name,
+                            amount = line.amount.amount.toPlainString(),
+                            currency = line.amount.currency.currencyCode
+                        )
+                    }
+                )
+            }
+        call.respond(entries)
     }
 
     post("/journal-entries") {
