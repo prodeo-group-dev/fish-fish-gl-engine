@@ -276,6 +276,15 @@ data class InventoryScheduleResponseDto(
     val totalCarryingValue: String
 )
 
+/** `GET /companies/{companyId}/accounts` - the Chart of Accounts, for a manual journal entry form's line-item account picker. */
+@Serializable
+data class AccountSummaryDto(
+    val accountId: String,
+    val code: String,
+    val name: String,
+    val type: String
+)
+
 /** `GET /companies/{companyId}/customers` - the "Schedule of Customers," and the SOP sale form's customer picker source. */
 @Serializable
 data class CustomerSummaryDto(

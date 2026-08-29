@@ -161,6 +161,7 @@ class RecordInventoryReceiptAndIssueRoutesTest {
                 membershipRepository = membershipRepository,
                 companyRepository = companyRepository,
                 periodRepository = periodRepository,
+                accountRepository = accountRepository,
                 postJournalEntryUseCase = postJournalEntryUseCase,
                 purchaseOrderRepository = purchaseOrderRepository,
                 postPurchaseOrderUseCase = postPurchaseOrderUseCase,

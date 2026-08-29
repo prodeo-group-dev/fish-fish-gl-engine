@@ -6,10 +6,12 @@ import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
+import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
+import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
 import io.ktor.http.HttpStatusCode
@@ -19,6 +21,7 @@ import io.ktor.server.request.header
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
@@ -45,13 +48,40 @@ import java.util.UUID
  *
  * **Idempotency-Key support** (docs/GL_Production_Readiness_Plan.md) -
  * routes its final execute-and-respond step through [respondIdempotently].
+ *
+ * **`GET /companies/{companyId}/accounts` (2026-08-29, user request:
+ * "Journals should be created and posted from the GL page")** - the
+ * Chart of Accounts, just enough (id/code/name/type) for a manual
+ * journal entry form's line-item account picker. Active accounts only,
+ * sorted by code. [authorizeTenantForRead], matching every other read
+ * route in this package.
  */
 fun Route.journalEntryRoutes(
     postJournalEntryUseCase: PostJournalEntryUseCase,
     periodRepository: PeriodRepository,
+    accountRepository: AccountRepository,
     companyRepository: CompanyRepository,
     idempotencyKeyRepository: IdempotencyKeyRepository
 ) {
+    get("/companies/{companyId}/accounts") {
+        val companyIdRaw = call.parameters["companyId"]
+        if (companyIdRaw == null) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "companyId path parameter is required"))
+            return@get
+        }
+        val companyUuid = call.parseUuid(companyIdRaw) ?: return@get
+        val companyId = CompanyId(companyUuid)
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
+        if (!call.verifyClaimedTenant(tenantId)) return@get
+        call.authorizeTenantForRead(tenantId) ?: return@get
+
+        val accounts = accountRepository.findAllByCompany(companyId)
+            .filter { it.active }
+            .sortedBy { it.code }
+            .map { AccountSummaryDto(it.id.value.toString(), it.code, it.name, it.type.name) }
+        call.respond(accounts)
+    }
+
     post("/journal-entries") {
         val request = call.receive<PostJournalEntryRequestDto>()
 
