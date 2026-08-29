@@ -59,6 +59,7 @@ import io.kotest.matchers.string.shouldContain
 import io.ktor.client.call.body
 import io.ktor.server.application.Application
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -160,6 +161,7 @@ class JournalEntryRoutesTest {
                 membershipRepository = membershipRepository,
                 companyRepository = companyRepository,
                 periodRepository = periodRepository,
+                accountRepository = accountRepository,
                 postJournalEntryUseCase = postJournalEntryUseCase,
                 purchaseOrderRepository = purchaseOrderRepository,
                 postPurchaseOrderUseCase = postPurchaseOrderUseCase,
@@ -284,5 +286,70 @@ class JournalEntryRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.NotFound
+    }
+
+    // -- GET /companies/{companyId}/accounts (2026-08-29, "Journals should be created and posted from the GL page") --
+
+    @Test
+    fun `given a Company with active Accounts, when GET accounts is called, then it returns them sorted by code`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/accounts") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: List<AccountSummaryDto> = response.body()
+        body.map { it.code } shouldBe listOf("1000", "5000")
+        body.first { it.code == "1000" }.name shouldBe "Test Cash"
+        body.first { it.code == "1000" }.type shouldBe "ASSET"
+    }
+
+    @Test
+    fun `given an inactive Account, when GET accounts is called, then it is excluded`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        fixture.debitAccount.deactivate()
+        fixture.accountRepository.save(fixture.debitAccount)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/accounts") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: List<AccountSummaryDto> = response.body()
+        body.map { it.code } shouldBe listOf("1000")
+    }
+
+    @Test
+    fun `given a caller with a READ_ONLY role Membership, when GET accounts is called, then it returns 200`() = testApplication {
+        val fixture = Fixture(Role.READ_ONLY)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/accounts") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+    }
+
+    @Test
+    fun `given no bearer token, when GET accounts is called, then it returns 401`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/accounts") {
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.Unauthorized
     }
 }

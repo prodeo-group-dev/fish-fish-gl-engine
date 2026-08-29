@@ -28,6 +28,7 @@ import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.inventory.StockItemRepository
+import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.payroll.LeaveAccrualRepository
 import com.theprodeogroup.fish.domain.payroll.PayRunRepository
@@ -211,6 +212,7 @@ fun Application.productionModule() {
         onboardTenantUseCase = onboardTenantUseCase,
         addCompanyToTenantUseCase = addCompanyToTenantUseCase,
         periodRepository = periodRepository,
+        accountRepository = accountRepository,
         postJournalEntryUseCase = postJournalEntryUseCase,
         purchaseOrderRepository = purchaseOrderRepository,
         postPurchaseOrderUseCase = postPurchaseOrderUseCase,
@@ -262,6 +264,7 @@ fun Application.fishModule(
     onboardTenantUseCase: OnboardTenantUseCase,
     addCompanyToTenantUseCase: AddCompanyToTenantUseCase,
     periodRepository: PeriodRepository,
+    accountRepository: AccountRepository,
     postJournalEntryUseCase: PostJournalEntryUseCase,
     purchaseOrderRepository: PurchaseOrderRepository,
     postPurchaseOrderUseCase: PostPurchaseOrderUseCase,
@@ -355,7 +358,7 @@ fun Application.fishModule(
             fishAuthenticated {
                 tenantRoutesAuthenticated(addCompanyToTenantUseCase, tenantRepository)
                 adminPhoneRoutes(recordAdminPhoneNumberUseCase)
-                journalEntryRoutes(postJournalEntryUseCase, periodRepository, companyRepository, idempotencyKeyRepository)
+                journalEntryRoutes(postJournalEntryUseCase, periodRepository, accountRepository, companyRepository, idempotencyKeyRepository)
                 purchaseOrderRoutes(postPurchaseOrderUseCase, purchaseOrderRepository, companyRepository, idempotencyKeyRepository)
                 payrollRoutes(
                     postPayRunUseCase, payRunRepository,
