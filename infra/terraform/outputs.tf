@@ -67,3 +67,45 @@ output "acm_validation_record" {
     value = tolist(aws_acm_certificate.this.domain_validation_options)[0].resource_record_value
   }
 }
+
+# frontend.tf's own certificate (us-east-1, separate resource from the
+# one above) - almost always the identical record as acm_validation_record
+# since both certs are for the same domain_name, but ACM doesn't
+# guarantee that across separate certificate requests, so this is
+# output and should be checked/added explicitly rather than assumed.
+output "frontend_acm_validation_record" {
+  description = "DNS validation record for frontend.tf's CloudFront certificate. Add at the external DNS provider before the terraform apply that creates aws_acm_certificate_validation.frontend."
+  value = {
+    name  = tolist(aws_acm_certificate.frontend.domain_validation_options)[0].resource_record_name
+    type  = tolist(aws_acm_certificate.frontend.domain_validation_options)[0].resource_record_type
+    value = tolist(aws_acm_certificate.frontend.domain_validation_options)[0].resource_record_value
+  }
+}
+
+output "frontend_s3_bucket" {
+  description = "Upload WEB's `npm run build` output (dist/) here, then invalidate cloudfront_distribution_id's cache."
+  value       = aws_s3_bucket.frontend.id
+}
+
+output "cloudfront_distribution_id" {
+  value = aws_cloudfront_distribution.this.id
+}
+
+output "cloudfront_domain_name" {
+  description = "capital.theprodeogroup.com's DNS record needs repointing from alb_dns_name to THIS value (a CNAME) once the distribution is deployed - the cutover step, done after everything else in this file is live and confirmed working."
+  value       = aws_cloudfront_distribution.this.domain_name
+}
+
+# notifications.tf's SES domain identity - both records must be added
+# at the external DNS provider (mail.theprodeogroup.com's own zone,
+# same external-DNS caveat as everything else in this file) before
+# Cognito's email_configuration will actually work.
+output "ses_domain_verification_record" {
+  description = "TXT record to add: name is _amazonses.mail.theprodeogroup.com, value is this output."
+  value       = aws_ses_domain_identity.this.verification_token
+}
+
+output "ses_dkim_records" {
+  description = "3 CNAME records to add, one per token: name is '<token>._domainkey.mail.theprodeogroup.com', value is '<token>.dkim.amazonses.com' for each token in this list."
+  value       = aws_ses_domain_dkim.this.dkim_tokens
+}

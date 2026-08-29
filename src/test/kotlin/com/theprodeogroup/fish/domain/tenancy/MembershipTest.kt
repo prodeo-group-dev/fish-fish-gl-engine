@@ -14,6 +14,23 @@ class MembershipTest {
     }
 
     @Test
+    fun `given no explicit accessLevel, when each Role is granted, then it defaults to that role's usual access`() {
+        Membership.grant(UserId.generate(), TenantId.generate(), Role.OWNER_ADMIN).accessLevel shouldBe AccessLevel.ADMIN
+        Membership.grant(UserId.generate(), TenantId.generate(), Role.ACCOUNTANT).accessLevel shouldBe AccessLevel.WRITE
+        Membership.grant(UserId.generate(), TenantId.generate(), Role.APPROVER).accessLevel shouldBe AccessLevel.APPROVE
+        Membership.grant(UserId.generate(), TenantId.generate(), Role.READ_ONLY).accessLevel shouldBe AccessLevel.READ
+        Membership.grant(UserId.generate(), TenantId.generate(), Role.COMPLIANCE_ETHICS_REVIEW).accessLevel shouldBe AccessLevel.READ
+    }
+
+    @Test
+    fun `given an explicit accessLevel, when granted, then it overrides the role's usual default`() {
+        val membership = Membership.grant(UserId.generate(), TenantId.generate(), Role.ACCOUNTANT, AccessLevel.READ)
+
+        membership.role shouldBe Role.ACCOUNTANT
+        membership.accessLevel shouldBe AccessLevel.READ
+    }
+
+    @Test
     fun `given an active Membership, when revoked, then status becomes Revoked`() {
         val membership = Membership.grant(UserId.generate(), TenantId.generate(), Role.READ_ONLY)
 

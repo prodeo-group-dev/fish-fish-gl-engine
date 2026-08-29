@@ -3,6 +3,8 @@ package com.theprodeogroup.fish.infrastructure.web
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.tenancy.ManagedModule
+import com.theprodeogroup.fish.domain.tenancy.ModuleManagementPreference
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.domain.tenancy.TenantRepository
 import com.theprodeogroup.fish.domain.tenancy.TenantSegment
@@ -84,6 +86,29 @@ fun Route.tenantRoutesOnboarding(onboardTenantUseCase: OnboardTenantUseCase) {
                 return@post
             }
         }
+        val moduleManagementPreferences = mutableListOf<ModuleManagementPreference>()
+        for (preferenceDto in request.moduleManagementPreferences) {
+            val module = try {
+                ManagedModule.valueOf(preferenceDto.module)
+            } catch (e: IllegalArgumentException) {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "'${preferenceDto.module}' is not a valid module"))
+                return@post
+            }
+            if (preferenceDto.selfManaged) {
+                moduleManagementPreferences.add(ModuleManagementPreference.selfManaged(module))
+            } else {
+                val delegateName = preferenceDto.delegateName
+                val delegateEmail = preferenceDto.delegateEmail
+                if (delegateName.isNullOrBlank() || delegateEmail.isNullOrBlank()) {
+                    call.respond(
+                        HttpStatusCode.BadRequest,
+                        ErrorResponseDto("bad_request", "delegateName and delegateEmail are required when selfManaged is false (module '${preferenceDto.module}')")
+                    )
+                    return@post
+                }
+                moduleManagementPreferences.add(ModuleManagementPreference.delegatedTo(module, delegateName, delegateEmail))
+            }
+        }
 
         val result = onboardTenantUseCase.execute(
             OnboardTenantUseCase.Request(
@@ -96,7 +121,8 @@ fun Route.tenantRoutesOnboarding(onboardTenantUseCase: OnboardTenantUseCase) {
                 companyBaseCurrency = companyBaseCurrency,
                 adminEmail = identity.email,
                 adminName = request.adminName,
-                openingCashBalance = openingCashBalance
+                openingCashBalance = openingCashBalance,
+                moduleManagementPreferences = moduleManagementPreferences
             )
         )
 

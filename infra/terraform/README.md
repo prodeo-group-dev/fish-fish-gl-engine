@@ -23,8 +23,19 @@ then, ECS's own internal auto-creation during `CreateService` never worked;
 had to create `AWSServiceRoleForECS` directly via
 `aws iam create-service-linked-role` once, after which `apply` succeeded
 normally) —
-all now in `bootstrap-iam-policy.json`. Two operational lessons worth
-knowing before running this yourself:
+all now in `bootstrap-iam-policy.json`. **A second managed policy,
+`frontend-iam-policy.json` (S3 + CloudFront actions for `frontend.tf`),
+exists as of 2026-08-27 for a reason worth knowing before you add
+anything else to `bootstrap-iam-policy.json`: a single customer-managed
+IAM policy document is capped at 6,144 characters (minified), and
+`bootstrap-iam-policy.json` alone was already near that ceiling by the
+time S3/CloudFront support was needed** - `CreatePolicyVersion` failed
+with `LimitExceeded: Cannot exceed quota for PolicySize: 6144` on the
+combined document. Splitting by capability area (not just appending)
+is the fix, and the one to reach for again next time this limit gets
+hit, rather than trimming existing actions to make room. Both policies
+attach to the same `fish-gl-engine-terraform` user. Two operational
+lessons worth knowing before running this yourself:
 
 1. **Don't force-kill a stuck-looking `apply`.** One attempt appeared to hang
    on `aws_lb.this` for 40+ minutes with zero output — it wasn't actually

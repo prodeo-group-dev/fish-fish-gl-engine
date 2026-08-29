@@ -27,6 +27,9 @@ class TenantTest {
         tenant.kybStatus shouldBe VerificationStatus.PENDING
         tenant.adminKycStatus shouldBe VerificationStatus.PENDING
         tenant.kybVerificationDeadline shouldBe null
+        tenant.adminPhoneNumber shouldBe null
+        tenant.adminPhoneVerificationStatus shouldBe VerificationStatus.PENDING
+        tenant.phoneVerificationDeadline shouldBe null
     }
 
     @Test
@@ -218,7 +221,7 @@ class TenantTest {
     }
 
     @Test
-    fun `given both KYB and admin KYC Verified, when checked past the original deadline, then the grace period is not expired`() {
+    fun `given KYB and admin KYC Verified but admin phone still Pending, when checked past the original deadline, then the grace period is still expired - phone is part of KYB`() {
         val tenant = readyToActivate()
         val activatedAt = Instant.parse("2026-01-01T00:00:00Z")
         tenant.activate(activatedAt)
@@ -227,7 +230,98 @@ class TenantTest {
 
         val afterOriginalDeadline = activatedAt.plus(181, ChronoUnit.DAYS)
 
+        tenant.isKybGracePeriodExpired(afterOriginalDeadline) shouldBe true
+    }
+
+    @Test
+    fun `given KYB, admin KYC, and admin phone all Verified, when checked past the original deadline, then the grace period is not expired`() {
+        val tenant = readyToActivate()
+        val activatedAt = Instant.parse("2026-01-01T00:00:00Z")
+        tenant.activate(activatedAt)
+        tenant.recordKybOutcome(VerificationStatus.VERIFIED)
+        tenant.recordAdminKycOutcome(VerificationStatus.VERIFIED)
+        tenant.recordAdminPhoneNumber(PhoneNumber("+15550123456"))
+        tenant.recordAdminPhoneVerificationOutcome(VerificationStatus.VERIFIED)
+
+        val afterOriginalDeadline = activatedAt.plus(181, ChronoUnit.DAYS)
+
         tenant.isKybGracePeriodExpired(afterOriginalDeadline) shouldBe false
+    }
+
+    @Test
+    fun `given a successful activation, when the phone deadline is checked, then it is 14 days from activation`() {
+        val tenant = readyToActivate()
+        val now = Instant.parse("2026-08-11T00:00:00Z")
+
+        tenant.activate(now)
+
+        tenant.phoneVerificationDeadline shouldBe now.plus(14, ChronoUnit.DAYS)
+    }
+
+    @Test
+    fun `given no phone number recorded, when checked past the 14-day deadline, then phone verification is overdue`() {
+        val tenant = readyToActivate()
+        val activatedAt = Instant.parse("2026-01-01T00:00:00Z")
+        tenant.activate(activatedAt)
+
+        val justAfterDeadline = activatedAt.plus(15, ChronoUnit.DAYS)
+
+        tenant.isPhoneVerificationOverdue(justAfterDeadline) shouldBe true
+    }
+
+    @Test
+    fun `given a phone number recorded but not yet verified, when checked within the 14-day deadline, then phone verification is not overdue`() {
+        val tenant = readyToActivate()
+        val activatedAt = Instant.parse("2026-01-01T00:00:00Z")
+        tenant.activate(activatedAt)
+        tenant.recordAdminPhoneNumber(PhoneNumber("+15550123456"))
+
+        val withinDeadline = activatedAt.plus(7, ChronoUnit.DAYS)
+
+        tenant.isPhoneVerificationOverdue(withinDeadline) shouldBe false
+    }
+
+    @Test
+    fun `given a verified phone number, when checked well past the 14-day deadline, then phone verification is not overdue`() {
+        val tenant = readyToActivate()
+        val activatedAt = Instant.parse("2026-01-01T00:00:00Z")
+        tenant.activate(activatedAt)
+        tenant.recordAdminPhoneNumber(PhoneNumber("+15550123456"))
+        tenant.recordAdminPhoneVerificationOutcome(VerificationStatus.VERIFIED)
+
+        val afterDeadline = activatedAt.plus(15, ChronoUnit.DAYS)
+
+        tenant.isPhoneVerificationOverdue(afterDeadline) shouldBe false
+    }
+
+    @Test
+    fun `given a phone number recorded again, when checked, then verification status resets to Pending - an old number's Verified outcome does not carry over`() {
+        val tenant = readyToActivate()
+        tenant.activate()
+        tenant.recordAdminPhoneNumber(PhoneNumber("+15550123456"))
+        tenant.recordAdminPhoneVerificationOutcome(VerificationStatus.VERIFIED)
+
+        tenant.recordAdminPhoneNumber(PhoneNumber("+15559876543"))
+
+        tenant.adminPhoneVerificationStatus shouldBe VerificationStatus.PENDING
+    }
+
+    @Test
+    fun `given only the phone deadline expired (KYB and admin KYC already Verified), when the automated sweep runs, then it still suspends and raises KybGracePeriodExpired - not a separate event`() {
+        val tenant = readyToActivate()
+        val activatedAt = Instant.parse("2026-01-01T00:00:00Z")
+        tenant.activate(activatedAt)
+        tenant.recordKybOutcome(VerificationStatus.VERIFIED)
+        tenant.recordAdminKycOutcome(VerificationStatus.VERIFIED)
+        tenant.pullDomainEvents()
+
+        val justAfterPhoneDeadline = activatedAt.plus(15, ChronoUnit.DAYS)
+
+        val result = tenant.suspendForExpiredKyb(justAfterPhoneDeadline)
+
+        result.isValid shouldBe true
+        tenant.status shouldBe TenantStatus.SUSPENDED
+        tenant.pullDomainEvents() shouldContain KybGracePeriodExpired(tenant.id, justAfterPhoneDeadline)
     }
 
     @Test
@@ -246,12 +340,18 @@ class TenantTest {
     }
 
     @Test
-    fun `given a grace period that has not expired, when the automated sweep is attempted, then it is rejected`() {
+    fun `given neither the KYB nor the phone grace period has expired, when the automated sweep is attempted, then it is rejected`() {
         val tenant = readyToActivate()
         val activatedAt = Instant.parse("2026-01-01T00:00:00Z")
         tenant.activate(activatedAt)
 
-        val result = tenant.suspendForExpiredKyb(activatedAt.plus(30, ChronoUnit.DAYS))
+        // Within both the 14-day phone deadline and the 180-day KYB one -
+        // 30 days (the pre-phone-requirement value here) would now trip
+        // the phone deadline on its own, so this uses 5 days instead to
+        // keep testing "nothing has expired yet" rather than "the KYB
+        // deadline specifically hasn't expired" (that's the sweep test
+        // above, since the two deadlines differ so much in length now).
+        val result = tenant.suspendForExpiredKyb(activatedAt.plus(5, ChronoUnit.DAYS))
 
         result.isValid shouldBe false
         tenant.status shouldBe TenantStatus.ACTIVE

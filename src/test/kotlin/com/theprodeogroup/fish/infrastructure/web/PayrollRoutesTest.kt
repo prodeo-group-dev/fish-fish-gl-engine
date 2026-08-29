@@ -3,6 +3,8 @@ package com.theprodeogroup.fish.infrastructure.web
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeCompanyRepository
 import com.theprodeogroup.fish.application.FakeCreditorRepository
+import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
+import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.FakeCustomerRepository
 import com.theprodeogroup.fish.application.FakeJournalEntryRepository
 import com.theprodeogroup.fish.application.FakeLeaveAccrualRepository
@@ -10,13 +12,21 @@ import com.theprodeogroup.fish.application.FakeMembershipRepository
 import com.theprodeogroup.fish.application.FakePayRunRepository
 import com.theprodeogroup.fish.application.FakePeriodRepository
 import com.theprodeogroup.fish.application.FakePurchaseOrderRepository
+import com.theprodeogroup.fish.application.FakeSalesInvoiceRecordRepository
 import com.theprodeogroup.fish.application.FakeSalesOrderRepository
 import com.theprodeogroup.fish.application.FakeStockItemRepository
+import com.theprodeogroup.fish.application.FakeStockShortageEscalationRepository
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.FakeTenantRepository
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
+import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
+import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
+import com.theprodeogroup.fish.application.ComputeInventoryScheduleUseCase
+import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
+import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
+import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
 import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
@@ -101,11 +111,18 @@ class PayrollRoutesTest {
         val stockItemRepository = FakeStockItemRepository()
         val postInventoryReceiptUseCase = PostInventoryReceiptUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
         val postInventoryIssueUseCase = PostInventoryIssueUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeInventoryScheduleUseCase = ComputeInventoryScheduleUseCase(companyRepository, stockItemRepository)
         val salesOrderRepository = FakeSalesOrderRepository()
         val postSalesOrderUseCase = PostSalesOrderUseCase(
             salesOrderRepository, FakeCustomerRepository(), stockItemRepository, periodRepository, accountRepository, journalEntryRepository
         )
+        val customerRepository = FakeCustomerRepository()
         val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val salesInvoiceRecordRepository = FakeSalesInvoiceRecordRepository()
+        val createSalesInvoiceUseCase = CreateSalesInvoiceUseCase(
+            periodRepository, accountRepository, customerRepository, journalEntryRepository, stockItemRepository, FakeStockShortageEscalationRepository(), salesInvoiceRecordRepository
+        )
+        val listSalesInvoicesUseCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
         val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -137,6 +154,17 @@ class PayrollRoutesTest {
         val leaveAccrual = LeaveAccrual.create(company.id, EmployeeId.generate(), GBP)
             .also { leaveAccrualRepository.save(it) }
 
+        val adminPhoneVerificationChecker = FakeAdminPhoneVerificationChecker()
+
+        val recordAdminPhoneNumberUseCase = RecordAdminPhoneNumberUseCase(tenantRepository, adminPhoneVerificationChecker)
+
+
+        val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeSalesToExpenseRatioUseCase = ComputeSalesToExpenseRatioUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+
+
+
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
@@ -155,9 +183,13 @@ class PayrollRoutesTest {
                 stockItemRepository = stockItemRepository,
                 postInventoryReceiptUseCase = postInventoryReceiptUseCase,
                 postInventoryIssueUseCase = postInventoryIssueUseCase,
+                computeInventoryScheduleUseCase = computeInventoryScheduleUseCase,
                 salesOrderRepository = salesOrderRepository,
                 postSalesOrderUseCase = postSalesOrderUseCase,
                 recordSaleUseCase = recordSaleUseCase,
+                createSalesInvoiceUseCase = createSalesInvoiceUseCase,
+                listSalesInvoicesUseCase = listSalesInvoicesUseCase,
+                customerRepository = customerRepository,
                 recordCollectionUseCase = recordCollectionUseCase,
                 recordVendorObligationUseCase = recordVendorObligationUseCase,
                 recordVendorPaymentUseCase = recordVendorPaymentUseCase,
@@ -166,6 +198,10 @@ class PayrollRoutesTest {
                 recordPayRunUseCase = recordPayRunUseCase,
                 getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
                 idempotencyKeyRepository = idempotencyKeyRepository,
+                recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
+                computeMoneyVelocityUseCase = computeMoneyVelocityUseCase,
+                computeExpenseVelocityUseCase = computeExpenseVelocityUseCase,
+                computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase,
                 tenantRepository = tenantRepository,
                 onboardTenantUseCase = onboardTenantUseCase,
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase
@@ -181,7 +217,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/pay-runs/${fixture.payRun.id.value}/post") {
+        val response = client.post("/api/pay-runs/${fixture.payRun.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -202,7 +238,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/pay-runs/${fixture.payRun.id.value}/post") {
+        val response = client.post("/api/pay-runs/${fixture.payRun.id.value}/post") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(
@@ -220,7 +256,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/pay-runs/${java.util.UUID.randomUUID()}/post") {
+        val response = client.post("/api/pay-runs/${java.util.UUID.randomUUID()}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -245,14 +281,14 @@ class PayrollRoutesTest {
         val requestBody = """{"periodId": "${fixture.period.id.value}", "wagesExpenseAccountId": "${fixture.wagesExpenseAccount.id.value}",
             |"salariesExpenseAccountId": "${fixture.salariesExpenseAccount.id.value}", "cashAccountId": "${fixture.cashAccount.id.value}"}""".trimMargin()
 
-        val first = client.post("/pay-runs/${fixture.payRun.id.value}/post") {
+        val first = client.post("/api/pay-runs/${fixture.payRun.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             header("Idempotency-Key", idempotencyKey)
             contentType(ContentType.Application.Json)
             setBody(requestBody)
         }
-        val second = client.post("/pay-runs/${fixture.payRun.id.value}/post") {
+        val second = client.post("/api/pay-runs/${fixture.payRun.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             header("Idempotency-Key", idempotencyKey)
@@ -275,7 +311,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
+        val response = client.post("/api/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -297,7 +333,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
+        val response = client.post("/api/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -318,7 +354,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
+        val response = client.post("/api/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", TenantId.generate().value.toString())
             contentType(ContentType.Application.Json)
@@ -338,7 +374,7 @@ class PayrollRoutesTest {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
-        client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
+        client.post("/api/leave-accruals/${fixture.leaveAccrual.id.value}/remeasure") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -348,7 +384,7 @@ class PayrollRoutesTest {
             )
         }
 
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/utilize") {
+        val response = client.post("/api/leave-accruals/${fixture.leaveAccrual.id.value}/utilize") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -369,7 +405,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/utilize") {
+        val response = client.post("/api/leave-accruals/${fixture.leaveAccrual.id.value}/utilize") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -388,7 +424,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/leave-accruals/${fixture.leaveAccrual.id.value}/utilize") {
+        val response = client.post("/api/leave-accruals/${fixture.leaveAccrual.id.value}/utilize") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -409,7 +445,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/payroll/record-pay-run") {
+        val response = client.post("/api/payroll/record-pay-run") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -432,7 +468,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/payroll/record-pay-run") {
+        val response = client.post("/api/payroll/record-pay-run") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(
@@ -452,7 +488,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/payroll/record-pay-run") {
+        val response = client.post("/api/payroll/record-pay-run") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -473,7 +509,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/payroll/record-pay-run") {
+        val response = client.post("/api/payroll/record-pay-run") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", TenantId.generate().value.toString())
             contentType(ContentType.Application.Json)
@@ -497,7 +533,7 @@ class PayrollRoutesTest {
         val client = createClient { install(ContentNegotiation) { json() } }
         val employeeId = EmployeeId.generate()
 
-        val response = client.post("/leave-accruals") {
+        val response = client.post("/api/leave-accruals") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -518,13 +554,13 @@ class PayrollRoutesTest {
         val employeeId = EmployeeId.generate()
         val requestBody = """{"companyId": "${fixture.company.id.value}", "employeeId": "${employeeId.value}", "currency": "GBP"}"""
 
-        val first = client.post("/leave-accruals") {
+        val first = client.post("/api/leave-accruals") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(requestBody)
         }
-        val second = client.post("/leave-accruals") {
+        val second = client.post("/api/leave-accruals") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -542,7 +578,7 @@ class PayrollRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/leave-accruals") {
+        val response = client.post("/api/leave-accruals") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody("""{"companyId": "${fixture.company.id.value}", "employeeId": "${EmployeeId.generate().value}", "currency": "GBP"}""")

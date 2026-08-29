@@ -34,3 +34,15 @@ terraform {
 provider "aws" {
   region = var.aws_region
 }
+
+# CloudFront (frontend.tf) requires its viewer certificate to exist in
+# us-east-1 specifically, regardless of which region the distribution
+# itself edges from - unlike the ALB's own certificate (acm.tf), which
+# is region-scoped to var.aws_region because an ALB listener is a
+# regional resource. This alias exists solely to satisfy that
+# CloudFront requirement; every other resource in this config stays in
+# var.aws_region.
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+}

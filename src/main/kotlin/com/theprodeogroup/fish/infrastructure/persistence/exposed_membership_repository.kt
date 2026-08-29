@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.persistence
 
+import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import com.theprodeogroup.fish.domain.tenancy.Membership
 import com.theprodeogroup.fish.domain.tenancy.MembershipId
 import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
@@ -53,6 +54,7 @@ class ExposedMembershipRepository : MembershipRepository {
         statement[MembershipsTable.tenantId] = membership.tenantId.value
         statement[MembershipsTable.role] = membership.role.name
         statement[MembershipsTable.status] = membership.status.name
+        statement[MembershipsTable.accessLevel] = membership.accessLevel.name
     }
 
     private fun ResultRow.toMembership(): Membership = Membership.reconstitute(
@@ -60,6 +62,7 @@ class ExposedMembershipRepository : MembershipRepository {
         userId = UserId(this[MembershipsTable.userId]),
         tenantId = TenantId(this[MembershipsTable.tenantId]),
         role = Role.valueOf(this[MembershipsTable.role]),
-        status = MembershipStatus.valueOf(this[MembershipsTable.status])
+        status = MembershipStatus.valueOf(this[MembershipsTable.status]),
+        accessLevel = AccessLevel.valueOf(this[MembershipsTable.accessLevel])
     )
 }

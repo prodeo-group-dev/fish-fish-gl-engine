@@ -8,3 +8,9 @@ interface StockItemRepository {
     fun findById(id: StockItemId): StockItem?
     fun findAllByCompany(companyId: CompanyId): List<StockItem>
 }
+
+/** Persistence contract for [StockShortageEscalation] - append-only, no `findById`/update need identified yet. */
+interface StockShortageEscalationRepository {
+    fun save(escalation: StockShortageEscalation)
+    fun findAllByCompany(companyId: CompanyId): List<StockShortageEscalation>
+}

@@ -9,8 +9,11 @@
         "ec2:DescribeVpcAttribute",
         "ec2:DescribeSubnets",
         "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSecurityGroupRules",
         "ec2:DescribeTags",
-        "ec2:DescribeInternetGateways"
+        "ec2:DescribeInternetGateways",
+        "ec2:DescribeManagedPrefixLists",
+        "ec2:GetManagedPrefixListEntries"
       ],
       "Resource": "*"
     },
@@ -170,6 +173,17 @@
       "Effect": "Allow",
       "Action": "iam:CreateServiceLinkedRole",
       "Resource": "arn:aws:iam::*:role/aws-service-role/rds.amazonaws.com/AWSServiceRoleForRDS*"
+    },
+    {
+      "Sid": "CognitoEmailServiceLinkedRole",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "arn:aws:iam::*:role/aws-service-role/email.cognito-idp.amazonaws.com/*",
+      "Condition": {
+        "StringEquals": {
+          "iam:AWSServiceName": "email.cognito-idp.amazonaws.com"
+        }
+      }
     },
     {
       "Sid": "ElasticLoadBalancing",

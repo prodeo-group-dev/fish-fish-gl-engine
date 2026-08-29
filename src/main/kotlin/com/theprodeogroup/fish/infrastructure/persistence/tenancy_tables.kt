@@ -18,6 +18,9 @@ object TenantsTable : Table("tenants") {
     val kybStatus = varchar("kyb_status", 20)
     val adminKycStatus = varchar("admin_kyc_status", 20)
     val kybVerificationDeadline = timestamp("kyb_verification_deadline").nullable()
+    val adminPhoneNumber = varchar("admin_phone_number", 20).nullable()
+    val adminPhoneVerificationStatus = varchar("admin_phone_verification_status", 20)
+    val phoneVerificationDeadline = timestamp("phone_verification_deadline").nullable()
 
     override val primaryKey = PrimaryKey(id)
 }
@@ -55,6 +58,17 @@ object CompaniesTable : Table("companies") {
     override val primaryKey = PrimaryKey(id)
 }
 
+/** V11 - see ModuleManagementPreference's own KDoc for what this does and doesn't mean. */
+object CompanyModuleManagementPreferencesTable : Table("company_module_management_preferences") {
+    val companyId = uuid("company_id")
+    val module = varchar("module", 10)
+    val selfManaged = bool("self_managed")
+    val delegateName = varchar("delegate_name", 255).nullable()
+    val delegateEmail = varchar("delegate_email", 255).nullable()
+
+    override val primaryKey = PrimaryKey(companyId, module)
+}
+
 object UsersTable : Table("users") {
     val id = uuid("id")
     val email = varchar("email", 255)
@@ -69,6 +83,8 @@ object MembershipsTable : Table("memberships") {
     val tenantId = uuid("tenant_id")
     val role = varchar("role", 30)
     val status = varchar("status", 20)
+    /** V12 - see Membership.kt's own KDoc on why this is a real column, not derived from [role]. */
+    val accessLevel = varchar("access_level", 10)
 
     override val primaryKey = PrimaryKey(id)
 }

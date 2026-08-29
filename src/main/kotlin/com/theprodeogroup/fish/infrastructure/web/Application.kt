@@ -2,8 +2,16 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.auth0.jwt.interfaces.JWTVerifier
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
+import com.theprodeogroup.fish.application.ComputeInventoryScheduleUseCase
+import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
+import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
+import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
+import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
+import com.theprodeogroup.fish.application.KybGracePeriodSweep
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
+import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
 import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
@@ -24,6 +32,7 @@ import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.payroll.LeaveAccrualRepository
 import com.theprodeogroup.fish.domain.payroll.PayRunRepository
 import com.theprodeogroup.fish.domain.purchasing.PurchaseOrderRepository
+import com.theprodeogroup.fish.domain.sales.CustomerRepository
 import com.theprodeogroup.fish.domain.sales.SalesOrderRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
@@ -35,6 +44,7 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedAccountReposito
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCompanyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCreditorRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCustomerRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedSalesInvoiceRecordRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedIdempotencyKeyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedJournalEntryRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedLeaveAccrualRepository
@@ -44,9 +54,11 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedPeriodRepositor
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedPurchaseOrderRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedSalesOrderRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedStockItemRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedStockShortageEscalationRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTenantRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedUserRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
+import com.theprodeogroup.fish.infrastructure.identity.CognitoAdminPhoneVerificationChecker
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -64,8 +76,13 @@ import java.net.URI
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.server.response.respond
+import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import org.slf4j.event.Level
+import java.time.Duration
 
 /**
  * The GL Engine's HTTP entry point (docs/DDD_Design.md Section 10.19/10.20) -
@@ -109,6 +126,7 @@ fun Application.productionModule() {
     val membershipRepository = ExposedMembershipRepository()
     val creditorRepository = ExposedCreditorRepository()
     val stockItemRepository = ExposedStockItemRepository()
+    val stockShortageEscalationRepository = ExposedStockShortageEscalationRepository()
     val purchaseOrderRepository = ExposedPurchaseOrderRepository()
     val payRunRepository = ExposedPayRunRepository()
     val leaveAccrualRepository = ExposedLeaveAccrualRepository()
@@ -132,10 +150,17 @@ fun Application.productionModule() {
     val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
     val postInventoryReceiptUseCase = PostInventoryReceiptUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
     val postInventoryIssueUseCase = PostInventoryIssueUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
+    val computeInventoryScheduleUseCase = ComputeInventoryScheduleUseCase(companyRepository, stockItemRepository)
     val postSalesOrderUseCase = PostSalesOrderUseCase(
         salesOrderRepository, customerRepository, stockItemRepository, periodRepository, accountRepository, journalEntryRepository
     )
     val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
+    val salesInvoiceRecordRepository = ExposedSalesInvoiceRecordRepository()
+    val createSalesInvoiceUseCase = CreateSalesInvoiceUseCase(
+        periodRepository, accountRepository, customerRepository, journalEntryRepository, stockItemRepository,
+        stockShortageEscalationRepository, salesInvoiceRecordRepository
+    )
+    val listSalesInvoicesUseCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
     val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -143,6 +168,39 @@ fun Application.productionModule() {
     val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
     val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
+
+    val cognitoUserPoolId = System.getenv("FISH_COGNITO_USER_POOL_ID")
+        ?: error("FISH_COGNITO_USER_POOL_ID environment variable is required - no default for a security-relevant value")
+    val recordAdminPhoneNumberUseCase = RecordAdminPhoneNumberUseCase(
+        tenantRepository, CognitoAdminPhoneVerificationChecker(cognitoUserPoolId)
+    )
+    val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+    val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+    val computeSalesToExpenseRatioUseCase = ComputeSalesToExpenseRatioUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+
+    // In-process scheduler for KybGracePeriodSweep (docs/DDD_Design.md
+    // Section 9.4, extended 2026-08-27 to also cover the admin phone
+    // number's 14-day sub-deadline) - safe as a simple background loop
+    // tied to this Application's own coroutine scope specifically
+    // because desired_count = 1 (ecs.tf) means there is only ever one
+    // running instance; a second concurrent instance would double-run
+    // this on every tick, which a real scheduled-task/EventBridge
+    // approach wouldn't. Revisit if desired_count ever grows past 1.
+    val kybGracePeriodSweep = KybGracePeriodSweep(tenantRepository)
+    launch {
+        delay(Duration.ofMinutes(1).toMillis()) // let the app finish starting up first
+        while (isActive) {
+            try {
+                val result = kybGracePeriodSweep.run()
+                if (result.suspended.isNotEmpty()) {
+                    log.info("KybGracePeriodSweep suspended ${result.suspended.size} tenant(s) for expired KYB/phone verification")
+                }
+            } catch (e: Throwable) {
+                log.error("KybGracePeriodSweep run failed", e)
+            }
+            delay(Duration.ofHours(24).toMillis())
+        }
+    }
 
     fishModule(
         verifier = buildJwksVerifier(),
@@ -164,9 +222,13 @@ fun Application.productionModule() {
         stockItemRepository = stockItemRepository,
         postInventoryReceiptUseCase = postInventoryReceiptUseCase,
         postInventoryIssueUseCase = postInventoryIssueUseCase,
+        computeInventoryScheduleUseCase = computeInventoryScheduleUseCase,
         salesOrderRepository = salesOrderRepository,
         postSalesOrderUseCase = postSalesOrderUseCase,
         recordSaleUseCase = recordSaleUseCase,
+        createSalesInvoiceUseCase = createSalesInvoiceUseCase,
+        listSalesInvoicesUseCase = listSalesInvoicesUseCase,
+        customerRepository = customerRepository,
         recordCollectionUseCase = recordCollectionUseCase,
         recordVendorObligationUseCase = recordVendorObligationUseCase,
         recordVendorPaymentUseCase = recordVendorPaymentUseCase,
@@ -174,7 +236,11 @@ fun Application.productionModule() {
         recordInventoryIssueUseCase = recordInventoryIssueUseCase,
         recordPayRunUseCase = recordPayRunUseCase,
         getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
-        idempotencyKeyRepository = idempotencyKeyRepository
+        idempotencyKeyRepository = idempotencyKeyRepository,
+        recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
+        computeMoneyVelocityUseCase = computeMoneyVelocityUseCase,
+        computeExpenseVelocityUseCase = computeExpenseVelocityUseCase,
+        computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase
     )
 }
 
@@ -207,9 +273,13 @@ fun Application.fishModule(
     stockItemRepository: StockItemRepository,
     postInventoryReceiptUseCase: PostInventoryReceiptUseCase,
     postInventoryIssueUseCase: PostInventoryIssueUseCase,
+    computeInventoryScheduleUseCase: ComputeInventoryScheduleUseCase,
     salesOrderRepository: SalesOrderRepository,
     postSalesOrderUseCase: PostSalesOrderUseCase,
     recordSaleUseCase: RecordSaleUseCase,
+    createSalesInvoiceUseCase: CreateSalesInvoiceUseCase,
+    listSalesInvoicesUseCase: ListSalesInvoicesUseCase,
+    customerRepository: CustomerRepository,
     recordCollectionUseCase: RecordCollectionUseCase,
     recordVendorObligationUseCase: RecordVendorObligationUseCase,
     recordVendorPaymentUseCase: RecordVendorPaymentUseCase,
@@ -217,7 +287,11 @@ fun Application.fishModule(
     recordInventoryIssueUseCase: RecordInventoryIssueUseCase,
     recordPayRunUseCase: RecordPayRunUseCase,
     getOrCreateLeaveAccrualUseCase: GetOrCreateLeaveAccrualUseCase,
-    idempotencyKeyRepository: IdempotencyKeyRepository
+    idempotencyKeyRepository: IdempotencyKeyRepository,
+    recordAdminPhoneNumberUseCase: RecordAdminPhoneNumberUseCase,
+    computeMoneyVelocityUseCase: ComputeMoneyVelocityUseCase,
+    computeExpenseVelocityUseCase: ComputeExpenseVelocityUseCase,
+    computeSalesToExpenseRatioUseCase: ComputeSalesToExpenseRatioUseCase
 ) {
     install(ContentNegotiation) { json() }
     install(CallLogging) { level = Level.INFO }
@@ -263,25 +337,43 @@ fun Application.fishModule(
     installFishJwtAuth(verifier, userRepository, membershipRepository)
 
     routing {
+        // Unprefixed and outside /api deliberately - the ALB target
+        // group's own health check (infra/terraform/alb.tf) hits this
+        // container directly, bypassing CloudFront entirely, so moving
+        // it would need a coordinated Terraform change for no benefit.
         healthRoutes()
-        fishOnboarding {
-            tenantRoutesOnboarding(onboardTenantUseCase)
-        }
-        fishAuthenticated {
-            tenantRoutesAuthenticated(addCompanyToTenantUseCase, tenantRepository)
-            journalEntryRoutes(postJournalEntryUseCase, periodRepository, companyRepository, idempotencyKeyRepository)
-            purchaseOrderRoutes(postPurchaseOrderUseCase, purchaseOrderRepository, companyRepository, idempotencyKeyRepository)
-            payrollRoutes(
-                postPayRunUseCase, payRunRepository,
-                remeasureLeaveAccrualUseCase, utilizeLeaveAccrualUseCase, leaveAccrualRepository,
-                recordPayRunUseCase, getOrCreateLeaveAccrualUseCase,
-                companyRepository, idempotencyKeyRepository
-            )
-            inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, stockItemRepository, companyRepository, idempotencyKeyRepository)
-            salesOrderRoutes(postSalesOrderUseCase, salesOrderRepository, companyRepository, idempotencyKeyRepository)
-            recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, idempotencyKeyRepository)
-            recordVendorObligationAndPaymentRoutes(recordVendorObligationUseCase, recordVendorPaymentUseCase, companyRepository, idempotencyKeyRepository)
-            recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
+
+        // Everything else lives under /api now that CloudFront fronts
+        // this same domain alongside the WEB SPA's static assets
+        // (infra/terraform/frontend.tf) - CloudFront routes /api/*
+        // here and everything else to S3, so this prefix is load-bearing
+        // infrastructure, not cosmetic.
+        route("/api") {
+            fishOnboarding {
+                tenantRoutesOnboarding(onboardTenantUseCase)
+            }
+            fishAuthenticated {
+                tenantRoutesAuthenticated(addCompanyToTenantUseCase, tenantRepository)
+                adminPhoneRoutes(recordAdminPhoneNumberUseCase)
+                journalEntryRoutes(postJournalEntryUseCase, periodRepository, companyRepository, idempotencyKeyRepository)
+                purchaseOrderRoutes(postPurchaseOrderUseCase, purchaseOrderRepository, companyRepository, idempotencyKeyRepository)
+                payrollRoutes(
+                    postPayRunUseCase, payRunRepository,
+                    remeasureLeaveAccrualUseCase, utilizeLeaveAccrualUseCase, leaveAccrualRepository,
+                    recordPayRunUseCase, getOrCreateLeaveAccrualUseCase,
+                    companyRepository, idempotencyKeyRepository
+                )
+                inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, computeInventoryScheduleUseCase, stockItemRepository, companyRepository, idempotencyKeyRepository)
+                salesOrderRoutes(postSalesOrderUseCase, salesOrderRepository, companyRepository, idempotencyKeyRepository)
+                recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, idempotencyKeyRepository)
+                createSalesInvoiceRoutes(createSalesInvoiceUseCase, listSalesInvoicesUseCase, companyRepository, customerRepository, idempotencyKeyRepository)
+                recordVendorObligationAndPaymentRoutes(recordVendorObligationUseCase, recordVendorPaymentUseCase, companyRepository, idempotencyKeyRepository)
+                recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
+                meRoutes(tenantRepository)
+                moneyVelocityRoutes(computeMoneyVelocityUseCase, companyRepository)
+                expenseVelocityRoutes(computeExpenseVelocityUseCase, companyRepository)
+                salesToExpenseRatioRoutes(computeSalesToExpenseRatioUseCase, companyRepository)
+            }
         }
     }
 }

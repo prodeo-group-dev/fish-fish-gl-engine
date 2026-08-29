@@ -4,6 +4,9 @@ import com.theprodeogroup.fish.domain.inventory.InventoryStage
 import com.theprodeogroup.fish.domain.inventory.StockItem
 import com.theprodeogroup.fish.domain.inventory.StockItemId
 import com.theprodeogroup.fish.domain.inventory.StockItemRepository
+import com.theprodeogroup.fish.domain.inventory.StockShortageEscalation
+import com.theprodeogroup.fish.domain.inventory.StockShortageEscalationId
+import com.theprodeogroup.fish.domain.inventory.StockShortageEscalationRepository
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import org.jetbrains.exposed.sql.ResultRow
@@ -66,4 +69,39 @@ class ExposedStockItemRepository : StockItemRepository {
             nrvWriteDownPerUnit = Money(this[StockItemsTable.nrvWriteDownPerUnitAmount], currency)
         )
     }
+}
+
+/** Exposed-backed `StockShortageEscalationRepository` - append-only, plain insert on every [save]. */
+class ExposedStockShortageEscalationRepository : StockShortageEscalationRepository {
+
+    override fun save(escalation: StockShortageEscalation): Unit = transaction {
+        StockShortageEscalationsTable.insert { statement ->
+            statement[id] = escalation.id.value
+            statement[companyId] = escalation.companyId.value
+            statement[stockItemId] = escalation.stockItemId.value
+            statement[requestedQuantity] = escalation.requestedQuantity
+            statement[quantityOnHandAtRequest] = escalation.quantityOnHandAtRequest
+            statement[requestedByEmail] = escalation.requestedByEmail
+            statement[overridden] = escalation.overridden
+            statement[requestedAt] = escalation.requestedAt
+        }
+        Unit
+    }
+
+    override fun findAllByCompany(companyId: CompanyId): List<StockShortageEscalation> = transaction {
+        StockShortageEscalationsTable.selectAll().where { StockShortageEscalationsTable.companyId eq companyId.value }
+            .map { it.toStockShortageEscalation() }
+    }
+
+    private fun ResultRow.toStockShortageEscalation(): StockShortageEscalation =
+        StockShortageEscalation.reconstitute(
+            id = StockShortageEscalationId(this[StockShortageEscalationsTable.id]),
+            companyId = CompanyId(this[StockShortageEscalationsTable.companyId]),
+            stockItemId = StockItemId(this[StockShortageEscalationsTable.stockItemId]),
+            requestedQuantity = this[StockShortageEscalationsTable.requestedQuantity],
+            quantityOnHandAtRequest = this[StockShortageEscalationsTable.quantityOnHandAtRequest],
+            requestedByEmail = this[StockShortageEscalationsTable.requestedByEmail],
+            overridden = this[StockShortageEscalationsTable.overridden],
+            requestedAt = this[StockShortageEscalationsTable.requestedAt]
+        )
 }

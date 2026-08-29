@@ -8,7 +8,10 @@ import java.time.Instant
 /**
  * The scheduled application-service sweep from docs/DDD_Design.md
  * Section 9.4 - finds every `Active` Tenant whose `kybVerificationDeadline`
- * has passed with `kybStatus` and/or `adminKycStatus` still not `Verified`,
+ * has passed with `kybStatus`, `adminKycStatus`, or `adminPhoneVerificationStatus`
+ * still not `Verified` (2026-08-27: admin phone joined the other two as
+ * part of KYB, but keeps its own much tighter 14-day
+ * `phoneVerificationDeadline` - see `Tenant.isPhoneVerificationOverdue`),
  * and suspends it (`Tenant.suspendForExpiredKyb()`). Deliberately named
  * `Sweep`, not `...UseCase` - unlike `OnboardTenantUseCase`/
  * `AddCompanyToTenantUseCase`, this isn't triggered by a single caller
@@ -58,7 +61,7 @@ class KybGracePeriodSweep(
         val suspended = mutableListOf<SuspendedTenant>()
 
         for (tenant in tenantRepository.findAllActive()) {
-            if (!tenant.isKybGracePeriodExpired(now)) continue
+            if (!tenant.isKybGracePeriodExpired(now) && !tenant.isPhoneVerificationOverdue(now)) continue
 
             val suspension = tenant.suspendForExpiredKyb(now)
             check(suspension.isValid) {

@@ -3,6 +3,8 @@ package com.theprodeogroup.fish.infrastructure.web
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeCompanyRepository
 import com.theprodeogroup.fish.application.FakeCreditorRepository
+import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
+import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.FakeCustomerRepository
 import com.theprodeogroup.fish.application.FakeJournalEntryRepository
 import com.theprodeogroup.fish.application.FakeLeaveAccrualRepository
@@ -10,8 +12,10 @@ import com.theprodeogroup.fish.application.FakeMembershipRepository
 import com.theprodeogroup.fish.application.FakePayRunRepository
 import com.theprodeogroup.fish.application.FakePeriodRepository
 import com.theprodeogroup.fish.application.FakePurchaseOrderRepository
+import com.theprodeogroup.fish.application.FakeSalesInvoiceRecordRepository
 import com.theprodeogroup.fish.application.FakeSalesOrderRepository
 import com.theprodeogroup.fish.application.FakeStockItemRepository
+import com.theprodeogroup.fish.application.FakeStockShortageEscalationRepository
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.FakeTenantRepository
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
@@ -22,7 +26,13 @@ import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
+import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
+import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
+import com.theprodeogroup.fish.application.ComputeInventoryScheduleUseCase
+import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
+import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
+import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
@@ -99,11 +109,18 @@ class PurchaseOrderRoutesTest {
         val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
         val postInventoryReceiptUseCase = PostInventoryReceiptUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
         val postInventoryIssueUseCase = PostInventoryIssueUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeInventoryScheduleUseCase = ComputeInventoryScheduleUseCase(companyRepository, stockItemRepository)
         val salesOrderRepository = FakeSalesOrderRepository()
         val postSalesOrderUseCase = PostSalesOrderUseCase(
             salesOrderRepository, FakeCustomerRepository(), stockItemRepository, periodRepository, accountRepository, journalEntryRepository
         )
+        val customerRepository = FakeCustomerRepository()
         val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val salesInvoiceRecordRepository = FakeSalesInvoiceRecordRepository()
+        val createSalesInvoiceUseCase = CreateSalesInvoiceUseCase(
+            periodRepository, accountRepository, customerRepository, journalEntryRepository, stockItemRepository, FakeStockShortageEscalationRepository(), salesInvoiceRecordRepository
+        )
+        val listSalesInvoicesUseCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
         val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -132,6 +149,17 @@ class PurchaseOrderRoutesTest {
             listOf(PurchaseOrderLine("Consulting", expenseAccount.id, Money(BigDecimal("500.00"), GBP), LineItemType.SERVICE))
         ).also { purchaseOrderRepository.save(it) }
 
+        val adminPhoneVerificationChecker = FakeAdminPhoneVerificationChecker()
+
+        val recordAdminPhoneNumberUseCase = RecordAdminPhoneNumberUseCase(tenantRepository, adminPhoneVerificationChecker)
+
+
+        val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeSalesToExpenseRatioUseCase = ComputeSalesToExpenseRatioUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+
+
+
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
@@ -150,9 +178,13 @@ class PurchaseOrderRoutesTest {
                 stockItemRepository = stockItemRepository,
                 postInventoryReceiptUseCase = postInventoryReceiptUseCase,
                 postInventoryIssueUseCase = postInventoryIssueUseCase,
+                computeInventoryScheduleUseCase = computeInventoryScheduleUseCase,
                 salesOrderRepository = salesOrderRepository,
                 postSalesOrderUseCase = postSalesOrderUseCase,
                 recordSaleUseCase = recordSaleUseCase,
+                createSalesInvoiceUseCase = createSalesInvoiceUseCase,
+                listSalesInvoicesUseCase = listSalesInvoicesUseCase,
+                customerRepository = customerRepository,
                 recordCollectionUseCase = recordCollectionUseCase,
                 recordVendorObligationUseCase = recordVendorObligationUseCase,
                 recordVendorPaymentUseCase = recordVendorPaymentUseCase,
@@ -161,6 +193,10 @@ class PurchaseOrderRoutesTest {
                 recordPayRunUseCase = recordPayRunUseCase,
                 getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
                 idempotencyKeyRepository = idempotencyKeyRepository,
+                recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
+                computeMoneyVelocityUseCase = computeMoneyVelocityUseCase,
+                computeExpenseVelocityUseCase = computeExpenseVelocityUseCase,
+                computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase,
                 tenantRepository = tenantRepository,
                 onboardTenantUseCase = onboardTenantUseCase,
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase
@@ -174,7 +210,7 @@ class PurchaseOrderRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/purchase-orders/${fixture.order.id.value}/post") {
+        val response = client.post("/api/purchase-orders/${fixture.order.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -192,7 +228,7 @@ class PurchaseOrderRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/purchase-orders/${fixture.order.id.value}/post") {
+        val response = client.post("/api/purchase-orders/${fixture.order.id.value}/post") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody("""{"periodId": "${fixture.period.id.value}", "apControlAccountId": "${fixture.apControlAccount.id.value}"}""")
@@ -207,7 +243,7 @@ class PurchaseOrderRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/purchase-orders/${java.util.UUID.randomUUID()}/post") {
+        val response = client.post("/api/purchase-orders/${java.util.UUID.randomUUID()}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -223,14 +259,14 @@ class PurchaseOrderRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
         val requestBody = """{"periodId": "${fixture.period.id.value}", "apControlAccountId": "${fixture.apControlAccount.id.value}"}"""
-        client.post("/purchase-orders/${fixture.order.id.value}/post") {
+        client.post("/api/purchase-orders/${fixture.order.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(requestBody)
         }
 
-        val response = client.post("/purchase-orders/${fixture.order.id.value}/post") {
+        val response = client.post("/api/purchase-orders/${fixture.order.id.value}/post") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)

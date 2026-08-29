@@ -3,6 +3,8 @@ package com.theprodeogroup.fish.infrastructure.web
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeCompanyRepository
 import com.theprodeogroup.fish.application.FakeCreditorRepository
+import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
+import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.FakeCustomerRepository
 import com.theprodeogroup.fish.application.FakeJournalEntryRepository
 import com.theprodeogroup.fish.application.FakeLeaveAccrualRepository
@@ -10,8 +12,10 @@ import com.theprodeogroup.fish.application.FakeMembershipRepository
 import com.theprodeogroup.fish.application.FakePayRunRepository
 import com.theprodeogroup.fish.application.FakePeriodRepository
 import com.theprodeogroup.fish.application.FakePurchaseOrderRepository
+import com.theprodeogroup.fish.application.FakeSalesInvoiceRecordRepository
 import com.theprodeogroup.fish.application.FakeSalesOrderRepository
 import com.theprodeogroup.fish.application.FakeStockItemRepository
+import com.theprodeogroup.fish.application.FakeStockShortageEscalationRepository
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.FakeTenantRepository
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
@@ -22,7 +26,13 @@ import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
 import com.theprodeogroup.fish.application.PostSalesOrderUseCase
+import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
+import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
+import com.theprodeogroup.fish.application.ComputeInventoryScheduleUseCase
+import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
+import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
+import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
@@ -48,6 +58,7 @@ import com.theprodeogroup.fish.domain.tenancy.User
 import io.kotest.matchers.shouldBe
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -95,11 +106,18 @@ class InventoryRoutesTest {
         val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
         val postInventoryReceiptUseCase = PostInventoryReceiptUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
         val postInventoryIssueUseCase = PostInventoryIssueUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeInventoryScheduleUseCase = ComputeInventoryScheduleUseCase(companyRepository, stockItemRepository)
         val salesOrderRepository = FakeSalesOrderRepository()
         val postSalesOrderUseCase = PostSalesOrderUseCase(
             salesOrderRepository, FakeCustomerRepository(), stockItemRepository, periodRepository, accountRepository, journalEntryRepository
         )
+        val customerRepository = FakeCustomerRepository()
         val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val salesInvoiceRecordRepository = FakeSalesInvoiceRecordRepository()
+        val createSalesInvoiceUseCase = CreateSalesInvoiceUseCase(
+            periodRepository, accountRepository, customerRepository, journalEntryRepository, stockItemRepository, FakeStockShortageEscalationRepository(), salesInvoiceRecordRepository
+        )
+        val listSalesInvoicesUseCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
         val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -125,6 +143,17 @@ class InventoryRoutesTest {
 
         val stockItem = StockItem.create(company.id, "Test Widget", GBP).also { stockItemRepository.save(it) }
 
+        val adminPhoneVerificationChecker = FakeAdminPhoneVerificationChecker()
+
+        val recordAdminPhoneNumberUseCase = RecordAdminPhoneNumberUseCase(tenantRepository, adminPhoneVerificationChecker)
+
+
+        val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeSalesToExpenseRatioUseCase = ComputeSalesToExpenseRatioUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+
+
+
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
@@ -143,9 +172,13 @@ class InventoryRoutesTest {
                 stockItemRepository = stockItemRepository,
                 postInventoryReceiptUseCase = postInventoryReceiptUseCase,
                 postInventoryIssueUseCase = postInventoryIssueUseCase,
+                computeInventoryScheduleUseCase = computeInventoryScheduleUseCase,
                 salesOrderRepository = salesOrderRepository,
                 postSalesOrderUseCase = postSalesOrderUseCase,
                 recordSaleUseCase = recordSaleUseCase,
+                createSalesInvoiceUseCase = createSalesInvoiceUseCase,
+                listSalesInvoicesUseCase = listSalesInvoicesUseCase,
+                customerRepository = customerRepository,
                 recordCollectionUseCase = recordCollectionUseCase,
                 recordVendorObligationUseCase = recordVendorObligationUseCase,
                 recordVendorPaymentUseCase = recordVendorPaymentUseCase,
@@ -154,11 +187,83 @@ class InventoryRoutesTest {
                 recordPayRunUseCase = recordPayRunUseCase,
                 getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
                 idempotencyKeyRepository = idempotencyKeyRepository,
+                recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
+                computeMoneyVelocityUseCase = computeMoneyVelocityUseCase,
+                computeExpenseVelocityUseCase = computeExpenseVelocityUseCase,
+                computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase,
                 tenantRepository = tenantRepository,
                 onboardTenantUseCase = onboardTenantUseCase,
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase
             )
         }
+    }
+
+    // -- GET /companies/{companyId}/stock-items and /inventory-schedule --
+
+    @Test
+    fun `given StockItems for the Company, when GET stock-items is called, then it returns a summary of each`() = testApplication {
+        val fixture = Fixture()
+        fixture.stockItem.recordReceipt(java.math.BigDecimal("5"), com.theprodeogroup.common.Money(java.math.BigDecimal("10.00"), GBP))
+        fixture.stockItemRepository.save(fixture.stockItem)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/stock-items") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: List<StockItemSummaryDto> = response.body()
+        body.single().name shouldBe "Test Widget"
+        body.single().quantityOnHand shouldBe "5"
+    }
+
+    @Test
+    fun `given StockItems for the Company, when GET inventory-schedule is called, then it returns a line per item with totals`() = testApplication {
+        val fixture = Fixture()
+        fixture.stockItem.recordReceipt(java.math.BigDecimal("5"), com.theprodeogroup.common.Money(java.math.BigDecimal("10.00"), GBP))
+        fixture.stockItemRepository.save(fixture.stockItem)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/inventory-schedule") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: InventoryScheduleResponseDto = response.body()
+        body.lines.single().name shouldBe "Test Widget"
+        body.lines.single().quantityOnHand shouldBe "5"
+        body.totalCost shouldBe "50.00"
+    }
+
+    @Test
+    fun `given a caller with a READ_ONLY Membership, when GET inventory-schedule is called, then it returns 200`() = testApplication {
+        val fixture = Fixture(Role.READ_ONLY)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/inventory-schedule") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+    }
+
+    @Test
+    fun `given no bearer token, when GET inventory-schedule is called, then it returns 401`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/inventory-schedule") {
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.Unauthorized
     }
 
     // -- POST /stock-items/{id}/receipts --
@@ -169,7 +274,7 @@ class InventoryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/stock-items/${fixture.stockItem.id.value}/receipts") {
+        val response = client.post("/api/stock-items/${fixture.stockItem.id.value}/receipts") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -192,7 +297,7 @@ class InventoryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/stock-items/${fixture.stockItem.id.value}/receipts") {
+        val response = client.post("/api/stock-items/${fixture.stockItem.id.value}/receipts") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
             setBody(
@@ -211,7 +316,7 @@ class InventoryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/stock-items/${fixture.stockItem.id.value}/receipts") {
+        val response = client.post("/api/stock-items/${fixture.stockItem.id.value}/receipts") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", TenantId.generate().value.toString())
             contentType(ContentType.Application.Json)
@@ -231,7 +336,7 @@ class InventoryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/stock-items/${java.util.UUID.randomUUID()}/receipts") {
+        val response = client.post("/api/stock-items/${java.util.UUID.randomUUID()}/receipts") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -252,7 +357,7 @@ class InventoryRoutesTest {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
-        client.post("/stock-items/${fixture.stockItem.id.value}/receipts") {
+        client.post("/api/stock-items/${fixture.stockItem.id.value}/receipts") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -263,7 +368,7 @@ class InventoryRoutesTest {
             )
         }
 
-        val response = client.post("/stock-items/${fixture.stockItem.id.value}/issues") {
+        val response = client.post("/api/stock-items/${fixture.stockItem.id.value}/issues") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -285,7 +390,7 @@ class InventoryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/stock-items/${fixture.stockItem.id.value}/issues") {
+        val response = client.post("/api/stock-items/${fixture.stockItem.id.value}/issues") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)
@@ -305,7 +410,7 @@ class InventoryRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/stock-items/${fixture.stockItem.id.value}/issues") {
+        val response = client.post("/api/stock-items/${fixture.stockItem.id.value}/issues") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
             header("X-Tenant-Id", fixture.tenantId.value.toString())
             contentType(ContentType.Application.Json)

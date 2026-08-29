@@ -1,11 +1,13 @@
 package com.theprodeogroup.fish.application
 
+import com.theprodeogroup.fish.domain.tenancy.AdminPhoneVerificationChecker
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.domain.tenancy.Membership
 import com.theprodeogroup.fish.domain.tenancy.MembershipId
 import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
+import com.theprodeogroup.fish.domain.tenancy.PhoneNumber
 import com.theprodeogroup.fish.domain.tenancy.Tenant
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.domain.tenancy.TenantRepository
@@ -66,4 +68,17 @@ class FakeMembershipRepository : MembershipRepository {
     override fun findById(id: MembershipId): Membership? = store[id]
     override fun findAllByTenant(tenantId: TenantId): List<Membership> = store.values.filter { it.tenantId == tenantId }
     override fun findAllByUser(userId: UserId): List<Membership> = store.values.filter { it.userId == userId }
+}
+
+/**
+ * Defaults to reporting every number as verified - the common case for
+ * route-level tests that only need `RecordAdminPhoneNumberUseCase` to
+ * be wireable at all, not to exercise its Cognito-rejection path.
+ * [RecordAdminPhoneNumberUseCaseTest] uses [verifiedFor]/[alwaysReject]
+ * to test the rejection path specifically.
+ */
+class FakeAdminPhoneVerificationChecker(private var verified: Boolean = true) : AdminPhoneVerificationChecker {
+    override fun isVerified(email: String, phoneNumber: PhoneNumber): Boolean = verified
+
+    fun alwaysReject() { verified = false }
 }

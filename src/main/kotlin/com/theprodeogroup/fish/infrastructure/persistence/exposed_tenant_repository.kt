@@ -2,6 +2,7 @@ package com.theprodeogroup.fish.infrastructure.persistence
 
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.MembershipId
+import com.theprodeogroup.fish.domain.tenancy.PhoneNumber
 import com.theprodeogroup.fish.domain.tenancy.Tenant
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.domain.tenancy.TenantRepository
@@ -93,6 +94,9 @@ class ExposedTenantRepository : TenantRepository {
         statement[TenantsTable.kybStatus] = tenant.kybStatus.name
         statement[TenantsTable.adminKycStatus] = tenant.adminKycStatus.name
         statement[TenantsTable.kybVerificationDeadline] = tenant.kybVerificationDeadline
+        statement[TenantsTable.adminPhoneNumber] = tenant.adminPhoneNumber?.value
+        statement[TenantsTable.adminPhoneVerificationStatus] = tenant.adminPhoneVerificationStatus.name
+        statement[TenantsTable.phoneVerificationDeadline] = tenant.phoneVerificationDeadline
     }
 
     private fun ResultRow.toTenant(id: TenantId): Tenant = Tenant.reconstitute(
@@ -105,6 +109,9 @@ class ExposedTenantRepository : TenantRepository {
         adminKycStatus = VerificationStatus.valueOf(this[TenantsTable.adminKycStatus]),
         kybVerificationDeadline = this[TenantsTable.kybVerificationDeadline],
         companyIds = loadCompanyIds(id),
-        adminMembershipIds = loadAdminMembershipIds(id)
+        adminMembershipIds = loadAdminMembershipIds(id),
+        adminPhoneNumber = this[TenantsTable.adminPhoneNumber]?.let { PhoneNumber(it) },
+        adminPhoneVerificationStatus = VerificationStatus.valueOf(this[TenantsTable.adminPhoneVerificationStatus]),
+        phoneVerificationDeadline = this[TenantsTable.phoneVerificationDeadline]
     )
 }
