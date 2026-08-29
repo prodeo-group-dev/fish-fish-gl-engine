@@ -180,6 +180,7 @@ class ExpenseVelocityRoutesTest {
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
                 periodRepository = periodRepository,
                 accountRepository = accountRepository,
+                journalEntryRepository = journalEntryRepository,
                 postJournalEntryUseCase = postJournalEntryUseCase,
                 purchaseOrderRepository = purchaseOrderRepository,
                 postPurchaseOrderUseCase = postPurchaseOrderUseCase,

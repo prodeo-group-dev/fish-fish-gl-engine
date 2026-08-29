@@ -29,6 +29,7 @@ import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.inventory.StockItemRepository
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
+import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.payroll.LeaveAccrualRepository
 import com.theprodeogroup.fish.domain.payroll.PayRunRepository
@@ -213,6 +214,7 @@ fun Application.productionModule() {
         addCompanyToTenantUseCase = addCompanyToTenantUseCase,
         periodRepository = periodRepository,
         accountRepository = accountRepository,
+        journalEntryRepository = journalEntryRepository,
         postJournalEntryUseCase = postJournalEntryUseCase,
         purchaseOrderRepository = purchaseOrderRepository,
         postPurchaseOrderUseCase = postPurchaseOrderUseCase,
@@ -265,6 +267,7 @@ fun Application.fishModule(
     addCompanyToTenantUseCase: AddCompanyToTenantUseCase,
     periodRepository: PeriodRepository,
     accountRepository: AccountRepository,
+    journalEntryRepository: JournalEntryRepository,
     postJournalEntryUseCase: PostJournalEntryUseCase,
     purchaseOrderRepository: PurchaseOrderRepository,
     postPurchaseOrderUseCase: PostPurchaseOrderUseCase,
@@ -358,7 +361,9 @@ fun Application.fishModule(
             fishAuthenticated {
                 tenantRoutesAuthenticated(addCompanyToTenantUseCase, tenantRepository)
                 adminPhoneRoutes(recordAdminPhoneNumberUseCase)
-                journalEntryRoutes(postJournalEntryUseCase, periodRepository, accountRepository, companyRepository, idempotencyKeyRepository)
+                journalEntryRoutes(
+                    postJournalEntryUseCase, periodRepository, accountRepository, journalEntryRepository, companyRepository, idempotencyKeyRepository
+                )
                 purchaseOrderRoutes(postPurchaseOrderUseCase, purchaseOrderRepository, companyRepository, idempotencyKeyRepository)
                 payrollRoutes(
                     postPayRunUseCase, payRunRepository,

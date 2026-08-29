@@ -43,11 +43,15 @@ import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
 import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
+import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.PeriodType
+import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountType
+import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.Membership
@@ -162,6 +166,7 @@ class JournalEntryRoutesTest {
                 companyRepository = companyRepository,
                 periodRepository = periodRepository,
                 accountRepository = accountRepository,
+                journalEntryRepository = journalEntryRepository,
                 postJournalEntryUseCase = postJournalEntryUseCase,
                 purchaseOrderRepository = purchaseOrderRepository,
                 postPurchaseOrderUseCase = postPurchaseOrderUseCase,
@@ -347,6 +352,65 @@ class JournalEntryRoutesTest {
         val client = createClient { install(ContentNegotiation) { json() } }
 
         val response = client.get("/api/companies/${fixture.company.id.value}/accounts") {
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.Unauthorized
+    }
+
+    private fun Fixture.postEntry(date: LocalDate, description: String) {
+        val lines = listOf(
+            JournalLine(debitAccount.id, Money(java.math.BigDecimal("100.00"), GBP), TransactionSide.DEBIT),
+            JournalLine(creditAccount.id, Money(java.math.BigDecimal("100.00"), GBP), TransactionSide.CREDIT)
+        )
+        postJournalEntryUseCase.execute(
+            PostJournalEntryUseCase.Request(period.id, date, lines, JournalSource.MANUAL, description)
+        )
+    }
+
+    @Test
+    fun `given two posted JournalEntries on different dates, when GET journal-entries is called, then it returns them newest first with resolved account names`() =
+        testApplication {
+            val fixture = Fixture(Role.ACCOUNTANT)
+            fixture.postEntry(TODAY, "Older entry")
+            fixture.postEntry(TODAY.plusDays(1), "Newer entry")
+            application { fixture.installInto(this) }
+            val client = createClient { install(ContentNegotiation) { json() } }
+
+            val response = client.get("/api/companies/${fixture.company.id.value}/journal-entries") {
+                header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+                header("X-Tenant-Id", fixture.tenantId.value.toString())
+            }
+
+            response.status shouldBe HttpStatusCode.OK
+            val body: List<JournalEntryRecordDto> = response.body()
+            body.map { it.description } shouldBe listOf("Newer entry", "Older entry")
+            val newest = body.first()
+            newest.lines.map { it.accountCode }.toSet() shouldBe setOf("1000", "5000")
+            newest.lines.first { it.accountCode == "1000" }.accountName shouldBe "Test Cash"
+        }
+
+    @Test
+    fun `given a caller with a READ_ONLY role Membership, when GET journal-entries is called, then it returns 200`() = testApplication {
+        val fixture = Fixture(Role.READ_ONLY)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/journal-entries") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+    }
+
+    @Test
+    fun `given no bearer token, when GET journal-entries is called, then it returns 401`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/journal-entries") {
             header("X-Tenant-Id", fixture.tenantId.value.toString())
         }
 

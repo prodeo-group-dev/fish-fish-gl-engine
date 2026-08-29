@@ -285,6 +285,27 @@ data class AccountSummaryDto(
     val type: String
 )
 
+/** One line within a [JournalEntryRecordDto] - the account resolved to its code/name, not left as a bare id. */
+@Serializable
+data class JournalEntryRecordLineDto(
+    val accountCode: String,
+    val accountName: String,
+    val side: String,
+    val amount: String,
+    val currency: String
+)
+
+/** `GET /companies/{companyId}/journal-entries` - the "Journal timeline," every entry posted on this Company, newest first. */
+@Serializable
+data class JournalEntryRecordDto(
+    val id: String,
+    val date: String,
+    val description: String?,
+    val status: String,
+    val source: String,
+    val lines: List<JournalEntryRecordLineDto>
+)
+
 /** `GET /companies/{companyId}/customers` - the "Schedule of Customers," and the SOP sale form's customer picker source. */
 @Serializable
 data class CustomerSummaryDto(
