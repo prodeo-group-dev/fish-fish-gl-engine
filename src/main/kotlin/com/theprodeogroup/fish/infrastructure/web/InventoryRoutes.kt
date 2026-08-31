@@ -1,6 +1,8 @@
 package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.application.ComputeInventoryScheduleUseCase
+import com.theprodeogroup.fish.application.IssueStockForSaleResult
+import com.theprodeogroup.fish.application.IssueStockForSaleUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueResult
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
 import com.theprodeogroup.fish.application.PostInventoryReceiptResult
@@ -58,6 +60,7 @@ fun Route.inventoryRoutes(
     postInventoryReceiptUseCase: PostInventoryReceiptUseCase,
     postInventoryIssueUseCase: PostInventoryIssueUseCase,
     computeInventoryScheduleUseCase: ComputeInventoryScheduleUseCase,
+    issueStockForSaleUseCase: IssueStockForSaleUseCase,
     stockItemRepository: StockItemRepository,
     companyRepository: CompanyRepository,
     idempotencyKeyRepository: IdempotencyKeyRepository
@@ -114,6 +117,40 @@ fun Route.inventoryRoutes(
             }
             ComputeInventoryScheduleUseCase.Result.CompanyNotFound ->
                 call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
+        }
+    }
+
+    post("/stock-items/{stockItemId}/issue-for-sale") {
+        val stockItem = call.loadStockItem(stockItemRepository) ?: return@post
+        val tenantId = call.resolveTenantForCompany(stockItem.companyId, companyRepository) ?: return@post
+        if (!call.verifyClaimedTenant(tenantId)) return@post
+        call.authorizeTenantForWrite(tenantId) ?: return@post
+
+        val request = call.receive<IssueStockForSaleRequestDto>()
+        val quantity = call.parseBigDecimal(request.quantity, "quantity") ?: return@post
+
+        call.respondIdempotently(
+            idempotencyKeyRepository, tenantId, "issue-stock-for-sale-${stockItem.id.value}",
+            Json.encodeToString(IssueStockForSaleRequestDto.serializer(), request)
+        ) {
+            when (
+                val result = issueStockForSaleUseCase.execute(
+                    IssueStockForSaleUseCase.Request(
+                        stockItem.companyId, stockItem.id, quantity, request.requestedByEmail, request.callerCanOverrideStockCheck
+                    )
+                )
+            ) {
+                is IssueStockForSaleResult.Success ->
+                    HttpStatusCode.OK to Json.encodeToString(
+                        IssueStockForSaleResponseDto.serializer(),
+                        IssueStockForSaleResponseDto(result.committedCost.amount.toPlainString(), result.committedCost.currency.currencyCode)
+                    )
+                is IssueStockForSaleResult.StockItemNotFound -> HttpStatusCode.NotFound to errorResponseJson("stock_item_not_found")
+                is IssueStockForSaleResult.InsufficientStock ->
+                    HttpStatusCode.Conflict to errorResponseJson(
+                        "insufficient_stock", "requested ${result.requestedQuantity}, on hand ${result.quantityOnHand}"
+                    )
+            }
         }
     }
 

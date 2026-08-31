@@ -34,6 +34,7 @@ import com.theprodeogroup.fish.application.FakeTenantRepository
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
+import com.theprodeogroup.fish.application.IssueStockForSaleUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
@@ -115,6 +116,8 @@ class TaxRoutesTest {
         val journalEntryRepository = FakeJournalEntryRepository()
         val creditorRepository = FakeCreditorRepository()
         val stockItemRepository = FakeStockItemRepository()
+        val stockShortageEscalationRepository = FakeStockShortageEscalationRepository()
+        val issueStockForSaleUseCase = IssueStockForSaleUseCase(stockItemRepository, stockShortageEscalationRepository)
         val purchaseOrderRepository = FakePurchaseOrderRepository()
         val onboardTenantUseCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository)
         val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(tenantRepository, companyRepository, accountRepository, periodRepository, journalEntryRepository)
@@ -230,6 +233,7 @@ class TaxRoutesTest {
                 remeasureLeaveAccrualUseCase = remeasureLeaveAccrualUseCase,
                 utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase,
                 stockItemRepository = stockItemRepository,
+                issueStockForSaleUseCase = issueStockForSaleUseCase,
                 postInventoryReceiptUseCase = postInventoryReceiptUseCase,
                 postInventoryIssueUseCase = postInventoryIssueUseCase,
                 computeInventoryScheduleUseCase = computeInventoryScheduleUseCase,

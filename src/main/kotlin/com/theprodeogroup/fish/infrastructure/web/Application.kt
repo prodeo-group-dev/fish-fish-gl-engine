@@ -11,6 +11,7 @@ import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeSalesPostingContextUseCase
+import com.theprodeogroup.fish.application.IssueStockForSaleUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
@@ -141,6 +142,7 @@ fun Application.productionModule() {
     val creditorRepository = ExposedCreditorRepository()
     val stockItemRepository = ExposedStockItemRepository()
     val stockShortageEscalationRepository = ExposedStockShortageEscalationRepository()
+    val issueStockForSaleUseCase = IssueStockForSaleUseCase(stockItemRepository, stockShortageEscalationRepository)
     val purchaseOrderRepository = ExposedPurchaseOrderRepository()
     val payRunRepository = ExposedPayRunRepository()
     val leaveAccrualRepository = ExposedLeaveAccrualRepository()
@@ -252,6 +254,7 @@ fun Application.productionModule() {
         remeasureLeaveAccrualUseCase = remeasureLeaveAccrualUseCase,
         utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase,
         stockItemRepository = stockItemRepository,
+        issueStockForSaleUseCase = issueStockForSaleUseCase,
         postInventoryReceiptUseCase = postInventoryReceiptUseCase,
         postInventoryIssueUseCase = postInventoryIssueUseCase,
         computeInventoryScheduleUseCase = computeInventoryScheduleUseCase,
@@ -312,6 +315,7 @@ fun Application.fishModule(
     remeasureLeaveAccrualUseCase: RemeasureLeaveAccrualUseCase,
     utilizeLeaveAccrualUseCase: UtilizeLeaveAccrualUseCase,
     stockItemRepository: StockItemRepository,
+    issueStockForSaleUseCase: IssueStockForSaleUseCase,
     postInventoryReceiptUseCase: PostInventoryReceiptUseCase,
     postInventoryIssueUseCase: PostInventoryIssueUseCase,
     computeInventoryScheduleUseCase: ComputeInventoryScheduleUseCase,
@@ -409,7 +413,7 @@ fun Application.fishModule(
                     recordPayRunUseCase, getOrCreateLeaveAccrualUseCase,
                     companyRepository, idempotencyKeyRepository
                 )
-                inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, computeInventoryScheduleUseCase, stockItemRepository, companyRepository, idempotencyKeyRepository)
+                inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, computeInventoryScheduleUseCase, issueStockForSaleUseCase, stockItemRepository, companyRepository, idempotencyKeyRepository)
                 salesOrderRoutes(postSalesOrderUseCase, salesOrderRepository, companyRepository, idempotencyKeyRepository)
                 recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, idempotencyKeyRepository)
                 createSalesInvoiceRoutes(createSalesInvoiceUseCase, listSalesInvoicesUseCase, companyRepository, customerRepository, idempotencyKeyRepository)
