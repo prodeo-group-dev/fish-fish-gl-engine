@@ -1,0 +1,26 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublishTestPitchDeckAuthFunction",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:PublishFunction",
+        "cloudfront:UpdateFunction",
+        "cloudfront:TestFunction",
+        "cloudfront:DescribeFunction",
+        "cloudfront:GetFunction"
+      ],
+      "Resource": "arn:aws:cloudfront::827709230476:function/pitch-deck-basic-auth"
+    },
+    {
+      "Sid": "UpdateMarketingSiteDistribution",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:UpdateDistribution",
+        "cloudfront:CreateInvalidation"
+      ],
+      "Resource": "arn:aws:cloudfront::827709230476:distribution/E1EEB9QRXHCJRH"
+    }
+  ]
+}

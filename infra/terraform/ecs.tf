@@ -64,7 +64,13 @@ resource "aws_ecs_task_definition" "this" {
         # 2026-08-27 admin-phone KYB extension - see tenant.kt) - the
         # ECS task role's IAM policy (notifications.tf) is scoped to
         # exactly this one user pool's AdminGetUser action.
-        { name = "FISH_COGNITO_USER_POOL_ID", value = aws_cognito_user_pool.this.id }
+        { name = "FISH_COGNITO_USER_POOL_ID", value = aws_cognito_user_pool.this.id },
+        # SesStaffInviteNotificationGateway's sender identity (2026-08-31,
+        # "Business Staff onboarding") - same verified mail.theprodeogroup.com
+        # domain identity Cognito and POP's own eOrder gateway already use,
+        # just a different local part. The ECS task role's own IAM policy
+        # (notifications.tf's ecs_task_ses) is scoped to exactly this identity.
+        { name = "GL_STAFF_INVITE_FROM_EMAIL", value = "team@mail.${var.root_domain}" }
       ]
 
       secrets = [

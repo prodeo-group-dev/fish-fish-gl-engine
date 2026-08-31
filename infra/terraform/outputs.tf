@@ -109,3 +109,8 @@ output "ses_dkim_records" {
   description = "3 CNAME records to add, one per token: name is '<token>._domainkey.mail.theprodeogroup.com', value is '<token>.dkim.amazonses.com' for each token in this list."
   value       = aws_ses_domain_dkim.this.dkim_tokens
 }
+
+output "github_runner_instance_id" {
+  description = "Target for `aws ssm start-session --target <this>` - see github_runner.tf's closing comment for the one-time manual registration step this instance still needs after apply."
+  value       = aws_instance.github_runner.id
+}

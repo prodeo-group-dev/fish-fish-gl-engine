@@ -1,0 +1,29 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PopAlbListenerRuleAndCertificateMutate",
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:CreateRule",
+        "elasticloadbalancing:ModifyRule",
+        "elasticloadbalancing:DeleteRule",
+        "elasticloadbalancing:AddListenerCertificates",
+        "elasticloadbalancing:RemoveListenerCertificates"
+      ],
+      "Resource": [
+        "arn:aws:elasticloadbalancing:eu-west-2:827709230476:listener/app/fish-gl-engine-production/a93a040ab45474cd/ef0cc517594b7c9b",
+        "arn:aws:elasticloadbalancing:eu-west-2:827709230476:listener-rule/app/fish-gl-engine-production/*"
+      ]
+    },
+    {
+      "Sid": "PopAlbListenerRuleAndCertificateDescribe",
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:DescribeRules",
+        "elasticloadbalancing:DescribeListenerCertificates"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

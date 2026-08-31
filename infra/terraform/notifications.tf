@@ -112,3 +112,23 @@ resource "aws_iam_role_policy" "ecs_task_cognito_read" {
     ]
   })
 }
+
+# SesStaffInviteNotificationGateway's own send permission (2026-08-31,
+# "Business Staff onboarding") - GL's first own outbound email. Scoped
+# to the same verified domain identity above, mirroring pop.tf's
+# identical ecs_task_ses block for POP's own eOrder gateway.
+resource "aws_iam_role_policy" "ecs_task_ses" {
+  name = "${var.project_name}-send-staff-invite-email"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ses:SendEmail", "ses:SendRawEmail"]
+        Resource = "arn:aws:ses:${var.aws_region}:*:identity/${aws_ses_domain_identity.this.domain}"
+      }
+    ]
+  })
+}

@@ -38,6 +38,30 @@ resource "aws_security_group" "rds" {
     security_groups = [aws_security_group.service.id]
   }
 
+  # POP (pop.tf, 2026-08-30) shares this same RDS instance (a new
+  # database on it, not a second instance - RDS Free Tier's hours are
+  # account-wide, a second always-on instance would exceed them
+  # outright) - its own ECS service needs the same DB-layer access GL's
+  # already has.
+  ingress {
+    description     = "Postgres from the POP ECS service"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.pop_service.id]
+  }
+
+  # SOP (sop.tf, 2026-08-31) shares this same RDS instance too, same
+  # reasoning as POP's own ingress rule above - a new database
+  # (sop_production), not a second instance.
+  ingress {
+    description     = "Postgres from the SOP ECS service"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.sop_service.id]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0

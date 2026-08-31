@@ -120,6 +120,142 @@ variable "db_user" {
   default     = "fish_app"
 }
 
+# --- POP (Purchase Order Processing) service (pop.tf) -----------------
+#
+# 2026-08-30: POP was fully built and tested this session (149 unit +
+# 14 integration tests) but had no AWS infrastructure at all until now.
+# Reuses GL's VPC/ECS cluster/ALB/Cognito pool wherever sharing costs
+# nothing (clusters and Cognito are free; a second RDS instance would
+# blow this account's Free Tier hours) - dedicated resources only where
+# sharing would be wrong (IAM roles, the database itself, the OIDC
+# deploy role, the ACM certificate - see pop.tf's own notes).
+
+variable "pop_short_name" {
+  description = "Short identifier for POP resources with tight AWS length limits (aws_lb_target_group.name caps at 32 chars - 'fish-purchase-order-processing-production' would fail at apply)."
+  type        = string
+  default     = "fish-pop"
+}
+
+variable "pop_domain_name" {
+  description = "FQDN POP is reachable at - a dedicated subdomain, not a path on GL's own domain, since POP is a separate service with its own ALB listener rule and ACM certificate."
+  type        = string
+  default     = "pop-api.theprodeogroup.com"
+}
+
+variable "pop_github_repository" {
+  description = "owner/repo whose GitHub Actions workflows are allowed to assume POP's own deploy IAM role via OIDC - cannot reuse GL's role, since the trust policy's sub condition is hardcoded per-repo."
+  type        = string
+  default     = "prodeo-group-dev/fish-purchase-order-processing"
+}
+
+variable "pop_github_oidc_subject" {
+  description = "The OIDC subject claim allowed to assume POP's deploy role - restricts deploys to pushes on master specifically. See iam.tf's github_oidc_subject for the GL equivalent."
+  type        = string
+  default     = "repo:prodeo-group-dev/fish-purchase-order-processing:ref:refs/heads/master"
+}
+
+variable "pop_db_name" {
+  description = "POP_DB_NAME - a new database on GL's existing RDS instance (rds.tf), not a second instance. Created via a manual step (pop.tf's own note) - Terraform has no native way to add a second logical database to an already-running instance."
+  type        = string
+  default     = "pop_production"
+}
+
+variable "pop_db_user" {
+  description = "POP_DB_USER - a dedicated user, not GL's own FISH_DB_USER credentials, for isolation between the two services."
+  type        = string
+  default     = "pop_app"
+}
+
+variable "pop_gl_engine_tenant_id" {
+  description = "POP_GL_ENGINE_TENANT_ID - Prodeo Group's real tenant UUID in GL's own system, looked up live via GET /me while signed in as the Prodeo Group admin (2026-08-30), not invented."
+  type        = string
+  default     = "9fa2198b-2a6f-467d-97ac-6f6fbce6a9fd"
+}
+
+variable "pop_notification_from_domain" {
+  description = "The verified SES sender domain POP's eOrder emails go out from (2026-08-31) - the same domain identity notifications.tf already requests for Cognito (mail.theprodeogroup.com), not a new one."
+  type        = string
+  default     = "mail.theprodeogroup.com"
+}
+
+# --- SOP (Sales Order Processing) infrastructure (sop.tf) -------------
+#
+# 2026-08-31: SOP got a real HTTP server and, the same day, real
+# Customer persistence (sop_production/sop_app on GL's shared RDS
+# instance, provisioned manually, same reasoning as POP's own db
+# variables below). Same sharing/dedication split as POP's own block.
+
+variable "sop_short_name" {
+  description = "Short identifier for SOP resources with tight AWS length limits (aws_lb_target_group.name caps at 32 chars)."
+  type        = string
+  default     = "fish-sop"
+}
+
+variable "sop_domain_name" {
+  description = "FQDN SOP is reachable at - a dedicated subdomain, own ALB listener rule and ACM certificate, same pattern as POP's own."
+  type        = string
+  default     = "sop-api.theprodeogroup.com"
+}
+
+variable "sop_github_repository" {
+  description = "owner/repo whose GitHub Actions workflows are allowed to assume SOP's own deploy IAM role via OIDC - cannot reuse GL's or POP's role, trust policy sub condition is hardcoded per-repo."
+  type        = string
+  default     = "prodeo-group-dev/fish-sales-order-processing"
+}
+
+variable "sop_github_oidc_subject" {
+  description = "The OIDC subject claim allowed to assume SOP's deploy role - restricts deploys to pushes on master specifically."
+  type        = string
+  default     = "repo:prodeo-group-dev/fish-sales-order-processing:ref:refs/heads/master"
+}
+
+variable "sop_db_name" {
+  description = "SOP_DB_NAME - a new database on GL's existing RDS instance (rds.tf), not a second instance. Created via a manual step 2026-08-31, same as POP's own db_name."
+  type        = string
+  default     = "sop_production"
+}
+
+variable "sop_db_user" {
+  description = "SOP_DB_USER - a dedicated user, not GL's or POP's own credentials, for isolation between services."
+  type        = string
+  default     = "sop_app"
+}
+
+variable "sop_gl_engine_tenant_id" {
+  description = "SOP_GL_ENGINE_TENANT_ID - Prodeo Group's real tenant UUID in GL's own system, same value as pop_gl_engine_tenant_id (both call the same GL Engine as the same tenant)."
+  type        = string
+  default     = "9fa2198b-2a6f-467d-97ac-6f6fbce6a9fd"
+}
+
+# --- Self-hosted GitHub Actions runner (github_runner.tf) ------------
+#
+# 2026-08-30: GitHub Actions' hosted runners have been disabled
+# account-wide for prodeo-group-dev since 2026-08-26 (abuse-detection
+# review, see github-actions-support-followup-draft.txt) - this is the
+# scoped fix, not a git-hosting migration (OIDC federation, iam.tf,
+# needs zero changes: the runner - hosted or self-hosted - is what
+# requests the token from token.actions.githubusercontent.com and
+# presents it to AWS STS, confirmed against GitHub's own OIDC flow and
+# aws-actions/configure-aws-credentials#453 before writing this).
+
+variable "github_organization" {
+  description = "The GitHub org every repo in this project lives under - the runner registers at this level (not per-repo) so one instance can serve all 8 repos."
+  type        = string
+  default     = "prodeo-group-dev"
+}
+
+variable "runner_instance_type" {
+  description = "EC2 instance type for the self-hosted runner - t3.large (2 vCPU/8GB), deliberately larger than this config's other 'smallest reasonable' defaults (task_cpu, db_instance_class): Gradle/Kotlin compilation running alongside a `docker build` in the same job is genuinely memory-hungry, confirmed by this project's own local build experience."
+  type        = string
+  default     = "t3.large"
+}
+
+variable "runner_root_volume_size" {
+  description = "Root EBS volume size (GB) for the runner instance - Docker image layers, Gradle caches, and multiple repos' checkouts accumulate across builds; the AMI's own default (~8GB) isn't enough."
+  type        = number
+  default     = 40
+}
+
 # --- Application configuration (JWT) ---------------------------------
 #
 # Provisioned by this config as of 2026-08-26 (cognito.tf) - previously
