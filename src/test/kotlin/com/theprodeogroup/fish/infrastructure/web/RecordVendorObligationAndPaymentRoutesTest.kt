@@ -23,6 +23,7 @@ import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.FakeTaxRuleRepository
 import com.theprodeogroup.fish.application.FakeTaxComputationRepository
 import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
+import com.theprodeogroup.fish.application.IssueStockForSaleUseCase
 import com.theprodeogroup.fish.application.FakeStaffInviteNotificationGateway
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
@@ -103,6 +104,8 @@ class RecordVendorObligationAndPaymentRoutesTest {
         val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
         val purchaseOrderRepository = FakePurchaseOrderRepository()
         val stockItemRepository = FakeStockItemRepository()
+        val stockShortageEscalationRepository = FakeStockShortageEscalationRepository()
+        val issueStockForSaleUseCase = IssueStockForSaleUseCase(stockItemRepository, stockShortageEscalationRepository)
         val postPurchaseOrderUseCase = PostPurchaseOrderUseCase(
             purchaseOrderRepository, FakeCreditorRepository(), stockItemRepository, periodRepository, accountRepository, journalEntryRepository
         )
@@ -185,6 +188,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
                 remeasureLeaveAccrualUseCase = remeasureLeaveAccrualUseCase,
                 utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase,
                 stockItemRepository = stockItemRepository,
+                issueStockForSaleUseCase = issueStockForSaleUseCase,
                 postInventoryReceiptUseCase = postInventoryReceiptUseCase,
                 postInventoryIssueUseCase = postInventoryIssueUseCase,
                 computeInventoryScheduleUseCase = computeInventoryScheduleUseCase,

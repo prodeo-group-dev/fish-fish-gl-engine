@@ -149,6 +149,19 @@ data class StockItemJournalEntryResponseDto(
     val journalEntryStatus: String
 )
 
+@Serializable
+data class IssueStockForSaleRequestDto(
+    val quantity: String,
+    val requestedByEmail: String,
+    val callerCanOverrideStockCheck: Boolean = false
+)
+
+@Serializable
+data class IssueStockForSaleResponseDto(
+    val committedCost: String,
+    val committedCostCurrency: String
+)
+
 /**
  * `PostSalesOrderUseCase`'s wire shape (docs/DDD_Design.md Section
  * 10.22) - completes the "ecosystem" HTTP surface: Purchase Order and

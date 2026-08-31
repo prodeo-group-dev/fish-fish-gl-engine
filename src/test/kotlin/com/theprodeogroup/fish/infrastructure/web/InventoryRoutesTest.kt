@@ -23,6 +23,7 @@ import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.FakeTaxRuleRepository
 import com.theprodeogroup.fish.application.FakeTaxComputationRepository
 import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
+import com.theprodeogroup.fish.application.IssueStockForSaleUseCase
 import com.theprodeogroup.fish.application.FakeStaffInviteNotificationGateway
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
@@ -103,6 +104,8 @@ class InventoryRoutesTest {
         val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
         val purchaseOrderRepository = FakePurchaseOrderRepository()
         val stockItemRepository = FakeStockItemRepository()
+        val stockShortageEscalationRepository = FakeStockShortageEscalationRepository()
+        val issueStockForSaleUseCase = IssueStockForSaleUseCase(stockItemRepository, stockShortageEscalationRepository)
         val postPurchaseOrderUseCase = PostPurchaseOrderUseCase(
             purchaseOrderRepository, FakeCreditorRepository(), stockItemRepository,
             periodRepository, accountRepository, journalEntryRepository
@@ -187,6 +190,7 @@ class InventoryRoutesTest {
                 remeasureLeaveAccrualUseCase = remeasureLeaveAccrualUseCase,
                 utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase,
                 stockItemRepository = stockItemRepository,
+                issueStockForSaleUseCase = issueStockForSaleUseCase,
                 postInventoryReceiptUseCase = postInventoryReceiptUseCase,
                 postInventoryIssueUseCase = postInventoryIssueUseCase,
                 computeInventoryScheduleUseCase = computeInventoryScheduleUseCase,
@@ -446,5 +450,77 @@ class InventoryRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.Forbidden
+    }
+
+    // -- POST /stock-items/{id}/issue-for-sale --
+
+    @Test
+    fun `given sufficient stock, when issue-for-sale is posted, then it returns 200 with the committed cost`() = testApplication {
+        val fixture = Fixture()
+        fixture.stockItem.recordReceipt(java.math.BigDecimal("100"), com.theprodeogroup.common.Money(java.math.BigDecimal("5.00"), GBP))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/stock-items/${fixture.stockItem.id.value}/issue-for-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody("""{"quantity": "10", "requestedByEmail": "sales@example.com"}""")
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: IssueStockForSaleResponseDto = response.body()
+        body.committedCost shouldBe "50.00"
+        body.committedCostCurrency shouldBe "GBP"
+        fixture.stockItemRepository.findById(fixture.stockItem.id)?.quantityOnHand shouldBe java.math.BigDecimal("90")
+    }
+
+    @Test
+    fun `given insufficient stock, when issue-for-sale is posted, then it returns 409 and does not mutate quantity`() = testApplication {
+        val fixture = Fixture()
+        fixture.stockItem.recordReceipt(java.math.BigDecimal("2"), com.theprodeogroup.common.Money(java.math.BigDecimal("5.00"), GBP))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/stock-items/${fixture.stockItem.id.value}/issue-for-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody("""{"quantity": "10", "requestedByEmail": "sales@example.com"}""")
+        }
+
+        response.status shouldBe HttpStatusCode.Conflict
+        fixture.stockItemRepository.findById(fixture.stockItem.id)?.quantityOnHand shouldBe java.math.BigDecimal("2")
+    }
+
+    @Test
+    fun `given a nonexistent StockItem id, when issue-for-sale is posted, then it returns 404`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/stock-items/${java.util.UUID.randomUUID()}/issue-for-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody("""{"quantity": "10", "requestedByEmail": "sales@example.com"}""")
+        }
+
+        response.status shouldBe HttpStatusCode.NotFound
+    }
+
+    @Test
+    fun `given no bearer token, when issue-for-sale is posted, then it returns 401`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/stock-items/${fixture.stockItem.id.value}/issue-for-sale") {
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody("""{"quantity": "10", "requestedByEmail": "sales@example.com"}""")
+        }
+
+        response.status shouldBe HttpStatusCode.Unauthorized
     }
 }
