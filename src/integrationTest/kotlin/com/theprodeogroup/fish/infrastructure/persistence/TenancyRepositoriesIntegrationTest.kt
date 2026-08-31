@@ -2,6 +2,7 @@ package com.theprodeogroup.fish.infrastructure.persistence
 
 import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.tenancy.Company
+import com.theprodeogroup.fish.domain.tenancy.ManagedModule
 import com.theprodeogroup.fish.domain.tenancy.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.Tenant
@@ -101,6 +102,20 @@ class TenancyRepositoriesIntegrationTest {
         reloaded.tenantId shouldBe tenant.id
         reloaded.role shouldBe Role.OWNER_ADMIN
         reloaded.status shouldBe membership.status
+    }
+
+    @Test
+    fun `given a Membership granted a restricted set of modules, when saved and reloaded, then exactly those modules round-trip`() {
+        val tenant = Tenant.onboard("Purse", TenantSegment.INTERNAL_VENTURE, GBP)
+        tenantRepository.save(tenant)
+        val user = User.create(uniqueEmail("accountant"), "Staff Accountant")
+        userRepository.save(user)
+        val membership = Membership.grant(user.id, tenant.id, Role.ACCOUNTANT, grantedModules = setOf(ManagedModule.HR, ManagedModule.IM))
+
+        membershipRepository.save(membership)
+        val reloaded = requireNotNull(membershipRepository.findById(membership.id))
+
+        reloaded.grantedModules shouldBe setOf(ManagedModule.HR, ManagedModule.IM)
     }
 
     @Test

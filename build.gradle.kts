@@ -82,6 +82,9 @@ dependencies {
     // nothing to configure here beyond the dependency itself.
     implementation(platform("software.amazon.awssdk:bom:2.29.11"))
     implementation("software.amazon.awssdk:cognitoidentityprovider")
+    // SesStaffInviteNotificationGateway (2026-08-31) - GL's own first
+    // outbound email, same BOM version already pinned above.
+    implementation("software.amazon.awssdk:sesv2")
 }
 
 kotlin {

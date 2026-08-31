@@ -1,19 +1,25 @@
 package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.tenancy.ManagedModule
+import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
 import com.theprodeogroup.fish.domain.tenancy.ModuleManagementPreference
+import com.theprodeogroup.fish.domain.tenancy.Role
+import com.theprodeogroup.fish.domain.tenancy.StaffInviteNotificationResult
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.domain.tenancy.TenantRepository
 import com.theprodeogroup.fish.domain.tenancy.TenantSegment
+import com.theprodeogroup.fish.domain.tenancy.UserRepository
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
 import io.ktor.server.auth.principal
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import java.util.Currency
 
@@ -141,7 +147,10 @@ fun Route.tenantRoutesOnboarding(onboardTenantUseCase: OnboardTenantUseCase) {
 
 fun Route.tenantRoutesAuthenticated(
     addCompanyToTenantUseCase: AddCompanyToTenantUseCase,
-    tenantRepository: TenantRepository
+    inviteStaffMemberUseCase: InviteStaffMemberUseCase,
+    tenantRepository: TenantRepository,
+    userRepository: UserRepository,
+    membershipRepository: MembershipRepository
 ) {
     post("/tenants/{tenantId}/companies") {
         val tenantIdRaw = call.parameters["tenantId"]
@@ -197,5 +206,88 @@ fun Route.tenantRoutesAuthenticated(
                 openingBalanceJournalEntryId = result.openingBalanceEntry?.id?.value?.toString()
             )
         )
+    }
+
+    post("/tenants/{tenantId}/memberships") {
+        val tenantIdRaw = call.parameters["tenantId"]
+        if (tenantIdRaw == null) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "tenantId path parameter is required"))
+            return@post
+        }
+        val tenantUuid = call.parseUuid(tenantIdRaw) ?: return@post
+        val tenantId = TenantId(tenantUuid)
+
+        val caller = call.authorizeTenantForAdmin(tenantId) ?: return@post
+
+        val request = call.receive<InviteStaffMemberRequestDto>()
+        val role = try {
+            Role.valueOf(request.role)
+        } catch (e: IllegalArgumentException) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "'${request.role}' is not a valid role"))
+            return@post
+        }
+        val modules = try {
+            request.modules.map { ManagedModule.valueOf(it) }.toSet()
+        } catch (e: IllegalArgumentException) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "'${request.modules}' contains an invalid module"))
+            return@post
+        }
+
+        val result = inviteStaffMemberUseCase.execute(
+            InviteStaffMemberUseCase.Request(
+                tenantId = tenantId,
+                email = request.email,
+                name = request.name,
+                role = role,
+                inviterName = caller.user.name,
+                modules = modules
+            )
+        )
+
+        when (result) {
+            is InviteStaffMemberUseCase.Result.TenantNotFound -> {
+                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("not_found", "Tenant not found"))
+            }
+            is InviteStaffMemberUseCase.Result.Invited -> {
+                call.respond(
+                    HttpStatusCode.Created,
+                    InviteStaffMemberResponseDto(
+                        userId = result.user.id.value.toString(),
+                        membershipId = result.membership.id.value.toString(),
+                        role = result.membership.role.name,
+                        alreadyMember = result.alreadyMember,
+                        notificationSent = result.notification is StaffInviteNotificationResult.Success,
+                        grantedModules = result.membership.grantedModules.map { it.name }
+                    )
+                )
+            }
+        }
+    }
+
+    get("/tenants/{tenantId}/memberships") {
+        val tenantIdRaw = call.parameters["tenantId"]
+        if (tenantIdRaw == null) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "tenantId path parameter is required"))
+            return@get
+        }
+        val tenantUuid = call.parseUuid(tenantIdRaw) ?: return@get
+        val tenantId = TenantId(tenantUuid)
+
+        call.authorizeTenantForRead(tenantId) ?: return@get
+
+        val memberships = membershipRepository.findAllByTenant(tenantId)
+        val members = memberships.map { membership ->
+            val user = userRepository.findById(membership.userId)
+            MembershipDto(
+                membershipId = membership.id.value.toString(),
+                userId = membership.userId.value.toString(),
+                name = user?.name ?: "",
+                email = user?.email ?: "",
+                role = membership.role.name,
+                status = membership.status.name,
+                grantedModules = membership.grantedModules.map { it.name }
+            )
+        }
+        call.respond(HttpStatusCode.OK, members)
     }
 }

@@ -564,7 +564,8 @@ data class MyTenantDto(
     val adminPhoneNumber: String?,
     val adminPhoneVerificationStatus: String,
     val phoneVerificationDeadline: String?,
-    val companyIds: List<String>
+    val companyIds: List<String>,
+    val grantedModules: List<String>
 )
 
 @Serializable
@@ -572,6 +573,63 @@ data class MyProfileResponseDto(
     val email: String,
     val name: String,
     val tenants: List<MyTenantDto>
+)
+
+@Serializable
+data class InviteStaffMemberRequestDto(
+    val email: String,
+    val name: String,
+    val role: String,
+    val modules: List<String>
+)
+
+@Serializable
+data class InviteStaffMemberResponseDto(
+    val userId: String,
+    val membershipId: String,
+    val role: String,
+    val alreadyMember: Boolean,
+    val notificationSent: Boolean,
+    val grantedModules: List<String>
+)
+
+@Serializable
+data class MembershipDto(
+    val membershipId: String,
+    val userId: String,
+    val name: String,
+    val email: String,
+    val role: String,
+    val status: String,
+    val grantedModules: List<String>
+)
+
+@Serializable
+data class ComputeTaxRequestDto(
+    val periodId: String,
+    val category: String? = null,
+    val turnover: String? = null,
+    val fixedAssets: String? = null
+)
+
+@Serializable
+data class TaxComputationDto(
+    val id: String,
+    val companyId: String,
+    val periodId: String,
+    val taxRuleId: String,
+    val taxableProfit: String,
+    val taxDue: String,
+    val currency: String,
+    val computedAt: String
+)
+
+@Serializable
+data class SalesPostingContextResponseDto(
+    val periodId: String,
+    val arControlAccountId: String,
+    val revenueAccountId: String,
+    val currency: String
 )
 
 @Serializable

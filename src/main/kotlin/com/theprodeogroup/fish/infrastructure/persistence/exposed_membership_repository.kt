@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.infrastructure.persistence
 
 import com.theprodeogroup.fish.domain.tenancy.AccessLevel
+import com.theprodeogroup.fish.domain.tenancy.ManagedModule
 import com.theprodeogroup.fish.domain.tenancy.Membership
 import com.theprodeogroup.fish.domain.tenancy.MembershipId
 import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
@@ -9,6 +10,8 @@ import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.domain.tenancy.UserId
 import org.jetbrains.exposed.sql.ResultRow
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.statements.UpdateBuilder
@@ -28,6 +31,19 @@ class ExposedMembershipRepository : MembershipRepository {
             MembershipsTable.insert { statement ->
                 statement[id] = membership.id.value
                 populate(statement, membership)
+            }
+        }
+
+        // Simplest correct way to persist a Set<ManagedModule>: replace
+        // the whole grant list every save, rather than diffing - this
+        // table has at most 5 rows per Membership, so there's no real
+        // cost to it, and it avoids a class of bugs where a removed
+        // module lingers because nothing explicitly deleted its row.
+        MembershipModuleGrantsTable.deleteWhere { MembershipModuleGrantsTable.membershipId eq membership.id.value }
+        membership.grantedModules.forEach { module ->
+            MembershipModuleGrantsTable.insert { statement ->
+                statement[membershipId] = membership.id.value
+                statement[MembershipModuleGrantsTable.module] = module.name
             }
         }
         Unit
@@ -57,12 +73,20 @@ class ExposedMembershipRepository : MembershipRepository {
         statement[MembershipsTable.accessLevel] = membership.accessLevel.name
     }
 
-    private fun ResultRow.toMembership(): Membership = Membership.reconstitute(
-        id = MembershipId(this[MembershipsTable.id]),
-        userId = UserId(this[MembershipsTable.userId]),
-        tenantId = TenantId(this[MembershipsTable.tenantId]),
-        role = Role.valueOf(this[MembershipsTable.role]),
-        status = MembershipStatus.valueOf(this[MembershipsTable.status]),
-        accessLevel = AccessLevel.valueOf(this[MembershipsTable.accessLevel])
-    )
+    private fun ResultRow.toMembership(): Membership {
+        val membershipId = this[MembershipsTable.id]
+        val grantedModules = MembershipModuleGrantsTable.selectAll()
+            .where { MembershipModuleGrantsTable.membershipId eq membershipId }
+            .map { ManagedModule.valueOf(it[MembershipModuleGrantsTable.module]) }
+            .toSet()
+        return Membership.reconstitute(
+            id = MembershipId(membershipId),
+            userId = UserId(this[MembershipsTable.userId]),
+            tenantId = TenantId(this[MembershipsTable.tenantId]),
+            role = Role.valueOf(this[MembershipsTable.role]),
+            status = MembershipStatus.valueOf(this[MembershipsTable.status]),
+            accessLevel = AccessLevel.valueOf(this[MembershipsTable.accessLevel]),
+            grantedModules = grantedModules
+        )
+    }
 }

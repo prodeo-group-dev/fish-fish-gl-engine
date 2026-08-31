@@ -1,6 +1,11 @@
 package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.ComputeTaxUseCase
+import com.theprodeogroup.fish.application.FakeTaxRuleRepository
+import com.theprodeogroup.fish.application.FakeTaxComputationRepository
+import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
+import com.theprodeogroup.fish.application.FakeStaffInviteNotificationGateway
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeCompanyRepository
@@ -87,6 +92,10 @@ class AdminPhoneRoutesTest {
         val purchaseOrderRepository = FakePurchaseOrderRepository()
         val onboardTenantUseCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository)
         val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(tenantRepository, companyRepository, accountRepository, periodRepository, journalEntryRepository)
+        val taxRuleRepository = FakeTaxRuleRepository()
+        val taxComputationRepository = FakeTaxComputationRepository()
+        val computeTaxUseCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
+        val inviteStaffMemberUseCase = InviteStaffMemberUseCase(tenantRepository, userRepository, membershipRepository, FakeStaffInviteNotificationGateway())
         val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
         val postPurchaseOrderUseCase = PostPurchaseOrderUseCase(
             purchaseOrderRepository, creditorRepository, stockItemRepository, periodRepository, accountRepository, journalEntryRepository
@@ -153,6 +162,10 @@ class AdminPhoneRoutesTest {
                 tenantRepository = tenantRepository,
                 onboardTenantUseCase = onboardTenantUseCase,
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
+                inviteStaffMemberUseCase = inviteStaffMemberUseCase,
+                computeTaxUseCase = computeTaxUseCase,
+                taxRuleRepository = taxRuleRepository,
+                taxComputationRepository = taxComputationRepository,
                 periodRepository = periodRepository,
                 accountRepository = accountRepository,
                 journalEntryRepository = journalEntryRepository,

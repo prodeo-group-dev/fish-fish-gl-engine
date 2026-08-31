@@ -8,6 +8,7 @@ import com.auth0.jwt.interfaces.RSAKeyProvider
 import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
+import com.theprodeogroup.fish.domain.tenancy.ManagedModule
 import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
 import com.theprodeogroup.fish.domain.tenancy.MembershipStatus
 import com.theprodeogroup.fish.domain.tenancy.TenantId
@@ -205,6 +206,69 @@ suspend fun ApplicationCall.authorizeTenantForWrite(tenantId: TenantId): Authent
     }
     if (!membership.accessLevel.atLeast(AccessLevel.WRITE)) {
         respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership's access level cannot perform this action"))
+        return null
+    }
+    return caller
+}
+
+/**
+ * [authorizeTenantForWrite]'s counterpart for a route that grants real
+ * access to others - inviting a staff member ([InviteStaffMemberUseCase])
+ * is a materially different kind of action than posting a financial
+ * entry, and [AccessLevel.WRITE] (an ordinary Accountant's own level)
+ * was never meant to imply "and can also decide who else gets in."
+ * Only [AccessLevel.ADMIN] clears this floor - [Role.OWNER_ADMIN] gets
+ * it by default (`Membership.defaultAccessLevelFor`), matching the
+ * user's own explicit direction (2026-08-31) that only an admin-level
+ * Membership may invite staff.
+ */
+suspend fun ApplicationCall.authorizeTenantForAdmin(tenantId: TenantId): AuthenticatedCaller? {
+    val caller = principal<AuthenticatedCaller>()
+    if (caller == null) {
+        respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
+        return null
+    }
+    val membership = caller.memberships.firstOrNull { it.tenantId == tenantId }
+    if (membership == null) {
+        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "No active Membership in the requested Tenant"))
+        return null
+    }
+    if (!membership.accessLevel.atLeast(AccessLevel.ADMIN)) {
+        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "Only an admin-level Membership can perform this action"))
+        return null
+    }
+    return caller
+}
+
+/**
+ * [authorizeTenantForWrite]'s counterpart for a route scoped to one
+ * [ManagedModule] specifically (2026-08-31, Tax's own route - the
+ * first route in this codebase to actually enforce
+ * [com.theprodeogroup.fish.domain.tenancy.Membership.grantedModules],
+ * not just [AccessLevel]). Existing GL routes (journal entries,
+ * reports, etc.) predate this and were **not** retrofitted to check
+ * module grants - they're all implicitly "the GL module," and
+ * `grantedModules` has so far only gated WEB's own tab visibility for
+ * them. This is a real, known gap, not an oversight: closing it for
+ * every existing route is a separate piece of work.
+ */
+suspend fun ApplicationCall.authorizeTenantForModule(tenantId: TenantId, module: ManagedModule, minAccessLevel: AccessLevel): AuthenticatedCaller? {
+    val caller = principal<AuthenticatedCaller>()
+    if (caller == null) {
+        respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
+        return null
+    }
+    val membership = caller.memberships.firstOrNull { it.tenantId == tenantId }
+    if (membership == null) {
+        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "No active Membership in the requested Tenant"))
+        return null
+    }
+    if (!membership.accessLevel.atLeast(minAccessLevel)) {
+        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership's access level cannot perform this action"))
+        return null
+    }
+    if (module !in membership.grantedModules) {
+        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership is not granted access to the $module module"))
         return null
     }
     return caller

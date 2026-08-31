@@ -88,3 +88,11 @@ object MembershipsTable : Table("memberships") {
 
     override val primaryKey = PrimaryKey(id)
 }
+
+/** V15 - persists `Membership.grantedModules`, same one-to-many-child-table shape as [CompanyModuleManagementPreferencesTable]. */
+object MembershipModuleGrantsTable : Table("membership_module_grants") {
+    val membershipId = uuid("membership_id")
+    val module = varchar("module", 10)
+
+    override val primaryKey = PrimaryKey(membershipId, module)
+}

@@ -29,6 +29,11 @@ import com.theprodeogroup.fish.application.FakeStockShortageEscalationRepository
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.FakeTenantRepository
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.ComputeTaxUseCase
+import com.theprodeogroup.fish.application.FakeTaxRuleRepository
+import com.theprodeogroup.fish.application.FakeTaxComputationRepository
+import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
+import com.theprodeogroup.fish.application.FakeStaffInviteNotificationGateway
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
@@ -108,6 +113,10 @@ class StatusPagesTest {
         val tenantRepository = FakeTenantRepository()
         val onboardTenantUseCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository)
         val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(tenantRepository, companyRepository, accountRepository, periodRepository, journalEntryRepository)
+        val taxRuleRepository = FakeTaxRuleRepository()
+        val taxComputationRepository = FakeTaxComputationRepository()
+        val computeTaxUseCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
+        val inviteStaffMemberUseCase = InviteStaffMemberUseCase(tenantRepository, userRepository, membershipRepository, FakeStaffInviteNotificationGateway())
         val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -168,6 +177,10 @@ class StatusPagesTest {
                 tenantRepository = tenantRepository,
                 onboardTenantUseCase = onboardTenantUseCase,
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
+                inviteStaffMemberUseCase = inviteStaffMemberUseCase,
+                computeTaxUseCase = computeTaxUseCase,
+                taxRuleRepository = taxRuleRepository,
+                taxComputationRepository = taxComputationRepository,
                 recordVendorObligationUseCase = recordVendorObligationUseCase,
                 recordVendorPaymentUseCase = recordVendorPaymentUseCase,
                 recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,

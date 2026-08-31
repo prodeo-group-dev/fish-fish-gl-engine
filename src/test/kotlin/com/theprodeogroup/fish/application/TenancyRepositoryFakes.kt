@@ -8,6 +8,9 @@ import com.theprodeogroup.fish.domain.tenancy.Membership
 import com.theprodeogroup.fish.domain.tenancy.MembershipId
 import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
 import com.theprodeogroup.fish.domain.tenancy.PhoneNumber
+import com.theprodeogroup.fish.domain.tenancy.Role
+import com.theprodeogroup.fish.domain.tenancy.StaffInviteNotificationGateway
+import com.theprodeogroup.fish.domain.tenancy.StaffInviteNotificationResult
 import com.theprodeogroup.fish.domain.tenancy.Tenant
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.domain.tenancy.TenantRepository
@@ -68,6 +71,27 @@ class FakeMembershipRepository : MembershipRepository {
     override fun findById(id: MembershipId): Membership? = store[id]
     override fun findAllByTenant(tenantId: TenantId): List<Membership> = store.values.filter { it.tenantId == tenantId }
     override fun findAllByUser(userId: UserId): List<Membership> = store.values.filter { it.userId == userId }
+}
+
+/**
+ * Defaults to a [StaffInviteNotificationResult.Success] - the common
+ * case for tests that only need [InviteStaffMemberUseCase] to be
+ * wireable, not to exercise its notification-failure path.
+ * [InviteStaffMemberUseCaseTest] uses [alwaysFail] for that path
+ * specifically, mirroring [FakeAdminPhoneVerificationChecker]'s own
+ * `alwaysReject()` shape.
+ */
+class FakeStaffInviteNotificationGateway : StaffInviteNotificationGateway {
+    val sentTo = mutableListOf<String>()
+    private var shouldFail = false
+
+    fun alwaysFail() { shouldFail = true }
+
+    override fun sendInviteEmail(to: String, tenantName: String, inviterName: String, role: Role): StaffInviteNotificationResult {
+        sentTo.add(to)
+        return if (shouldFail) StaffInviteNotificationResult.Failure("test gateway configured to fail")
+        else StaffInviteNotificationResult.Success("fake-message-id")
+    }
 }
 
 /**

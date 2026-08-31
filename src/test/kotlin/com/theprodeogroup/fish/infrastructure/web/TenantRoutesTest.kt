@@ -1,6 +1,11 @@
 package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.ComputeTaxUseCase
+import com.theprodeogroup.fish.application.FakeTaxRuleRepository
+import com.theprodeogroup.fish.application.FakeTaxComputationRepository
+import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
+import com.theprodeogroup.fish.application.FakeStaffInviteNotificationGateway
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeCompanyRepository
 import com.theprodeogroup.fish.application.FakeCreditorRepository
@@ -56,6 +61,7 @@ import com.theprodeogroup.fish.domain.tenancy.User
 import io.kotest.matchers.shouldBe
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -95,6 +101,10 @@ class TenantRoutesTest {
         val purchaseOrderRepository = FakePurchaseOrderRepository()
         val onboardTenantUseCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository)
         val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(tenantRepository, companyRepository, accountRepository, periodRepository, journalEntryRepository)
+        val taxRuleRepository = FakeTaxRuleRepository()
+        val taxComputationRepository = FakeTaxComputationRepository()
+        val computeTaxUseCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
+        val inviteStaffMemberUseCase = InviteStaffMemberUseCase(tenantRepository, userRepository, membershipRepository, FakeStaffInviteNotificationGateway())
         val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
         val postPurchaseOrderUseCase = PostPurchaseOrderUseCase(
             purchaseOrderRepository, creditorRepository, stockItemRepository, periodRepository, accountRepository, journalEntryRepository
@@ -170,6 +180,10 @@ class TenantRoutesTest {
                 tenantRepository = tenantRepository,
                 onboardTenantUseCase = onboardTenantUseCase,
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
+                inviteStaffMemberUseCase = inviteStaffMemberUseCase,
+                computeTaxUseCase = computeTaxUseCase,
+                taxRuleRepository = taxRuleRepository,
+                taxComputationRepository = taxComputationRepository,
                 periodRepository = periodRepository,
                 accountRepository = accountRepository,
                 journalEntryRepository = journalEntryRepository,
@@ -388,5 +402,108 @@ class TenantRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.Forbidden
+    }
+
+    @Test
+    fun `given an ADMIN-level caller, when a staff member is invited, then it returns 201 and the Membership is ACTIVE`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/tenants/${fixture.existingTenant.id.value}/memberships") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(EXISTING_ADMIN_EMAIL)}")
+            contentType(ContentType.Application.Json)
+            setBody("""{"email": "new-staff@example.com", "name": "New Staff", "role": "ACCOUNTANT", "modules": ["GL", "HR"]}""")
+        }
+
+        response.status shouldBe HttpStatusCode.Created
+        val body: InviteStaffMemberResponseDto = response.body()
+        body.role shouldBe "ACCOUNTANT"
+        body.alreadyMember shouldBe false
+        fixture.userRepository.findByEmail("new-staff@example.com") shouldBe fixture.userRepository.findByEmail("new-staff@example.com")
+        fixture.membershipRepository.findAllByTenant(fixture.existingTenant.id).any { it.role == Role.ACCOUNTANT } shouldBe true
+    }
+
+    @Test
+    fun `given no bearer token, when a staff member is invited, then it returns 401`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/tenants/${fixture.existingTenant.id.value}/memberships") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"email": "new-staff@example.com", "name": "New Staff", "role": "ACCOUNTANT", "modules": ["GL", "HR"]}""")
+        }
+
+        response.status shouldBe HttpStatusCode.Unauthorized
+    }
+
+    @Test
+    fun `given a caller with only WRITE access, when a staff member is invited, then it returns 403 - only ADMIN may invite`() = testApplication {
+        val fixture = Fixture()
+        val accountantEmail = "accountant-caller@example.com"
+        val accountantUser = User.create(accountantEmail, "Accountant Caller").also { fixture.userRepository.save(it) }
+        Membership.grant(accountantUser.id, fixture.existingTenant.id, Role.ACCOUNTANT).also { fixture.membershipRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/tenants/${fixture.existingTenant.id.value}/memberships") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(accountantEmail)}")
+            contentType(ContentType.Application.Json)
+            setBody("""{"email": "new-staff@example.com", "name": "New Staff", "role": "ACCOUNTANT", "modules": ["GL", "HR"]}""")
+        }
+
+        response.status shouldBe HttpStatusCode.Forbidden
+    }
+
+    // A literal "Tenant genuinely doesn't exist" 404 isn't reachable through
+    // this route: authorizeTenantForAdmin (like authorizeTenantForWrite on
+    // /companies, above) requires the caller to already hold a Membership
+    // in tenantId, which is impossible for a Tenant that was never created -
+    // that case 403s at the authorization gate before InviteStaffMemberUseCase
+    // ever runs. Result.TenantNotFound is still real and covered directly at
+    // the use-case level (InviteStaffMemberUseCaseTest), same precedent as
+    // AddCompanyToTenantUseCase's own null-return path never being exercised
+    // through its route test either.
+
+    @Test
+    fun `given an invalid role, when a staff member is invited, then it returns 400`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/tenants/${fixture.existingTenant.id.value}/memberships") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(EXISTING_ADMIN_EMAIL)}")
+            contentType(ContentType.Application.Json)
+            setBody("""{"email": "new-staff@example.com", "name": "New Staff", "role": "NOT_A_REAL_ROLE", "modules": ["GL"]}""")
+        }
+
+        response.status shouldBe HttpStatusCode.BadRequest
+    }
+
+    @Test
+    fun `given ACTIVE memberships in a Tenant, when listed, then every member is returned with name, email, and role`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/tenants/${fixture.existingTenant.id.value}/memberships") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(EXISTING_ADMIN_EMAIL)}")
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: List<MembershipDto> = response.body()
+        body.any { it.email == EXISTING_ADMIN_EMAIL && it.role == "OWNER_ADMIN" } shouldBe true
+    }
+
+    @Test
+    fun `given no bearer token, when memberships are listed, then it returns 401`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/tenants/${fixture.existingTenant.id.value}/memberships")
+
+        response.status shouldBe HttpStatusCode.Unauthorized
     }
 }

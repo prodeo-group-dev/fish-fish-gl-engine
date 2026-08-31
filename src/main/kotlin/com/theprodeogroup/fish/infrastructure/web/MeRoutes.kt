@@ -42,7 +42,8 @@ fun Route.meRoutes(tenantRepository: TenantRepository) {
                 adminPhoneNumber = tenant.adminPhoneNumber?.value,
                 adminPhoneVerificationStatus = tenant.adminPhoneVerificationStatus.name,
                 phoneVerificationDeadline = tenant.phoneVerificationDeadline?.toString(),
-                companyIds = tenant.companyIds.map { it.value.toString() }
+                companyIds = tenant.companyIds.map { it.value.toString() },
+                grantedModules = membership.grantedModules.map { it.name }
             )
         }
 

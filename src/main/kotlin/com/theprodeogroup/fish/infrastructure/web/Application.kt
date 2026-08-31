@@ -10,8 +10,11 @@ import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
 import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
+import com.theprodeogroup.fish.application.ComputeSalesPostingContextUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
+import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
+import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
 import com.theprodeogroup.fish.application.KybGracePeriodSweep
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
@@ -39,6 +42,8 @@ import com.theprodeogroup.fish.domain.payroll.PayRunRepository
 import com.theprodeogroup.fish.domain.purchasing.PurchaseOrderRepository
 import com.theprodeogroup.fish.domain.sales.CustomerRepository
 import com.theprodeogroup.fish.domain.sales.SalesOrderRepository
+import com.theprodeogroup.fish.domain.tax.TaxComputationRepository
+import com.theprodeogroup.fish.domain.tax.TaxRuleRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
 import com.theprodeogroup.fish.domain.tenancy.TenantRepository
@@ -60,10 +65,14 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedPurchaseOrderRe
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedSalesOrderRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedStockItemRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedStockShortageEscalationRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedTaxComputationRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedTaxRuleRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTenantRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedUserRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
 import com.theprodeogroup.fish.infrastructure.identity.CognitoAdminPhoneVerificationChecker
+import com.theprodeogroup.fish.infrastructure.notification.SesStaffInviteNotificationGateway
+import com.theprodeogroup.fish.infrastructure.notification.UnconfiguredStaffInviteNotificationGateway
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -146,6 +155,15 @@ fun Application.productionModule() {
     val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(
         tenantRepository, companyRepository, accountRepository, periodRepository, journalEntryRepository
     )
+    val staffInviteNotificationGateway = System.getenv("GL_STAFF_INVITE_FROM_EMAIL")
+        ?.let { SesStaffInviteNotificationGateway(it) }
+        ?: UnconfiguredStaffInviteNotificationGateway()
+    val inviteStaffMemberUseCase = InviteStaffMemberUseCase(
+        tenantRepository, userRepository, membershipRepository, staffInviteNotificationGateway
+    )
+    val taxRuleRepository = ExposedTaxRuleRepository()
+    val taxComputationRepository = ExposedTaxComputationRepository()
+    val computeTaxUseCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
     val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
     val postPurchaseOrderUseCase = PostPurchaseOrderUseCase(
         purchaseOrderRepository, creditorRepository, stockItemRepository, periodRepository, accountRepository, journalEntryRepository
@@ -218,6 +236,10 @@ fun Application.productionModule() {
         tenantRepository = tenantRepository,
         onboardTenantUseCase = onboardTenantUseCase,
         addCompanyToTenantUseCase = addCompanyToTenantUseCase,
+        inviteStaffMemberUseCase = inviteStaffMemberUseCase,
+        computeTaxUseCase = computeTaxUseCase,
+        taxRuleRepository = taxRuleRepository,
+        taxComputationRepository = taxComputationRepository,
         periodRepository = periodRepository,
         accountRepository = accountRepository,
         journalEntryRepository = journalEntryRepository,
@@ -274,6 +296,10 @@ fun Application.fishModule(
     tenantRepository: TenantRepository,
     onboardTenantUseCase: OnboardTenantUseCase,
     addCompanyToTenantUseCase: AddCompanyToTenantUseCase,
+    inviteStaffMemberUseCase: InviteStaffMemberUseCase,
+    computeTaxUseCase: ComputeTaxUseCase,
+    taxRuleRepository: TaxRuleRepository,
+    taxComputationRepository: TaxComputationRepository,
     periodRepository: PeriodRepository,
     accountRepository: AccountRepository,
     journalEntryRepository: JournalEntryRepository,
@@ -371,7 +397,7 @@ fun Application.fishModule(
                 tenantRoutesOnboarding(onboardTenantUseCase)
             }
             fishAuthenticated {
-                tenantRoutesAuthenticated(addCompanyToTenantUseCase, tenantRepository)
+                tenantRoutesAuthenticated(addCompanyToTenantUseCase, inviteStaffMemberUseCase, tenantRepository, userRepository, membershipRepository)
                 adminPhoneRoutes(recordAdminPhoneNumberUseCase)
                 journalEntryRoutes(
                     postJournalEntryUseCase, periodRepository, accountRepository, journalEntryRepository, companyRepository, idempotencyKeyRepository
@@ -391,9 +417,13 @@ fun Application.fishModule(
                 recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
                 meRoutes(tenantRepository)
                 moneyVelocityRoutes(computeMoneyVelocityUseCase, companyRepository)
+                salesPostingContextRoutes(
+                    ComputeSalesPostingContextUseCase(companyRepository, periodRepository, accountRepository), companyRepository
+                )
                 expenseVelocityRoutes(computeExpenseVelocityUseCase, companyRepository)
                 salesToExpenseRatioRoutes(computeSalesToExpenseRatioUseCase, companyRepository)
                 reportsRoutes(computeBalanceSheetUseCase, computeProfitAndLossUseCase, computeCashFlowUseCase, companyRepository)
+                taxRoutes(computeTaxUseCase, companyRepository, taxRuleRepository, taxComputationRepository)
             }
         }
     }

@@ -22,13 +22,33 @@ import com.theprodeogroup.common.ValidationResult
  * level that role has always implied); any caller that needs to grant
  * a Role a *different* AccessLevel than its default - an ACCOUNTANT
  * with only READ, say - passes both explicitly.
+ *
+ * **[grantedModules] (2026-08-31)** - which of GL/HR/SOP/POP/IM this
+ * Membership can actually open, per the user's own framing ("staff/
+ * employees... to run the FiSH modules"). Deliberately binary for now,
+ * not a role-per-module - the user explicitly chose that as a starting
+ * point ("a role or access level per module is ideal so let's KIV it -
+ * let's start with Binary"), with [role]/[accessLevel] staying the
+ * single, tenant-wide answer to "what can they do," independent of
+ * *which* modules they can see at all. [grant]'s default is every
+ * module - a fresh Membership (an OWNER_ADMIN onboarding a Tenant,
+ * above all) shouldn't lose access to anything unless a caller
+ * deliberately restricts it, which is exactly what
+ * `InviteStaffMemberUseCase` lets an inviter do.
+ *
+ * Scoped to GL's own data model and WEB's own tab visibility only -
+ * POP/SOP/IM/HR are separate repos with no Membership/Role concept of
+ * their own at all today, so this doesn't (yet) reach into their own
+ * APIs; a real cross-repo enforcement design is its own future piece
+ * of work, confirmed out of scope for this build.
  */
 class Membership private constructor(
     val id: MembershipId,
     val userId: UserId,
     val tenantId: TenantId,
     val role: Role,
-    val accessLevel: AccessLevel
+    val accessLevel: AccessLevel,
+    val grantedModules: Set<ManagedModule>
 ) {
     var status: MembershipStatus = MembershipStatus.ACTIVE
         private set
@@ -51,8 +71,9 @@ class Membership private constructor(
             tenantId: TenantId,
             role: Role,
             accessLevel: AccessLevel = defaultAccessLevelFor(role),
+            grantedModules: Set<ManagedModule> = ManagedModule.entries.toSet(),
             id: MembershipId = MembershipId.generate()
-        ): Membership = Membership(id, userId, tenantId, role, accessLevel)
+        ): Membership = Membership(id, userId, tenantId, role, accessLevel, grantedModules)
 
         /**
          * Rebuilds an already-valid Membership from persisted state
@@ -66,9 +87,10 @@ class Membership private constructor(
             tenantId: TenantId,
             role: Role,
             status: MembershipStatus,
-            accessLevel: AccessLevel
+            accessLevel: AccessLevel,
+            grantedModules: Set<ManagedModule>
         ): Membership {
-            val membership = Membership(id, userId, tenantId, role, accessLevel)
+            val membership = Membership(id, userId, tenantId, role, accessLevel, grantedModules)
             membership.status = status
             return membership
         }

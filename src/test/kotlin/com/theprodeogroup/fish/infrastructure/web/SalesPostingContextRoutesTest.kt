@@ -1,6 +1,5 @@
 package com.theprodeogroup.fish.infrastructure.web
 
-import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.FakeTaxRuleRepository
@@ -9,11 +8,11 @@ import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
 import com.theprodeogroup.fish.application.FakeStaffInviteNotificationGateway
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeInventoryScheduleUseCase
+import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
 import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
 import com.theprodeogroup.fish.application.ComputeCashFlowUseCase
-import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeCompanyRepository
@@ -53,15 +52,10 @@ import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
-import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.PeriodType
-import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.Account
-import com.theprodeogroup.fish.domain.ledger.AccountId
+import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountType
-import com.theprodeogroup.fish.domain.ledger.ExpenseClassification
-import com.theprodeogroup.fish.domain.ledger.JournalEntry
-import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.Membership
@@ -80,21 +74,18 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.testing.testApplication
 import org.junit.jupiter.api.Test
-import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.Currency
+import java.util.UUID
 
 private val GBP: Currency = Currency.getInstance("GBP")
 private const val ADMIN_EMAIL = "founder@example.com"
-// LocalDate.now(), not a hardcoded date - see MoneyVelocityRoutesTest's
-// identical fix for why (the route always uses real LocalDate.now(), no
-// fake-clock injection point exists for a route test).
 private val TODAY: LocalDate = LocalDate.now()
 
-/** `GET /companies/{companyId}/sales-to-expense-ratio` - see SalesToExpenseRatioRoutes.kt's own KDoc. */
-class SalesToExpenseRatioRoutesTest {
+/** `GET /companies/{companyId}/sales-posting-context` - see SalesPostingContextRoutes.kt's own KDoc. */
+class SalesPostingContextRoutesTest {
 
-    private class Fixture {
+    private class Fixture(configureAccounts: Boolean = true, openPeriod: Boolean = true) {
         val userRepository = FakeUserRepository()
         val membershipRepository = FakeMembershipRepository()
         val companyRepository = FakeCompanyRepository()
@@ -164,28 +155,19 @@ class SalesToExpenseRatioRoutesTest {
             tenantRepository.save(tenant)
         }
 
-        val period = Period.create(company.id, PeriodType.MONTH, TODAY.minusDays(10), TODAY.plusDays(20)).also {
-            it.open()
-            periodRepository.save(it)
-        }
-        val revenueAccount = Account.create(company.id, AccountType.REVENUE, null, "4000", "Revenue").also { accountRepository.save(it) }
-        val adminExpenseAccount = Account.create(company.id, AccountType.EXPENSE, null, "5000", "Admin Expenses", expenseClassification = ExpenseClassification.ADMINISTRATIVE).also { accountRepository.save(it) }
+        val period = if (openPeriod) {
+            Period.create(company.id, PeriodType.MONTH, TODAY.minusDays(10), TODAY.plusDays(20)).also {
+                it.open()
+                periodRepository.save(it)
+            }
+        } else null
 
-        fun post(account: Account, amount: String, isRevenue: Boolean) {
-            val entry = JournalEntry.create(
-                period.id, TODAY,
-                if (isRevenue) listOf(
-                    JournalLine(AccountId.generate(), Money(BigDecimal(amount), GBP), TransactionSide.DEBIT),
-                    JournalLine(account.id, Money(BigDecimal(amount), GBP), TransactionSide.CREDIT)
-                ) else listOf(
-                    JournalLine(account.id, Money(BigDecimal(amount), GBP), TransactionSide.DEBIT),
-                    JournalLine(AccountId.generate(), Money(BigDecimal(amount), GBP), TransactionSide.CREDIT)
-                ),
-                JournalSource.MANUAL
-            )
-            entry.post()
-            journalEntryRepository.save(entry)
-        }
+        val arAccount = if (configureAccounts) {
+            Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1100", "Accounts Receivable").also { accountRepository.save(it) }
+        } else null
+        val revenueAccount = if (configureAccounts) {
+            Account.create(company.id, AccountType.REVENUE, null, "4000", "Revenue").also { accountRepository.save(it) }
+        } else null
 
         fun installInto(app: Application) {
             app.fishModule(
@@ -241,47 +223,31 @@ class SalesToExpenseRatioRoutesTest {
     }
 
     @Test
-    fun `given sales twice the operating expense, when GET sales-to-expense-ratio is called, then it returns a ratio of 2`() = testApplication {
+    fun `given an open Period and a configured Chart of Accounts, when GET sales-posting-context is called, then it returns the resolved ids`() = testApplication {
         val fixture = Fixture()
-        fixture.post(fixture.revenueAccount, "1000.00", isRevenue = true)
-        fixture.post(fixture.adminExpenseAccount, "500.00", isRevenue = false)
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.get("/api/companies/${fixture.company.id.value}/sales-to-expense-ratio") {
+        val response = client.get("/api/companies/${fixture.company.id.value}/sales-posting-context") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
             header("X-Tenant-Id", fixture.tenant.id.value.toString())
         }
 
         response.status shouldBe HttpStatusCode.OK
-        val body: SalesToExpenseRatioResponseDto = response.body()
-        body.totalRevenue shouldBe "1000.00"
-        body.operatingExpense shouldBe "500.00"
-        body.ratio shouldBe "2"
+        val body: SalesPostingContextResponseDto = response.body()
+        body.periodId shouldBe fixture.period!!.id.value.toString()
+        body.arControlAccountId shouldBe fixture.arAccount!!.id.value.toString()
+        body.revenueAccountId shouldBe fixture.revenueAccount!!.id.value.toString()
+        body.currency shouldBe "GBP"
     }
 
     @Test
-    fun `given no operating expense posted yet, when GET sales-to-expense-ratio is called, then it returns 409`() = testApplication {
-        val fixture = Fixture()
-        fixture.post(fixture.revenueAccount, "1000.00", isRevenue = true)
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.get("/api/companies/${fixture.company.id.value}/sales-to-expense-ratio") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenant.id.value.toString())
-        }
-
-        response.status shouldBe HttpStatusCode.Conflict
-    }
-
-    @Test
-    fun `given no bearer token, when GET sales-to-expense-ratio is called, then it returns 401`() = testApplication {
+    fun `given no bearer token, when GET sales-posting-context is called, then it returns 401`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.get("/api/companies/${fixture.company.id.value}/sales-to-expense-ratio") {
+        val response = client.get("/api/companies/${fixture.company.id.value}/sales-posting-context") {
             header("X-Tenant-Id", fixture.tenant.id.value.toString())
         }
 
@@ -289,7 +255,7 @@ class SalesToExpenseRatioRoutesTest {
     }
 
     @Test
-    fun `given a caller authenticated in a different Tenant, when GET sales-to-expense-ratio is called, then it returns 403`() = testApplication {
+    fun `given a caller authenticated in a different Tenant, when GET sales-posting-context is called, then it returns 403`() = testApplication {
         val fixture = Fixture()
         val outsiderTenant = Tenant.onboard("Other Co", TenantSegment.EXTERNAL_B2B, GBP)
         val outsiderUser = User.create("outsider@example.com", "Outsider").also { fixture.userRepository.save(it) }
@@ -299,7 +265,7 @@ class SalesToExpenseRatioRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.get("/api/companies/${fixture.company.id.value}/sales-to-expense-ratio") {
+        val response = client.get("/api/companies/${fixture.company.id.value}/sales-posting-context") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken("outsider@example.com")}")
             header("X-Tenant-Id", fixture.tenant.id.value.toString())
         }
@@ -308,16 +274,44 @@ class SalesToExpenseRatioRoutesTest {
     }
 
     @Test
-    fun `given a nonexistent Company, when GET sales-to-expense-ratio is called, then it returns 404`() = testApplication {
+    fun `given a nonexistent Company, when GET sales-posting-context is called, then it returns 404`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.get("/api/companies/${java.util.UUID.randomUUID()}/sales-to-expense-ratio") {
+        val response = client.get("/api/companies/${UUID.randomUUID()}/sales-posting-context") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
             header("X-Tenant-Id", fixture.tenant.id.value.toString())
         }
 
         response.status shouldBe HttpStatusCode.NotFound
+    }
+
+    @Test
+    fun `given no open Period, when GET sales-posting-context is called, then it returns 409`() = testApplication {
+        val fixture = Fixture(openPeriod = false)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/sales-posting-context") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.id.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.Conflict
+    }
+
+    @Test
+    fun `given no Chart of Accounts, when GET sales-posting-context is called, then it returns 409`() = testApplication {
+        val fixture = Fixture(configureAccounts = false)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/sales-posting-context") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.id.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.Conflict
     }
 }
