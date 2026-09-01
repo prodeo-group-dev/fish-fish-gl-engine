@@ -116,9 +116,17 @@ resource "aws_iam_role_policy_attachment" "pop_ecs_task_execution_managed" {
 
 data "aws_iam_policy_document" "pop_ecs_task_execution_secrets" {
   statement {
-    effect    = "Allow"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = [aws_secretsmanager_secret.pop_db_password.arn]
+    effect  = "Allow"
+    actions = ["secretsmanager:GetSecretValue"]
+    resources = [
+      aws_secretsmanager_secret.pop_db_password.arn,
+      # POP's own service-account credentials for calling IM (2026-09-01,
+      # "scope out how POP's receive-line would call IM") - the exact
+      # same gap IM's own execution role hit and needed fixing for its
+      # GL-facing secrets, avoided here from the start.
+      aws_secretsmanager_secret.pop_im_service_account_password.arn,
+      aws_secretsmanager_secret.pop_im_service_account_client_secret.arn
+    ]
   }
 }
 
@@ -411,12 +419,22 @@ resource "aws_ecs_task_definition" "pop" {
         # notifications.tf's aws_ses_domain_identity to actually be
         # DNS-verified first (a manual step, same two-phase pattern as
         # every ACM cert in this file) - unset/failing until then.
-        { name = "POP_NOTIFICATION_FROM_EMAIL", value = "orders@${var.pop_notification_from_domain}" }
+        { name = "POP_NOTIFICATION_FROM_EMAIL", value = "orders@${var.pop_notification_from_domain}" },
         # POP_GL_ENGINE_BEARER_TOKEN deliberately omitted - see file header.
+        # POP's own call into IM (2026-09-01, "scope out how POP's
+        # receive-line would call IM") - Cognito service-account auth,
+        # not a static bearer token like the (still-unresolved)
+        # POP_GL_ENGINE_BEARER_TOKEN gap above.
+        { name = "POP_IM_BASE_URL", value = "https://${var.im_domain_name}/api" },
+        { name = "POP_IM_COGNITO_REGION", value = var.aws_region },
+        { name = "POP_IM_SERVICE_ACCOUNT_CLIENT_ID", value = aws_cognito_user_pool_client.pop_im_service.id },
+        { name = "POP_IM_SERVICE_ACCOUNT_USERNAME", value = var.pop_im_service_account_email }
       ]
 
       secrets = [
-        { name = "POP_DB_PASSWORD", valueFrom = aws_secretsmanager_secret.pop_db_password.arn }
+        { name = "POP_DB_PASSWORD", valueFrom = aws_secretsmanager_secret.pop_db_password.arn },
+        { name = "POP_IM_SERVICE_ACCOUNT_PASSWORD", valueFrom = aws_secretsmanager_secret.pop_im_service_account_password.arn },
+        { name = "POP_IM_SERVICE_ACCOUNT_CLIENT_SECRET", valueFrom = aws_secretsmanager_secret.pop_im_service_account_client_secret.arn }
       ]
 
       logConfiguration = {

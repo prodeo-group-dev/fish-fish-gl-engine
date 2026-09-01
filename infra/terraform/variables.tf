@@ -257,6 +257,12 @@ variable "im_service_account_email" {
   default     = "im-service@theprodeogroup.com"
 }
 
+variable "pop_im_service_account_email" {
+  description = "The Cognito username/email for POP's service-account identity for calling IM (pop_service_account.tf) - resolves POP_IM_SERVICE_ACCOUNT_USERNAME/PASSWORD. Never sent an email (message_action = SUPPRESS), so this doesn't need to be a real, monitored mailbox."
+  type        = string
+  default     = "pop-im-service@theprodeogroup.com"
+}
+
 variable "im_short_name" {
   description = "Short identifier for IM's length-constrained AWS resources (ALB target group name has a 32-char limit) - same reasoning as pop_short_name."
   type        = string

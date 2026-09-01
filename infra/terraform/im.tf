@@ -364,7 +364,13 @@ resource "aws_ecs_task_definition" "im" {
         # built from day one, unlike POP's still-deferred equivalent.
         { name = "IM_GL_ENGINE_COGNITO_REGION", value = var.aws_region },
         { name = "IM_GL_ENGINE_SERVICE_ACCOUNT_CLIENT_ID", value = aws_cognito_user_pool_client.im_service.id },
-        { name = "IM_GL_ENGINE_SERVICE_ACCOUNT_USERNAME", value = var.im_service_account_email }
+        { name = "IM_GL_ENGINE_SERVICE_ACCOUNT_USERNAME", value = var.im_service_account_email },
+        # Trusts POP's own service-account identity (2026-09-01, "scope
+        # out how POP's receive-line would call IM") - a second,
+        # deliberately-provisioned Cognito app client
+        # (pop_service_account.tf), additive to (never a replacement
+        # for) the human-facing WEB audience above.
+        { name = "IM_JWT_SERVICE_AUDIENCE_POP", value = aws_cognito_user_pool_client.pop_im_service.id }
       ]
 
       secrets = [
