@@ -172,6 +172,12 @@ variable "pop_gl_engine_tenant_id" {
   default     = "9fa2198b-2a6f-467d-97ac-6f6fbce6a9fd"
 }
 
+variable "pop_gl_engine_company_id" {
+  description = "POP_GL_ENGINE_COMPANY_ID - Prodeo Group's real company UUID in GL's own system (used by the fulfilment pipeline's /match and /pay routes to resolve GL's purchase-posting-context), same source as pop_gl_engine_tenant_id: a real authenticated GET /me call, not invented (2026-09-01)."
+  type        = string
+  default     = "2ee7984b-1817-4148-ad04-653df9de724a"
+}
+
 variable "pop_notification_from_domain" {
   description = "The verified SES sender domain POP's eOrder emails go out from (2026-08-31) - the same domain identity notifications.tf already requests for Cognito (mail.theprodeogroup.com), not a new one."
   type        = string

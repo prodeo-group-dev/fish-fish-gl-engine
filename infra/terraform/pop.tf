@@ -402,6 +402,7 @@ resource "aws_ecs_task_definition" "pop" {
         # not assumed.
         { name = "POP_GL_ENGINE_BASE_URL", value = "https://${var.domain_name}/api" },
         { name = "POP_GL_ENGINE_TENANT_ID", value = var.pop_gl_engine_tenant_id },
+        { name = "POP_GL_ENGINE_COMPANY_ID", value = var.pop_gl_engine_company_id },
         { name = "POP_PORTAL_BASE_URL", value = "https://${var.domain_name}" },
         { name = "POP_CORS_ALLOWED_ORIGIN", value = "https://${var.domain_name}" },
         # Real eOrder email delivery (2026-08-31, SES production access

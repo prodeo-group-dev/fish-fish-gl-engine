@@ -10,6 +10,7 @@ import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
 import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
+import com.theprodeogroup.fish.application.ComputePurchasePostingContextUseCase
 import com.theprodeogroup.fish.application.ComputeSalesPostingContextUseCase
 import com.theprodeogroup.fish.application.IssueStockForSaleUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
@@ -425,6 +426,9 @@ fun Application.fishModule(
                 moneyVelocityRoutes(computeMoneyVelocityUseCase, companyRepository)
                 salesPostingContextRoutes(
                     ComputeSalesPostingContextUseCase(companyRepository, periodRepository, accountRepository), companyRepository
+                )
+                purchasePostingContextRoutes(
+                    ComputePurchasePostingContextUseCase(companyRepository, periodRepository, accountRepository), companyRepository
                 )
                 expenseVelocityRoutes(computeExpenseVelocityUseCase, companyRepository)
                 salesToExpenseRatioRoutes(computeSalesToExpenseRatioUseCase, companyRepository)
