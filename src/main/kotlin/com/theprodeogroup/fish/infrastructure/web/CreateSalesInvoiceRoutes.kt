@@ -4,11 +4,9 @@ import com.theprodeogroup.fish.application.CreateSalesInvoiceResult
 import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.common.Money
-import com.theprodeogroup.fish.domain.inventory.StockItemId
 import com.theprodeogroup.fish.domain.sales.CustomerRepository
 import com.theprodeogroup.fish.domain.sales.SaleMethod
 import com.theprodeogroup.fish.domain.sales.SaleType
-import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
@@ -32,20 +30,15 @@ import java.util.Currency
  * repo to derive `companyId` from otherwise), and the same
  * Idempotency-Key mechanism every posting route in this package uses.
  *
- * **Ordinary [authorizeTenantForWrite] floor - the APPROVE floor is
- * narrower than that** (corrected 2026-08-29 after an initial, wrong
- * read of the user's instruction as a blanket route-level requirement;
- * the actual rule only applies when a GOODS sale finds insufficient
- * stock - see [CreateSalesInvoiceUseCase]'s own KDoc). Any WRITE-level
- * caller can attempt a sale; `callerCanOverrideStockCheck` (resolved
- * here from the caller's real `Membership.accessLevel` for this Tenant,
- * `>= AccessLevel.APPROVE`) is what the use case actually branches on
- * when stock falls short, not this route's own authorization gate.
+ * **Ordinary [authorizeTenantForWrite] floor.** Used to have a narrower
+ * APPROVE-level carve-out tied to a stock-check override; that whole
+ * mechanism is gone (2026-09-01, "Retire GL's StockItem from its legacy
+ * costing" - see [CreateSalesInvoiceUseCase]'s own KDoc). Any WRITE-level
+ * caller can record a sale.
  *
  * **Two read routes added alongside it (2026-08-29, user request):**
  * `GET /companies/{companyId}/customers` (the "Schedule of Customers" -
- * the SOP sale form's customer picker source, same summary-DTO shape
- * as `inventoryRoutes`' `/stock-items`) and
+ * the SOP sale form's customer picker source) and
  * `GET /companies/{companyId}/sales-invoices` (the "listing of sales
  * (each timestamped)", backed by [ListSalesInvoicesUseCase]/
  * `SalesInvoiceRecord`). Both use [authorizeTenantForRead], matching
@@ -110,8 +103,6 @@ fun Route.createSalesInvoiceRoutes(
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
         val caller = call.authorizeTenantForWrite(tenantId) ?: return@post
-        val callerMembership = caller.memberships.first { it.tenantId == tenantId }
-        val callerCanOverrideStockCheck = callerMembership.accessLevel.atLeast(AccessLevel.APPROVE)
 
         val saleType = try {
             SaleType.valueOf(request.saleType.uppercase())
@@ -144,14 +135,6 @@ fun Route.createSalesInvoiceRoutes(
                 return@post
             }
         }
-        val stockItemUuid = if (request.stockItemId.isNullOrBlank()) null else call.parseUuid(request.stockItemId) ?: return@post
-        val quantity = if (request.quantity.isNullOrBlank()) null else {
-            request.quantity.toBigDecimalOrNull() ?: run {
-                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "quantity is not a valid decimal"))
-                return@post
-            }
-        }
-
         call.respondIdempotently(
             idempotencyKeyRepository, tenantId, "create-sales-invoice",
             Json.encodeToString(CreateSalesInvoiceRequestDto.serializer(), request)
@@ -159,8 +142,7 @@ fun Route.createSalesInvoiceRoutes(
             val result = createSalesInvoiceUseCase.execute(
                 CreateSalesInvoiceUseCase.Request(
                     companyId, saleType, saleMethod, request.customerName, Money(amountValue, currency), date,
-                    caller.user.email, request.description,
-                    stockItemUuid?.let { StockItemId(it) }, quantity, callerCanOverrideStockCheck
+                    caller.user.email, request.description
                 )
             )
 
@@ -195,15 +177,6 @@ fun Route.createSalesInvoiceRoutes(
                     HttpStatusCode.Conflict to errorResponseJson("cash_account_not_configured")
                 is CreateSalesInvoiceResult.RevenueAccountNotConfigured ->
                     HttpStatusCode.Conflict to errorResponseJson("revenue_account_not_configured")
-                is CreateSalesInvoiceResult.MissingStockItemSelection ->
-                    HttpStatusCode.BadRequest to errorResponseJson("missing_stock_item_selection")
-                is CreateSalesInvoiceResult.StockItemNotFound ->
-                    HttpStatusCode.NotFound to errorResponseJson("stock_item_not_found", result.stockItemId.value.toString())
-                is CreateSalesInvoiceResult.InsufficientStock ->
-                    HttpStatusCode.Conflict to errorResponseJson(
-                        "insufficient_stock",
-                        "Requested ${result.requestedQuantity}, only ${result.quantityOnHand} on hand - logged and escalated to the owner."
-                    )
             }
         }
     }

@@ -15,9 +15,3 @@ interface CreditorRepository {
     fun findById(id: CreditorId): Creditor?
     fun findAllByCompany(companyId: CompanyId): List<Creditor>
 }
-
-interface PurchaseOrderRepository {
-    fun save(purchaseOrder: PurchaseOrder)
-    fun findById(id: PurchaseOrderId): PurchaseOrder?
-    fun findAllByCompany(companyId: CompanyId): List<PurchaseOrder>
-}

@@ -5,7 +5,6 @@ import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
 import com.theprodeogroup.fish.application.ComputeCashFlowUseCase
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
-import com.theprodeogroup.fish.application.ComputeInventoryScheduleUseCase
 import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
 import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
@@ -13,7 +12,6 @@ import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeInventoryPostingContextUseCase
 import com.theprodeogroup.fish.application.ComputePurchasePostingContextUseCase
 import com.theprodeogroup.fish.application.ComputeSalesPostingContextUseCase
-import com.theprodeogroup.fish.application.IssueStockForSaleUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
@@ -21,12 +19,8 @@ import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
 import com.theprodeogroup.fish.application.KybGracePeriodSweep
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
-import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
-import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
-import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
-import com.theprodeogroup.fish.application.PostSalesOrderUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
@@ -36,15 +30,12 @@ import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
 import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
-import com.theprodeogroup.fish.domain.inventory.StockItemRepository
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.payroll.LeaveAccrualRepository
 import com.theprodeogroup.fish.domain.payroll.PayRunRepository
-import com.theprodeogroup.fish.domain.purchasing.PurchaseOrderRepository
 import com.theprodeogroup.fish.domain.sales.CustomerRepository
-import com.theprodeogroup.fish.domain.sales.SalesOrderRepository
 import com.theprodeogroup.fish.domain.tax.TaxComputationRepository
 import com.theprodeogroup.fish.domain.tax.TaxRuleRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
@@ -64,10 +55,6 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedLeaveAccrualRep
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedMembershipRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedPayRunRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedPeriodRepository
-import com.theprodeogroup.fish.infrastructure.persistence.ExposedPurchaseOrderRepository
-import com.theprodeogroup.fish.infrastructure.persistence.ExposedSalesOrderRepository
-import com.theprodeogroup.fish.infrastructure.persistence.ExposedStockItemRepository
-import com.theprodeogroup.fish.infrastructure.persistence.ExposedStockShortageEscalationRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTaxComputationRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTaxRuleRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTenantRepository
@@ -110,7 +97,7 @@ import java.time.Duration
  * no new language/ecosystem to introduce.
  *
  * **Section 10.19 opened a skeleton + two representative endpoints
- * (`PostJournalEntryUseCase`/`PostPurchaseOrderUseCase`), confirmed
+ * (`PostJournalEntryUseCase`/the now-retired `PostPurchaseOrderUseCase`), confirmed
  * scope before building - covering both shapes of use case this
  * codebase has, so the pattern was reviewable before being repeated.**
  * **Section 10.20 applies that now-proven pattern to the HR/Payroll
@@ -142,13 +129,8 @@ fun Application.productionModule() {
     val userRepository = ExposedUserRepository()
     val membershipRepository = ExposedMembershipRepository()
     val creditorRepository = ExposedCreditorRepository()
-    val stockItemRepository = ExposedStockItemRepository()
-    val stockShortageEscalationRepository = ExposedStockShortageEscalationRepository()
-    val issueStockForSaleUseCase = IssueStockForSaleUseCase(stockItemRepository, stockShortageEscalationRepository)
-    val purchaseOrderRepository = ExposedPurchaseOrderRepository()
     val payRunRepository = ExposedPayRunRepository()
     val leaveAccrualRepository = ExposedLeaveAccrualRepository()
-    val salesOrderRepository = ExposedSalesOrderRepository()
     val customerRepository = ExposedCustomerRepository()
     val idempotencyKeyRepository = ExposedIdempotencyKeyRepository()
     val tenantRepository = ExposedTenantRepository()
@@ -169,23 +151,13 @@ fun Application.productionModule() {
     val taxComputationRepository = ExposedTaxComputationRepository()
     val computeTaxUseCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
     val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
-    val postPurchaseOrderUseCase = PostPurchaseOrderUseCase(
-        purchaseOrderRepository, creditorRepository, stockItemRepository, periodRepository, accountRepository, journalEntryRepository
-    )
     val postPayRunUseCase = PostPayRunUseCase(payRunRepository, periodRepository, accountRepository, journalEntryRepository)
     val remeasureLeaveAccrualUseCase = RemeasureLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
     val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
-    val postInventoryReceiptUseCase = PostInventoryReceiptUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
-    val postInventoryIssueUseCase = PostInventoryIssueUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
-    val computeInventoryScheduleUseCase = ComputeInventoryScheduleUseCase(companyRepository, stockItemRepository)
-    val postSalesOrderUseCase = PostSalesOrderUseCase(
-        salesOrderRepository, customerRepository, stockItemRepository, periodRepository, accountRepository, journalEntryRepository
-    )
     val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
     val salesInvoiceRecordRepository = ExposedSalesInvoiceRecordRepository()
     val createSalesInvoiceUseCase = CreateSalesInvoiceUseCase(
-        periodRepository, accountRepository, customerRepository, journalEntryRepository, stockItemRepository,
-        stockShortageEscalationRepository, salesInvoiceRecordRepository
+        periodRepository, accountRepository, customerRepository, journalEntryRepository, salesInvoiceRecordRepository
     )
     val listSalesInvoicesUseCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
     val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -250,20 +222,11 @@ fun Application.productionModule() {
         accountRepository = accountRepository,
         journalEntryRepository = journalEntryRepository,
         postJournalEntryUseCase = postJournalEntryUseCase,
-        purchaseOrderRepository = purchaseOrderRepository,
-        postPurchaseOrderUseCase = postPurchaseOrderUseCase,
         payRunRepository = payRunRepository,
         postPayRunUseCase = postPayRunUseCase,
         leaveAccrualRepository = leaveAccrualRepository,
         remeasureLeaveAccrualUseCase = remeasureLeaveAccrualUseCase,
         utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase,
-        stockItemRepository = stockItemRepository,
-        issueStockForSaleUseCase = issueStockForSaleUseCase,
-        postInventoryReceiptUseCase = postInventoryReceiptUseCase,
-        postInventoryIssueUseCase = postInventoryIssueUseCase,
-        computeInventoryScheduleUseCase = computeInventoryScheduleUseCase,
-        salesOrderRepository = salesOrderRepository,
-        postSalesOrderUseCase = postSalesOrderUseCase,
         recordSaleUseCase = recordSaleUseCase,
         createSalesInvoiceUseCase = createSalesInvoiceUseCase,
         listSalesInvoicesUseCase = listSalesInvoicesUseCase,
@@ -313,20 +276,11 @@ fun Application.fishModule(
     accountRepository: AccountRepository,
     journalEntryRepository: JournalEntryRepository,
     postJournalEntryUseCase: PostJournalEntryUseCase,
-    purchaseOrderRepository: PurchaseOrderRepository,
-    postPurchaseOrderUseCase: PostPurchaseOrderUseCase,
     payRunRepository: PayRunRepository,
     postPayRunUseCase: PostPayRunUseCase,
     leaveAccrualRepository: LeaveAccrualRepository,
     remeasureLeaveAccrualUseCase: RemeasureLeaveAccrualUseCase,
     utilizeLeaveAccrualUseCase: UtilizeLeaveAccrualUseCase,
-    stockItemRepository: StockItemRepository,
-    issueStockForSaleUseCase: IssueStockForSaleUseCase,
-    postInventoryReceiptUseCase: PostInventoryReceiptUseCase,
-    postInventoryIssueUseCase: PostInventoryIssueUseCase,
-    computeInventoryScheduleUseCase: ComputeInventoryScheduleUseCase,
-    salesOrderRepository: SalesOrderRepository,
-    postSalesOrderUseCase: PostSalesOrderUseCase,
     recordSaleUseCase: RecordSaleUseCase,
     createSalesInvoiceUseCase: CreateSalesInvoiceUseCase,
     listSalesInvoicesUseCase: ListSalesInvoicesUseCase,
@@ -412,15 +366,12 @@ fun Application.fishModule(
                 journalEntryRoutes(
                     postJournalEntryUseCase, periodRepository, accountRepository, journalEntryRepository, companyRepository, idempotencyKeyRepository
                 )
-                purchaseOrderRoutes(postPurchaseOrderUseCase, purchaseOrderRepository, companyRepository, idempotencyKeyRepository)
                 payrollRoutes(
                     postPayRunUseCase, payRunRepository,
                     remeasureLeaveAccrualUseCase, utilizeLeaveAccrualUseCase, leaveAccrualRepository,
                     recordPayRunUseCase, getOrCreateLeaveAccrualUseCase,
                     companyRepository, idempotencyKeyRepository
                 )
-                inventoryRoutes(postInventoryReceiptUseCase, postInventoryIssueUseCase, computeInventoryScheduleUseCase, issueStockForSaleUseCase, stockItemRepository, companyRepository, idempotencyKeyRepository)
-                salesOrderRoutes(postSalesOrderUseCase, salesOrderRepository, companyRepository, idempotencyKeyRepository)
                 recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, idempotencyKeyRepository)
                 createSalesInvoiceRoutes(createSalesInvoiceUseCase, listSalesInvoicesUseCase, companyRepository, customerRepository, idempotencyKeyRepository)
                 recordVendorObligationAndPaymentRoutes(recordVendorObligationUseCase, recordVendorPaymentUseCase, companyRepository, idempotencyKeyRepository)

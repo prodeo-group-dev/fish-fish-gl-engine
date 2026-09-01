@@ -5,10 +5,8 @@ import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.FakeTaxRuleRepository
 import com.theprodeogroup.fish.application.FakeTaxComputationRepository
 import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
-import com.theprodeogroup.fish.application.IssueStockForSaleUseCase
 import com.theprodeogroup.fish.application.FakeStaffInviteNotificationGateway
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
-import com.theprodeogroup.fish.application.ComputeInventoryScheduleUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
 import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
@@ -27,21 +25,13 @@ import com.theprodeogroup.fish.application.FakeLeaveAccrualRepository
 import com.theprodeogroup.fish.application.FakeMembershipRepository
 import com.theprodeogroup.fish.application.FakePayRunRepository
 import com.theprodeogroup.fish.application.FakePeriodRepository
-import com.theprodeogroup.fish.application.FakePurchaseOrderRepository
 import com.theprodeogroup.fish.application.FakeSalesInvoiceRecordRepository
-import com.theprodeogroup.fish.application.FakeSalesOrderRepository
-import com.theprodeogroup.fish.application.FakeStockItemRepository
-import com.theprodeogroup.fish.application.FakeStockShortageEscalationRepository
 import com.theprodeogroup.fish.application.FakeTenantRepository
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
-import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
-import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
-import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
-import com.theprodeogroup.fish.application.PostSalesOrderUseCase
 import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
@@ -54,7 +44,6 @@ import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.common.PeriodType
-import com.theprodeogroup.fish.domain.inventory.StockItem
 import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountType
@@ -64,7 +53,6 @@ import com.theprodeogroup.fish.domain.tenancy.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.domain.tenancy.User
-import com.theprodeogroup.common.Money
 import io.kotest.matchers.shouldBe
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -80,7 +68,6 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.testing.testApplication
 import org.junit.jupiter.api.Test
-import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.Currency
 
@@ -89,15 +76,16 @@ private val TODAY = LocalDate.of(2026, 8, 29)
 private const val TEST_EMAIL = "sale-caller@example.com"
 
 /**
- * `POST /sales/create-invoice` via Ktor's `testApplication`. The stock-
- * check/escalation/override mechanics (2026-08-29, explicit user
- * instruction) are the main thing under test: the route's own
+ * `POST /sales/create-invoice` via Ktor's `testApplication`. The route's
  * authorization floor is the ordinary [authorizeTenantForWrite]
  * ([Fixture]'s default `role` is `Role.ACCOUNTANT`, matching every
- * other posting route) - `AccessLevel.APPROVE` only matters as
- * `callerCanOverrideStockCheck`, resolved from the real Membership and
- * threaded into [CreateSalesInvoiceUseCase.Request], not as a route-
- * level 403 gate.
+ * other posting route).
+ *
+ * **The GOODS stock-check/escalation/override tests that used to live
+ * here are gone (2026-09-01, "Retire GL's StockItem from its legacy
+ * costing")** - that whole mechanism moved to IM, which a caller checks
+ * against before ever calling this route (see [CreateSalesInvoiceUseCase]'s
+ * own KDoc). This route no longer branches on a GOODS sale type at all.
  */
 class CreateSalesInvoiceRoutesTest {
 
@@ -109,31 +97,16 @@ class CreateSalesInvoiceRoutesTest {
         val accountRepository = FakeAccountRepository()
         val journalEntryRepository = FakeJournalEntryRepository()
         val customerRepository = FakeCustomerRepository()
-        val stockItemRepository = FakeStockItemRepository()
-        val stockShortageEscalationRepository = FakeStockShortageEscalationRepository()
-        val issueStockForSaleUseCase = IssueStockForSaleUseCase(stockItemRepository, stockShortageEscalationRepository)
         val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
-        val purchaseOrderRepository = FakePurchaseOrderRepository()
-        val postPurchaseOrderUseCase = PostPurchaseOrderUseCase(
-            purchaseOrderRepository, FakeCreditorRepository(), stockItemRepository, periodRepository, accountRepository, journalEntryRepository
-        )
         val payRunRepository = FakePayRunRepository()
         val postPayRunUseCase = PostPayRunUseCase(payRunRepository, periodRepository, accountRepository, journalEntryRepository)
         val leaveAccrualRepository = FakeLeaveAccrualRepository()
         val remeasureLeaveAccrualUseCase = RemeasureLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
         val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
-        val postInventoryReceiptUseCase = PostInventoryReceiptUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
-        val postInventoryIssueUseCase = PostInventoryIssueUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
-        val computeInventoryScheduleUseCase = ComputeInventoryScheduleUseCase(companyRepository, stockItemRepository)
-        val salesOrderRepository = FakeSalesOrderRepository()
-        val postSalesOrderUseCase = PostSalesOrderUseCase(
-            salesOrderRepository, customerRepository, stockItemRepository, periodRepository, accountRepository, journalEntryRepository
-        )
         val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
         val salesInvoiceRecordRepository = FakeSalesInvoiceRecordRepository()
         val createSalesInvoiceUseCase = CreateSalesInvoiceUseCase(
-            periodRepository, accountRepository, customerRepository, journalEntryRepository, stockItemRepository,
-            stockShortageEscalationRepository, salesInvoiceRecordRepository
+            periodRepository, accountRepository, customerRepository, journalEntryRepository, salesInvoiceRecordRepository
         )
         val listSalesInvoicesUseCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
         val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -173,13 +146,6 @@ class CreateSalesInvoiceRoutesTest {
         val computeProfitAndLossUseCase = ComputeProfitAndLossUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeCashFlowUseCase = ComputeCashFlowUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
 
-        fun stockItem(quantityOnHand: String): StockItem {
-            val item = StockItem.create(company.id, "Bag of rice", GBP)
-            item.recordReceipt(BigDecimal(quantityOnHand), Money(BigDecimal("10.00"), GBP))
-            stockItemRepository.save(item)
-            return item
-        }
-
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
@@ -190,20 +156,11 @@ class CreateSalesInvoiceRoutesTest {
                 accountRepository = accountRepository,
                 journalEntryRepository = journalEntryRepository,
                 postJournalEntryUseCase = postJournalEntryUseCase,
-                purchaseOrderRepository = purchaseOrderRepository,
-                postPurchaseOrderUseCase = postPurchaseOrderUseCase,
                 payRunRepository = payRunRepository,
                 postPayRunUseCase = postPayRunUseCase,
                 leaveAccrualRepository = leaveAccrualRepository,
                 remeasureLeaveAccrualUseCase = remeasureLeaveAccrualUseCase,
                 utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase,
-                stockItemRepository = stockItemRepository,
-                issueStockForSaleUseCase = issueStockForSaleUseCase,
-                postInventoryReceiptUseCase = postInventoryReceiptUseCase,
-                postInventoryIssueUseCase = postInventoryIssueUseCase,
-                computeInventoryScheduleUseCase = computeInventoryScheduleUseCase,
-                salesOrderRepository = salesOrderRepository,
-                postSalesOrderUseCase = postSalesOrderUseCase,
                 recordSaleUseCase = recordSaleUseCase,
                 createSalesInvoiceUseCase = createSalesInvoiceUseCase,
                 listSalesInvoicesUseCase = listSalesInvoicesUseCase,
@@ -401,94 +358,4 @@ class CreateSalesInvoiceRoutesTest {
         body.error shouldBe "blank_customer_name"
     }
 
-    // -- GOODS stock check / escalation / override (2026-08-29) --
-
-    @Test
-    fun `given a GOODS sale with no stockItemId or quantity, when create-invoice is posted, then it returns 400`() = testApplication {
-        val fixture = Fixture()
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.post("/api/sales/create-invoice") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody(
-                """{"companyId": "${fixture.company.id.value}", "saleType": "GOODS", "saleMethod": "CASH",
-                    |"amount": "20.00", "currency": "GBP"}""".trimMargin()
-            )
-        }
-
-        response.status shouldBe HttpStatusCode.BadRequest
-        val body: ErrorResponseDto = response.body()
-        body.error shouldBe "missing_stock_item_selection"
-    }
-
-    @Test
-    fun `given a GOODS sale with enough stock, when create-invoice is posted by an ACCOUNTANT (WRITE) caller, then it returns 200 and decrements the StockItem`() = testApplication {
-        val fixture = Fixture(Role.ACCOUNTANT)
-        val item = fixture.stockItem("10")
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.post("/api/sales/create-invoice") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody(
-                """{"companyId": "${fixture.company.id.value}", "saleType": "GOODS", "saleMethod": "CASH",
-                    |"amount": "20.00", "currency": "GBP", "stockItemId": "${item.id.value}", "quantity": "4"}""".trimMargin()
-            )
-        }
-
-        response.status shouldBe HttpStatusCode.OK
-        fixture.stockItemRepository.findById(item.id)!!.quantityOnHand shouldBe BigDecimal("6")
-    }
-
-    @Test
-    fun `given a GOODS sale with insufficient stock, when create-invoice is posted by an ACCOUNTANT (WRITE) caller, then it returns 409 and logs an un-overridden escalation`() = testApplication {
-        val fixture = Fixture(Role.ACCOUNTANT)
-        val item = fixture.stockItem("2")
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.post("/api/sales/create-invoice") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody(
-                """{"companyId": "${fixture.company.id.value}", "saleType": "GOODS", "saleMethod": "CASH",
-                    |"amount": "20.00", "currency": "GBP", "stockItemId": "${item.id.value}", "quantity": "5"}""".trimMargin()
-            )
-        }
-
-        response.status shouldBe HttpStatusCode.Conflict
-        val body: ErrorResponseDto = response.body()
-        body.error shouldBe "insufficient_stock"
-        fixture.stockShortageEscalationRepository.saveCalls.size shouldBe 1
-        fixture.stockShortageEscalationRepository.saveCalls.single().overridden shouldBe false
-    }
-
-    @Test
-    fun `given a GOODS sale with insufficient stock, when create-invoice is posted by an APPROVER (APPROVE) caller, then it returns 200 and logs an overridden escalation`() = testApplication {
-        val fixture = Fixture(Role.APPROVER)
-        val item = fixture.stockItem("2")
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.post("/api/sales/create-invoice") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody(
-                """{"companyId": "${fixture.company.id.value}", "saleType": "GOODS", "saleMethod": "CASH",
-                    |"amount": "20.00", "currency": "GBP", "stockItemId": "${item.id.value}", "quantity": "5"}""".trimMargin()
-            )
-        }
-
-        response.status shouldBe HttpStatusCode.OK
-        fixture.stockShortageEscalationRepository.saveCalls.size shouldBe 1
-        fixture.stockShortageEscalationRepository.saveCalls.single().overridden shouldBe true
-        fixture.stockItemRepository.findById(item.id)!!.quantityOnHand shouldBe BigDecimal("2")
-    }
 }

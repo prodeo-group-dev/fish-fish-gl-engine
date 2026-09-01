@@ -11,11 +11,7 @@ import com.theprodeogroup.fish.application.FakeLeaveAccrualRepository
 import com.theprodeogroup.fish.application.FakeMembershipRepository
 import com.theprodeogroup.fish.application.FakePayRunRepository
 import com.theprodeogroup.fish.application.FakePeriodRepository
-import com.theprodeogroup.fish.application.FakePurchaseOrderRepository
 import com.theprodeogroup.fish.application.FakeSalesInvoiceRecordRepository
-import com.theprodeogroup.fish.application.FakeSalesOrderRepository
-import com.theprodeogroup.fish.application.FakeStockItemRepository
-import com.theprodeogroup.fish.application.FakeStockShortageEscalationRepository
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.FakeTenantRepository
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
@@ -23,22 +19,16 @@ import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.FakeTaxRuleRepository
 import com.theprodeogroup.fish.application.FakeTaxComputationRepository
 import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
-import com.theprodeogroup.fish.application.IssueStockForSaleUseCase
 import com.theprodeogroup.fish.application.FakeStaffInviteNotificationGateway
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
-import com.theprodeogroup.fish.application.PostInventoryIssueUseCase
-import com.theprodeogroup.fish.application.PostInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.PostPayRunUseCase
-import com.theprodeogroup.fish.application.PostPurchaseOrderUseCase
-import com.theprodeogroup.fish.application.PostSalesOrderUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
-import com.theprodeogroup.fish.application.ComputeInventoryScheduleUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
@@ -102,30 +92,16 @@ class RecordVendorObligationAndPaymentRoutesTest {
         val accountRepository = FakeAccountRepository()
         val journalEntryRepository = FakeJournalEntryRepository()
         val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
-        val purchaseOrderRepository = FakePurchaseOrderRepository()
-        val stockItemRepository = FakeStockItemRepository()
-        val stockShortageEscalationRepository = FakeStockShortageEscalationRepository()
-        val issueStockForSaleUseCase = IssueStockForSaleUseCase(stockItemRepository, stockShortageEscalationRepository)
-        val postPurchaseOrderUseCase = PostPurchaseOrderUseCase(
-            purchaseOrderRepository, FakeCreditorRepository(), stockItemRepository, periodRepository, accountRepository, journalEntryRepository
-        )
         val payRunRepository = FakePayRunRepository()
         val postPayRunUseCase = PostPayRunUseCase(payRunRepository, periodRepository, accountRepository, journalEntryRepository)
         val leaveAccrualRepository = FakeLeaveAccrualRepository()
         val remeasureLeaveAccrualUseCase = RemeasureLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
         val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
-        val postInventoryReceiptUseCase = PostInventoryReceiptUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
-        val postInventoryIssueUseCase = PostInventoryIssueUseCase(stockItemRepository, periodRepository, accountRepository, journalEntryRepository)
-        val computeInventoryScheduleUseCase = ComputeInventoryScheduleUseCase(companyRepository, stockItemRepository)
-        val salesOrderRepository = FakeSalesOrderRepository()
         val customerRepository = FakeCustomerRepository()
-        val postSalesOrderUseCase = PostSalesOrderUseCase(
-            salesOrderRepository, customerRepository, stockItemRepository, periodRepository, accountRepository, journalEntryRepository
-        )
         val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
         val salesInvoiceRecordRepository = FakeSalesInvoiceRecordRepository()
         val createSalesInvoiceUseCase = CreateSalesInvoiceUseCase(
-            periodRepository, accountRepository, customerRepository, journalEntryRepository, stockItemRepository, FakeStockShortageEscalationRepository(), salesInvoiceRecordRepository
+            periodRepository, accountRepository, customerRepository, journalEntryRepository, salesInvoiceRecordRepository
         )
         val listSalesInvoicesUseCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
         val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -180,20 +156,11 @@ class RecordVendorObligationAndPaymentRoutesTest {
                 accountRepository = accountRepository,
                 journalEntryRepository = journalEntryRepository,
                 postJournalEntryUseCase = postJournalEntryUseCase,
-                purchaseOrderRepository = purchaseOrderRepository,
-                postPurchaseOrderUseCase = postPurchaseOrderUseCase,
                 payRunRepository = payRunRepository,
                 postPayRunUseCase = postPayRunUseCase,
                 leaveAccrualRepository = leaveAccrualRepository,
                 remeasureLeaveAccrualUseCase = remeasureLeaveAccrualUseCase,
                 utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase,
-                stockItemRepository = stockItemRepository,
-                issueStockForSaleUseCase = issueStockForSaleUseCase,
-                postInventoryReceiptUseCase = postInventoryReceiptUseCase,
-                postInventoryIssueUseCase = postInventoryIssueUseCase,
-                computeInventoryScheduleUseCase = computeInventoryScheduleUseCase,
-                salesOrderRepository = salesOrderRepository,
-                postSalesOrderUseCase = postSalesOrderUseCase,
                 recordSaleUseCase = recordSaleUseCase,
                 createSalesInvoiceUseCase = createSalesInvoiceUseCase,
                 listSalesInvoicesUseCase = listSalesInvoicesUseCase,

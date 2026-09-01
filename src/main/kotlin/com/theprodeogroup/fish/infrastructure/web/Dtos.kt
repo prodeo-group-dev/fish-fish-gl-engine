@@ -40,19 +40,6 @@ data class JournalEntryResponseDto(
     val status: String
 )
 
-@Serializable
-data class PostPurchaseOrderRequestDto(
-    val periodId: String,
-    val apControlAccountId: String
-)
-
-@Serializable
-data class PostPurchaseOrderResponseDto(
-    val purchaseOrderId: String,
-    val status: String,
-    val journalEntryId: String
-)
-
 /**
  * The HR/Payroll posting interface's wire shapes (docs/DDD_Design.md
  * Section 10.20) - `PostPayRun`/`RemeasureLeaveAccrual`/`UtilizeLeaveAccrual`
@@ -110,45 +97,6 @@ data class LeaveAccrualResponseDto(
     val journalEntryStatus: String? = null
 )
 
-/**
- * Inventory Management's standalone posting interface's wire shapes
- * (docs/DDD_Design.md Section 10.21) - `PostInventoryReceipt`/
- * `PostInventoryIssue` are the fixed contract the separate Inventory
- * Management system calls into, the same treatment given HR/Payroll's
- * `PostPayRun`/`RemeasureLeaveAccrual`/`UtilizeLeaveAccrual` in Section
- * 10.20.
- */
-@Serializable
-data class PostInventoryReceiptRequestDto(
-    val quantityReceived: String,
-    val costReceived: String,
-    val costCurrency: String,
-    val inventoryAssetAccountId: String,
-    val contraAccountId: String,
-    val periodId: String,
-    val date: String
-)
-
-@Serializable
-data class PostInventoryIssueRequestDto(
-    val quantityIssued: String,
-    val inventoryAssetAccountId: String,
-    val contraAccountId: String,
-    val periodId: String,
-    val date: String
-)
-
-/** Shared response shape for both inventory posting endpoints. */
-@Serializable
-data class StockItemJournalEntryResponseDto(
-    val stockItemId: String,
-    val quantityOnHand: String,
-    val unitCost: String,
-    val unitCostCurrency: String,
-    val journalEntryId: String,
-    val journalEntryStatus: String
-)
-
 @Serializable
 data class InventoryPostingContextResponseDto(
     val periodId: String,
@@ -163,42 +111,6 @@ data class PurchasePostingContextResponseDto(
     val expenseOrAssetAccountId: String,
     val settlementAccountId: String,
     val currency: String
-)
-
-@Serializable
-data class IssueStockForSaleRequestDto(
-    val quantity: String,
-    val requestedByEmail: String,
-    val callerCanOverrideStockCheck: Boolean = false
-)
-
-@Serializable
-data class IssueStockForSaleResponseDto(
-    val committedCost: String,
-    val committedCostCurrency: String
-)
-
-/**
- * `PostSalesOrderUseCase`'s wire shape (docs/DDD_Design.md Section
- * 10.22) - completes the "ecosystem" HTTP surface: Purchase Order and
- * Inventory Management were already open, Sales Order Processing was
- * the one remaining gap. [cogsExpenseAccountId]/[inventoryAssetAccountId]
- * are only required for a GOODS line, matching `PostSalesOrderUseCase.Request`.
- */
-@Serializable
-data class PostSalesOrderRequestDto(
-    val lineIndex: Int,
-    val periodId: String,
-    val arControlAccountId: String,
-    val cogsExpenseAccountId: String? = null,
-    val inventoryAssetAccountId: String? = null
-)
-
-@Serializable
-data class PostSalesOrderResponseDto(
-    val salesOrderId: String,
-    val status: String,
-    val journalEntryId: String
 )
 
 /**
@@ -267,42 +179,7 @@ data class CreateSalesInvoiceRequestDto(
     val amount: String,
     val currency: String,
     val date: String? = null,
-    val description: String? = null,
-    /** Required (with [quantity]) when [saleType] is GOODS - which StockItem is being sold. */
-    val stockItemId: String? = null,
-    val quantity: String? = null
-)
-
-/** `GET /companies/{companyId}/stock-items` - just enough for a "pick an item" UI, not the full StockItem shape. */
-@Serializable
-data class StockItemSummaryDto(
-    val stockItemId: String,
-    val name: String,
-    val quantityOnHand: String,
-    val currency: String
-)
-
-/** `GET /companies/{companyId}/inventory-schedule` - the "Schedule of Inventory" report. */
-@Serializable
-data class InventoryScheduleLineDto(
-    val stockItemId: String,
-    val name: String,
-    val stage: String,
-    val quantityOnHand: String,
-    val unitCost: String,
-    val totalValue: String,
-    val nrvWriteDownPerUnit: String,
-    val carryingValuePerUnit: String,
-    val totalCarryingValue: String
-)
-
-@Serializable
-data class InventoryScheduleResponseDto(
-    val asOfDate: String,
-    val currency: String,
-    val lines: List<InventoryScheduleLineDto>,
-    val totalCost: String,
-    val totalCarryingValue: String
+    val description: String? = null
 )
 
 /** `GET /companies/{companyId}/accounts` - the Chart of Accounts, for a manual journal entry form's line-item account picker. */
@@ -431,12 +308,13 @@ data class RecordVendorPaymentResponseDto(
  * above, for the separate, not-built-here `fish-inventory-management`
  * (IM) system, which now owns the whole IAS 2 costing engine. Same
  * reasoning: `companyId` is included directly since neither use case
- * has an owning aggregate in this repo to resolve tenant scoping from
- * - unlike `PostInventoryReceiptRequestDto`/`PostInventoryIssueRequestDto`
- * above, which still resolve tenant scoping via a `StockItem` lookup.
- * `committedCost`/`committedCostCurrency` replace `quantityReceived`/
- * `costReceived` (per-unit) - IM has already computed the total; this
- * repo only records it.
+ * has an owning aggregate in this repo to resolve tenant scoping from.
+ * `committedCost`/`committedCostCurrency` (a caller-supplied total, not
+ * a per-unit figure) reflect that IM has already computed the costing;
+ * this repo only records the financial effect. The older, StockItem-based
+ * `PostInventoryReceipt`/`PostInventoryIssue` posting interface these
+ * once stood alongside was retired 2026-09-01 ("Retire GL's StockItem
+ * from its legacy costing").
  */
 @Serializable
 data class RecordInventoryReceiptRequestDto(

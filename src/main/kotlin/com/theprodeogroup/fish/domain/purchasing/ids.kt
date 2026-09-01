@@ -13,13 +13,3 @@ value class CreditorId(val value: UUID) {
         fun generate(): CreditorId = CreditorId(UUID.randomUUID())
     }
 }
-
-/**
- * Identity of a PurchaseOrder aggregate.
- */
-@JvmInline
-value class PurchaseOrderId(val value: UUID) {
-    companion object {
-        fun generate(): PurchaseOrderId = PurchaseOrderId(UUID.randomUUID())
-    }
-}

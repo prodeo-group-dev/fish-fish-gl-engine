@@ -4,10 +4,6 @@ import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.DomainEvent
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
-import com.theprodeogroup.fish.domain.inventory.StockItemId
-import com.theprodeogroup.fish.domain.inventory.StockItemRepository
-import com.theprodeogroup.fish.domain.inventory.StockShortageEscalation
-import com.theprodeogroup.fish.domain.inventory.StockShortageEscalationRepository
 import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.domain.ledger.AccountType
@@ -24,7 +20,6 @@ import com.theprodeogroup.fish.domain.sales.SaleType
 import com.theprodeogroup.fish.domain.sales.SalesInvoiceRecord
 import com.theprodeogroup.fish.domain.sales.SalesInvoiceRecordRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
-import java.math.BigDecimal
 import java.time.LocalDate
 
 /**
@@ -49,13 +44,6 @@ sealed class CreateSalesInvoiceResult {
     data object ArControlAccountNotConfigured : CreateSalesInvoiceResult()
     data object CashAccountNotConfigured : CreateSalesInvoiceResult()
     data object RevenueAccountNotConfigured : CreateSalesInvoiceResult()
-    data object MissingStockItemSelection : CreateSalesInvoiceResult()
-    data class StockItemNotFound(val stockItemId: StockItemId) : CreateSalesInvoiceResult()
-    data class InsufficientStock(
-        val stockItemId: StockItemId,
-        val requestedQuantity: BigDecimal,
-        val quantityOnHand: BigDecimal
-    ) : CreateSalesInvoiceResult()
 }
 
 /**
@@ -88,35 +76,19 @@ sealed class CreateSalesInvoiceResult {
  * side - without it, AR aging/ECL would silently miss every credit
  * sale made through this entry point.
  *
- * **Stock check for a [SaleType.GOODS] sale (2026-08-29, closing the gap
- * flagged right after this use case first shipped without one).** A
- * GOODS sale requires [Request.stockItemId]/[Request.quantity] -
- * [StockItemRepository.findById] resolves the [com.theprodeogroup.fish.domain.inventory.StockItem],
- * and its `recordIssue` guard (checks-then-mutates, never partially
- * applied) is the actual stock check: if [com.theprodeogroup.fish.domain.inventory.StockItem.quantityOnHand]
- * covers the requested quantity, it's decremented and saved right here,
- * so a second identical sale correctly sees the reduced balance instead
- * of the check going stale. If it doesn't, per the user's own
- * instructions: a [StockShortageEscalation] is always persisted first
- * ("the request for the item is logged and escalated to the owner" -
- * a real, queryable record, not a log line) via [StockShortageEscalationRepository];
- * then, if [Request.callerCanOverrideStockCheck] is `false` (an
- * ordinary WRITE-level caller), the sale is hard-rejected
- * ([CreateSalesInvoiceResult.InsufficientStock], nothing posts). If
- * `true` (an APPROVE-level caller - "it must have an approver status
- * in the least to pass"), the sale proceeds and posts revenue anyway,
- * with the shortfall left visible rather than forcing
- * `quantityOnHand` negative, a fabricated concept nobody asked for -
- * physically restocking, and recording the eventual goods issue once
- * stock exists, stays the Owner's own follow-up via the already-built
- * `RecordInventoryIssueUseCase`. [Request.callerCanOverrideStockCheck]
- * and [Request.requestedByEmail] are both resolved by the route layer
- * from the authenticated caller's `Membership`/`User` - this use case
- * takes plain values, no auth types, matching every other use case in
- * this package. A [SaleType.SERVICE] sale skips all of this - there's
- * no physical stock to check. `POP` linkage (tracing the goods back to
- * the purchase that brought them in) is still unbuilt - only the stock-
- * level side of the original gap is closed here.
+ * **No stock check here (2026-09-01, "Retire GL's StockItem from its
+ * legacy costing" - "GL only needs the monetary value of the assets
+ * and whether the inventory is for resale/trading... or for expenses").**
+ * This use case used to check/decrement GL's own legacy `StockItem`
+ * for a [SaleType.GOODS] sale - that entire mechanism (`StockItemRepository`,
+ * `StockShortageEscalation`, `callerCanOverrideStockCheck`) is gone.
+ * IM is the source of truth for inventory now; a caller who needs a
+ * stock check performs it against IM *before* calling this route (the
+ * same "check against IM first, then post the financial effect"
+ * sequencing `RecordOrdinarySaleUseCase` already established for SOP's
+ * own CREDIT+GOODS path). This use case's own job narrows to exactly
+ * what GL needs: the monetary effect, nothing about which physical
+ * item or how many units moved.
  *
  * **Sales listing (2026-08-29, user request: "a listing of sales (each
  * timestamped) on the SOP screen").** Every success also saves a
@@ -137,8 +109,6 @@ class CreateSalesInvoiceUseCase(
     private val accountRepository: AccountRepository,
     private val customerRepository: CustomerRepository,
     private val journalEntryRepository: JournalEntryRepository,
-    private val stockItemRepository: StockItemRepository,
-    private val stockShortageEscalationRepository: StockShortageEscalationRepository,
     private val salesInvoiceRecordRepository: SalesInvoiceRecordRepository
 ) {
     data class Request(
@@ -149,10 +119,7 @@ class CreateSalesInvoiceUseCase(
         val amount: Money,
         val date: LocalDate,
         val requestedByEmail: String,
-        val description: String? = null,
-        val stockItemId: StockItemId? = null,
-        val quantity: BigDecimal? = null,
-        val callerCanOverrideStockCheck: Boolean = false
+        val description: String? = null
     )
 
     fun execute(request: Request): CreateSalesInvoiceResult {
@@ -178,33 +145,6 @@ class CreateSalesInvoiceUseCase(
                 ?: return CreateSalesInvoiceResult.ArControlAccountNotConfigured
             SaleMethod.CASH -> accounts.firstOrNull { it.type == AccountType.ASSET && it.code == "1000" }
                 ?: return CreateSalesInvoiceResult.CashAccountNotConfigured
-        }
-
-        if (request.saleType == SaleType.GOODS) {
-            val stockItemId = request.stockItemId
-            val quantity = request.quantity
-            if (stockItemId == null || quantity == null || quantity.signum() <= 0) {
-                return CreateSalesInvoiceResult.MissingStockItemSelection
-            }
-            val stockItem = stockItemRepository.findById(stockItemId)
-                ?.takeIf { it.companyId == request.companyId }
-                ?: return CreateSalesInvoiceResult.StockItemNotFound(stockItemId)
-
-            val quantityOnHandBeforeIssue = stockItem.quantityOnHand
-            val issueResult = stockItem.recordIssue(quantity)
-            if (issueResult.isValid) {
-                stockItemRepository.save(stockItem)
-            } else {
-                stockShortageEscalationRepository.save(
-                    StockShortageEscalation.create(
-                        request.companyId, stockItemId, quantity, quantityOnHandBeforeIssue, request.requestedByEmail,
-                        overridden = request.callerCanOverrideStockCheck
-                    )
-                )
-                if (!request.callerCanOverrideStockCheck) {
-                    return CreateSalesInvoiceResult.InsufficientStock(stockItemId, quantity, quantityOnHandBeforeIssue)
-                }
-            }
         }
 
         val customer = customerRepository.findAllByCompany(request.companyId)

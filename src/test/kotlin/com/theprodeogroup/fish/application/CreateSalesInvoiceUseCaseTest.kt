@@ -4,8 +4,6 @@ import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.PeriodType
 import com.theprodeogroup.fish.domain.common.PostingStatus
 import com.theprodeogroup.fish.domain.common.TransactionSide
-import com.theprodeogroup.fish.domain.inventory.StockItem
-import com.theprodeogroup.fish.domain.inventory.StockItemId
 import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountType
@@ -31,10 +29,9 @@ private const val REQUESTED_BY = "cashier@example.com"
  * resolves Period/Cash/AR/Revenue itself from the Chart of Accounts
  * template and finds-or-creates the named Customer.
  *
- * Every `SaleType.GOODS` case here needs a real `StockItem` with enough
- * `quantityOnHand` - 2026-08-29's stock check (see the use case's own
- * KDoc) - `SaleType.SERVICE` is used where the stock mechanics aren't
- * the point of the test, to keep those cases focused.
+ * No stock check happens here (2026-09-01, "Retire GL's StockItem from
+ * its legacy costing" - see the use case's own KDoc) - `SaleType` is
+ * cosmetic now, carried onto the eInvoice only.
  */
 class CreateSalesInvoiceUseCaseTest {
 
@@ -42,12 +39,9 @@ class CreateSalesInvoiceUseCaseTest {
     private val accountRepository = FakeAccountRepository()
     private val customerRepository = FakeCustomerRepository()
     private val journalEntryRepository = FakeJournalEntryRepository()
-    private val stockItemRepository = FakeStockItemRepository()
-    private val stockShortageEscalationRepository = FakeStockShortageEscalationRepository()
     private val salesInvoiceRecordRepository = FakeSalesInvoiceRecordRepository()
     private val useCase = CreateSalesInvoiceUseCase(
-        periodRepository, accountRepository, customerRepository, journalEntryRepository, stockItemRepository,
-        stockShortageEscalationRepository, salesInvoiceRecordRepository
+        periodRepository, accountRepository, customerRepository, journalEntryRepository, salesInvoiceRecordRepository
     )
 
     private val companyId = CompanyId.generate()
@@ -72,24 +66,13 @@ class CreateSalesInvoiceUseCaseTest {
         account("4000", AccountType.REVENUE)
     }
 
-    private fun stockItem(quantityOnHand: String): StockItem {
-        val item = StockItem.create(companyId, "Bag of rice", GBP)
-        item.recordReceipt(BigDecimal(quantityOnHand), Money(BigDecimal("10.00"), GBP))
-        stockItemRepository.save(item)
-        return item
-    }
-
     private fun request(
         saleMethod: SaleMethod,
         customerName: String? = "Jane Doe",
         amount: String = "150.00",
-        saleType: SaleType = SaleType.SERVICE,
-        stockItemId: StockItemId? = null,
-        quantity: String? = null,
-        callerCanOverrideStockCheck: Boolean = false
+        saleType: SaleType = SaleType.SERVICE
     ) = CreateSalesInvoiceUseCase.Request(
-        companyId, saleType, saleMethod, customerName, Money(BigDecimal(amount), GBP), TODAY, REQUESTED_BY,
-        "Bag of rice", stockItemId, quantity?.let { BigDecimal(it) }, callerCanOverrideStockCheck
+        companyId, saleType, saleMethod, customerName, Money(BigDecimal(amount), GBP), TODAY, REQUESTED_BY, "Bag of rice"
     )
 
     @Test
@@ -222,84 +205,4 @@ class CreateSalesInvoiceUseCaseTest {
         second.customer.balance shouldBe Money(BigDecimal("150.00"), GBP)
     }
 
-    // -- GOODS stock check (2026-08-29) --
-
-    @Test
-    fun `given a GOODS sale with no stockItemId or quantity, when executed, then it returns MissingStockItemSelection`() {
-        openPeriod()
-        seedCoa()
-
-        val result = useCase.execute(request(SaleMethod.CASH, saleType = SaleType.GOODS))
-
-        result.shouldBeInstanceOf<CreateSalesInvoiceResult.MissingStockItemSelection>()
-    }
-
-    @Test
-    fun `given a GOODS sale referencing a nonexistent StockItem, when executed, then it returns StockItemNotFound`() {
-        openPeriod()
-        seedCoa()
-
-        val result = useCase.execute(request(SaleMethod.CASH, saleType = SaleType.GOODS, stockItemId = StockItemId.generate(), quantity = "1"))
-
-        result.shouldBeInstanceOf<CreateSalesInvoiceResult.StockItemNotFound>()
-    }
-
-    @Test
-    fun `given a GOODS sale with enough stock on hand, when executed, then it decrements the StockItem's quantity on hand and posts revenue`() {
-        openPeriod()
-        seedCoa()
-        val item = stockItem("10")
-
-        val result = useCase.execute(request(SaleMethod.CASH, saleType = SaleType.GOODS, stockItemId = item.id, quantity = "3"))
-
-        val success = result.shouldBeInstanceOf<CreateSalesInvoiceResult.Success>()
-        success.paid shouldBe true
-        stockItemRepository.findById(item.id)!!.quantityOnHand shouldBe BigDecimal("7")
-        stockShortageEscalationRepository.saveCalls.size shouldBe 0
-    }
-
-    @Test
-    fun `given a GOODS sale with insufficient stock and no override, when executed, then it returns InsufficientStock, logs an escalation, and leaves quantity on hand untouched`() {
-        openPeriod()
-        seedCoa()
-        val item = stockItem("2")
-
-        val result = useCase.execute(request(SaleMethod.CASH, saleType = SaleType.GOODS, stockItemId = item.id, quantity = "5", callerCanOverrideStockCheck = false))
-
-        val insufficient = result.shouldBeInstanceOf<CreateSalesInvoiceResult.InsufficientStock>()
-        insufficient.requestedQuantity shouldBe BigDecimal("5")
-        insufficient.quantityOnHand shouldBe BigDecimal("2")
-        stockItemRepository.findById(item.id)!!.quantityOnHand shouldBe BigDecimal("2")
-        stockShortageEscalationRepository.saveCalls.size shouldBe 1
-        val escalation = stockShortageEscalationRepository.saveCalls.single()
-        escalation.stockItemId shouldBe item.id
-        escalation.requestedByEmail shouldBe REQUESTED_BY
-        escalation.overridden shouldBe false
-    }
-
-    @Test
-    fun `given a GOODS sale with insufficient stock and an Approver override, when executed, then it posts revenue anyway, logs an overridden escalation, and leaves quantity on hand untouched`() {
-        openPeriod()
-        seedCoa()
-        val item = stockItem("2")
-
-        val result = useCase.execute(request(SaleMethod.CASH, saleType = SaleType.GOODS, stockItemId = item.id, quantity = "5", callerCanOverrideStockCheck = true))
-
-        val success = result.shouldBeInstanceOf<CreateSalesInvoiceResult.Success>()
-        success.paid shouldBe true
-        stockItemRepository.findById(item.id)!!.quantityOnHand shouldBe BigDecimal("2")
-        stockShortageEscalationRepository.saveCalls.size shouldBe 1
-        stockShortageEscalationRepository.saveCalls.single().overridden shouldBe true
-    }
-
-    @Test
-    fun `given a SERVICE sale, when executed, then no StockItem lookup or stock check happens`() {
-        openPeriod()
-        seedCoa()
-
-        val result = useCase.execute(request(SaleMethod.CASH, saleType = SaleType.SERVICE))
-
-        result.shouldBeInstanceOf<CreateSalesInvoiceResult.Success>()
-        stockShortageEscalationRepository.saveCalls.size shouldBe 0
-    }
 }

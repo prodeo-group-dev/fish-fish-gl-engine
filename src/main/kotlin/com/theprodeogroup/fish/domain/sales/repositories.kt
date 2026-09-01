@@ -14,12 +14,6 @@ interface CustomerRepository {
     fun findAllByCompany(companyId: CompanyId): List<Customer>
 }
 
-interface SalesOrderRepository {
-    fun save(salesOrder: SalesOrder)
-    fun findById(id: SalesOrderId): SalesOrder?
-    fun findAllByCompany(companyId: CompanyId): List<SalesOrder>
-}
-
 /** Persistence contract for [SalesInvoiceRecord] - append-only, no update path. */
 interface SalesInvoiceRecordRepository {
     fun save(record: SalesInvoiceRecord)

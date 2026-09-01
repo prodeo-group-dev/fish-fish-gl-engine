@@ -15,13 +15,3 @@ value class CustomerId(val value: UUID) {
         fun generate(): CustomerId = CustomerId(UUID.randomUUID())
     }
 }
-
-/**
- * Identity of a SalesOrder aggregate.
- */
-@JvmInline
-value class SalesOrderId(val value: UUID) {
-    companion object {
-        fun generate(): SalesOrderId = SalesOrderId(UUID.randomUUID())
-    }
-}
