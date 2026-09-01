@@ -124,6 +124,12 @@ data "aws_iam_policy_document" "sop_ecs_task_execution_secrets" {
       data.aws_secretsmanager_secret.sop_db_password.arn,
       aws_secretsmanager_secret.sop_service_account_password.arn,
       aws_secretsmanager_secret.sop_service_account_client_secret.arn,
+      # SOP's own service-account credentials for calling IM (2026-09-01,
+      # "Wire SOP's issue-side linkage to IM") - the exact same gap
+      # IM's and POP's own execution roles hit and needed fixing for
+      # their own service-account secrets, avoided here from the start.
+      aws_secretsmanager_secret.sop_im_service_account_password.arn,
+      aws_secretsmanager_secret.sop_im_service_account_client_secret.arn,
     ]
   }
 }
@@ -382,13 +388,22 @@ resource "aws_ecs_task_definition" "sop" {
         # its own ID token at runtime.
         { name = "SOP_GL_ENGINE_SERVICE_ACCOUNT_USERNAME", value = var.sop_service_account_email },
         { name = "SOP_GL_ENGINE_SERVICE_ACCOUNT_CLIENT_ID", value = aws_cognito_user_pool_client.sop_service.id },
-        { name = "SOP_GL_ENGINE_COGNITO_REGION", value = var.aws_region }
+        { name = "SOP_GL_ENGINE_COGNITO_REGION", value = var.aws_region },
+        # SOP's own call into IM (2026-09-01, "Wire SOP's issue-side
+        # linkage to IM") - a dedicated Cognito service-account
+        # identity, distinct from the GL-facing one above.
+        { name = "SOP_IM_BASE_URL", value = "https://${var.im_domain_name}/api" },
+        { name = "SOP_IM_COGNITO_REGION", value = var.aws_region },
+        { name = "SOP_IM_SERVICE_ACCOUNT_CLIENT_ID", value = aws_cognito_user_pool_client.sop_im_service.id },
+        { name = "SOP_IM_SERVICE_ACCOUNT_USERNAME", value = var.sop_im_service_account_email }
       ]
 
       secrets = [
         { name = "SOP_DB_PASSWORD", valueFrom = data.aws_secretsmanager_secret.sop_db_password.arn },
         { name = "SOP_GL_ENGINE_SERVICE_ACCOUNT_PASSWORD", valueFrom = aws_secretsmanager_secret.sop_service_account_password.arn },
-        { name = "SOP_GL_ENGINE_SERVICE_ACCOUNT_CLIENT_SECRET", valueFrom = aws_secretsmanager_secret.sop_service_account_client_secret.arn }
+        { name = "SOP_GL_ENGINE_SERVICE_ACCOUNT_CLIENT_SECRET", valueFrom = aws_secretsmanager_secret.sop_service_account_client_secret.arn },
+        { name = "SOP_IM_SERVICE_ACCOUNT_PASSWORD", valueFrom = aws_secretsmanager_secret.sop_im_service_account_password.arn },
+        { name = "SOP_IM_SERVICE_ACCOUNT_CLIENT_SECRET", valueFrom = aws_secretsmanager_secret.sop_im_service_account_client_secret.arn }
       ]
 
       logConfiguration = {
