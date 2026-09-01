@@ -10,6 +10,7 @@ import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
 import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
+import com.theprodeogroup.fish.application.ComputeInventoryPostingContextUseCase
 import com.theprodeogroup.fish.application.ComputePurchasePostingContextUseCase
 import com.theprodeogroup.fish.application.ComputeSalesPostingContextUseCase
 import com.theprodeogroup.fish.application.IssueStockForSaleUseCase
@@ -234,6 +235,7 @@ fun Application.productionModule() {
     fishModule(
         verifier = buildJwksVerifier(),
         serviceVerifier = buildJwksServiceVerifier(),
+        imServiceVerifier = buildJwksServiceVerifierForIm(),
         userRepository = userRepository,
         membershipRepository = membershipRepository,
         companyRepository = companyRepository,
@@ -296,6 +298,7 @@ fun Application.productionModule() {
 fun Application.fishModule(
     verifier: JWTVerifier,
     serviceVerifier: JWTVerifier? = null,
+    imServiceVerifier: JWTVerifier? = null,
     userRepository: UserRepository,
     membershipRepository: MembershipRepository,
     companyRepository: CompanyRepository,
@@ -385,7 +388,7 @@ fun Application.fishModule(
             call.respond(HttpStatusCode.InternalServerError, ErrorResponseDto("internal_error"))
         }
     }
-    installFishJwtAuth(verifier, userRepository, membershipRepository, serviceVerifier ?: verifier)
+    installFishJwtAuth(verifier, userRepository, membershipRepository, serviceVerifier ?: verifier, imServiceVerifier ?: verifier)
 
     routing {
         // Unprefixed and outside /api deliberately - the ALB target
@@ -429,6 +432,9 @@ fun Application.fishModule(
                 )
                 purchasePostingContextRoutes(
                     ComputePurchasePostingContextUseCase(companyRepository, periodRepository, accountRepository), companyRepository
+                )
+                inventoryPostingContextRoutes(
+                    ComputeInventoryPostingContextUseCase(companyRepository, periodRepository, accountRepository), companyRepository
                 )
                 expenseVelocityRoutes(computeExpenseVelocityUseCase, companyRepository)
                 salesToExpenseRatioRoutes(computeSalesToExpenseRatioUseCase, companyRepository)

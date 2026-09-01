@@ -54,6 +54,7 @@ resource "aws_ecs_task_definition" "this" {
         # a second, deliberately-provisioned Cognito app client, additive to
         # (never a replacement for) the "web" client's own audience above.
         { name = "FISH_JWT_SERVICE_AUDIENCE", value = aws_cognito_user_pool_client.sop_service.id },
+        { name = "FISH_JWT_SERVICE_AUDIENCE_IM", value = aws_cognito_user_pool_client.im_service.id },
         { name = "FISH_JWT_JWKS_URL", value = local.fish_jwt_jwks_url },
         # Was unset ("wherever fish-gl-web ends up actually hosted,
         # which isn't decided yet" - Application.kt's own comment) until

@@ -150,6 +150,13 @@ data class StockItemJournalEntryResponseDto(
 )
 
 @Serializable
+data class InventoryPostingContextResponseDto(
+    val periodId: String,
+    val apControlAccountId: String,
+    val currency: String
+)
+
+@Serializable
 data class PurchasePostingContextResponseDto(
     val periodId: String,
     val apControlAccountId: String,

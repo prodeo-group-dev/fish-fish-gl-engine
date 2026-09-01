@@ -239,6 +239,54 @@ variable "sop_service_account_email" {
   default     = "sop-service@theprodeogroup.com"
 }
 
+variable "im_gl_engine_tenant_id" {
+  description = "IM_GL_ENGINE_TENANT_ID - Prodeo Group's real tenant UUID in GL's own system, same value as pop_gl_engine_tenant_id/sop_gl_engine_tenant_id (all three call the same GL Engine as the same tenant)."
+  type        = string
+  default     = "9fa2198b-2a6f-467d-97ac-6f6fbce6a9fd"
+}
+
+variable "im_gl_engine_company_id" {
+  description = "IM_GL_ENGINE_COMPANY_ID - same value as pop_gl_engine_company_id, Prodeo Group's real company UUID in GL's own system."
+  type        = string
+  default     = "2ee7984b-1817-4148-ad04-653df9de724a"
+}
+
+variable "im_service_account_email" {
+  description = "The Cognito username/email for IM's service-account identity (im_service_account.tf) - resolves IM_GL_ENGINE_BEARER_TOKEN. Never sent an email (message_action = SUPPRESS), so this doesn't need to be a real, monitored mailbox."
+  type        = string
+  default     = "im-service@theprodeogroup.com"
+}
+
+variable "im_short_name" {
+  description = "Short identifier for IM's length-constrained AWS resources (ALB target group name has a 32-char limit) - same reasoning as pop_short_name."
+  type        = string
+  default     = "fish-im"
+}
+
+variable "im_domain_name" {
+  description = "FQDN IM is reachable at - a dedicated subdomain, matching pop_domain_name's own reasoning (a separate service with its own ALB listener rule and ACM certificate, not a path on GL's own domain)."
+  type        = string
+  default     = "im-api.theprodeogroup.com"
+}
+
+variable "im_db_name" {
+  description = "IM's own Postgres database name on the shared RDS instance (rds.tf) - separate logical database, own credentials, same reasoning as pop_db_name."
+  type        = string
+  default     = "im_production"
+}
+
+variable "im_db_user" {
+  description = "IM's own Postgres user - separate credentials from GL's/POP's/SOP's own, same reasoning as pop_db_user."
+  type        = string
+  default     = "im_app"
+}
+
+variable "im_github_oidc_subject" {
+  description = "The OIDC subject claim allowed to assume IM's deploy role - restricts deploys to pushes on master specifically. See iam.tf's github_oidc_subject for the GL equivalent."
+  type        = string
+  default     = "repo:prodeo-group-dev/fish-inventory-management:ref:refs/heads/master"
+}
+
 # --- Self-hosted GitHub Actions runner (github_runner.tf) ------------
 #
 # 2026-08-30: GitHub Actions' hosted runners have been disabled
