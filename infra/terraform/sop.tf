@@ -12,14 +12,15 @@
 # exceed Free Tier hours" reasoning as POP's), the OIDC deploy role,
 # and the ACM certificate.
 #
-# SOP_GL_ENGINE_BEARER_TOKEN is deliberately NOT set below - it's a
-# lambda in SOP's own Application.kt (`val glBearerTokenProvider = {
-# ... }`), evaluated only when record-sale/record-collection are
-# actually invoked, not at process startup (verified by reading the
-# source before writing this - Application.kt lines 76-79). Every
-# other route (health, customers) works immediately. How SOP
-# authenticates to GL Engine is a deliberately deferred decision, same
-# treatment POP's own bearer token got.
+# SOP_GL_ENGINE_BEARER_TOKEN itself no longer appears below as a
+# static value - resolved 2026-09-01 via sop_service_account.tf: SOP
+# logs into Cognito at runtime as a dedicated service-account identity
+# and caches/refreshes its own ID token, the same way `Application.kt`'s
+# `glBearerTokenProvider` lambda always expected a real token source to
+# eventually replace the "environment variable required" placeholder
+# it started as (verified by reading the source before writing this -
+# Application.kt). POP's own bearer token remains a separately deferred
+# decision - this file doesn't resolve that one.
 #
 # SOP's own database password already exists in Secrets Manager
 # (fish-sales-order-processing/production/db-password, created
@@ -117,9 +118,13 @@ resource "aws_iam_role_policy_attachment" "sop_ecs_task_execution_managed" {
 
 data "aws_iam_policy_document" "sop_ecs_task_execution_secrets" {
   statement {
-    effect    = "Allow"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = [data.aws_secretsmanager_secret.sop_db_password.arn]
+    effect  = "Allow"
+    actions = ["secretsmanager:GetSecretValue"]
+    resources = [
+      data.aws_secretsmanager_secret.sop_db_password.arn,
+      aws_secretsmanager_secret.sop_service_account_password.arn,
+      aws_secretsmanager_secret.sop_service_account_client_secret.arn,
+    ]
   }
 }
 
@@ -370,12 +375,20 @@ resource "aws_ecs_task_definition" "sop" {
         # route("/api"), same precedent as POP's own base URL.
         { name = "SOP_GL_ENGINE_BASE_URL", value = "https://${var.domain_name}/api" },
         { name = "SOP_GL_ENGINE_TENANT_ID", value = var.sop_gl_engine_tenant_id },
-        { name = "SOP_CORS_ALLOWED_ORIGIN", value = "https://${var.domain_name}" }
-        # SOP_GL_ENGINE_BEARER_TOKEN deliberately omitted - see file header.
+        { name = "SOP_CORS_ALLOWED_ORIGIN", value = "https://${var.domain_name}" },
+        # SOP_GL_ENGINE_BEARER_TOKEN itself is no longer a static value -
+        # resolved 2026-09-01 (sop_service_account.tf): SOP logs into
+        # Cognito as this service-account identity and caches/refreshes
+        # its own ID token at runtime.
+        { name = "SOP_GL_ENGINE_SERVICE_ACCOUNT_USERNAME", value = var.sop_service_account_email },
+        { name = "SOP_GL_ENGINE_SERVICE_ACCOUNT_CLIENT_ID", value = aws_cognito_user_pool_client.sop_service.id },
+        { name = "SOP_GL_ENGINE_COGNITO_REGION", value = var.aws_region }
       ]
 
       secrets = [
-        { name = "SOP_DB_PASSWORD", valueFrom = data.aws_secretsmanager_secret.sop_db_password.arn }
+        { name = "SOP_DB_PASSWORD", valueFrom = data.aws_secretsmanager_secret.sop_db_password.arn },
+        { name = "SOP_GL_ENGINE_SERVICE_ACCOUNT_PASSWORD", valueFrom = aws_secretsmanager_secret.sop_service_account_password.arn },
+        { name = "SOP_GL_ENGINE_SERVICE_ACCOUNT_CLIENT_SECRET", valueFrom = aws_secretsmanager_secret.sop_service_account_client_secret.arn }
       ]
 
       logConfiguration = {

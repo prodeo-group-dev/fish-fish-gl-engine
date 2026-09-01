@@ -232,7 +232,12 @@
         "cognito-idp:UpdateUserPoolClient",
         "cognito-idp:AdminConfirmSignUp",
         "cognito-idp:AdminGetUser",
-        "cognito-idp:AdminDeleteUser"
+        "cognito-idp:AdminCreateUser",
+        "cognito-idp:AdminDeleteUser",
+        "cognito-idp:AdminSetUserPassword",
+        "cognito-idp:AdminUpdateUserAttributes",
+        "cognito-idp:AdminEnableUser",
+        "cognito-idp:AdminDisableUser"
       ],
       "Resource": "*"
     },

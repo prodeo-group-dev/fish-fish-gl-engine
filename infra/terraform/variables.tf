@@ -227,6 +227,12 @@ variable "sop_gl_engine_tenant_id" {
   default     = "9fa2198b-2a6f-467d-97ac-6f6fbce6a9fd"
 }
 
+variable "sop_service_account_email" {
+  description = "The Cognito username/email for SOP's service-account identity (sop_service_account.tf) - resolves SOP_GL_ENGINE_BEARER_TOKEN. Never sent an email (message_action = SUPPRESS), so this doesn't need to be a real, monitored mailbox."
+  type        = string
+  default     = "sop-service@theprodeogroup.com"
+}
+
 # --- Self-hosted GitHub Actions runner (github_runner.tf) ------------
 #
 # 2026-08-30: GitHub Actions' hosted runners have been disabled
