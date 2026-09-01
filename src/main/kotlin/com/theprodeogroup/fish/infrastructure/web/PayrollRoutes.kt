@@ -1,8 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
-import com.theprodeogroup.fish.application.PostPayRunResult
-import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.RecordPayRunResult
 import com.theprodeogroup.fish.application.RecordPayRunUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualResult
@@ -16,8 +14,6 @@ import com.theprodeogroup.fish.domain.payroll.EmployeeId
 import com.theprodeogroup.fish.domain.payroll.LeaveAccrual
 import com.theprodeogroup.fish.domain.payroll.LeaveAccrualId
 import com.theprodeogroup.fish.domain.payroll.LeaveAccrualRepository
-import com.theprodeogroup.fish.domain.payroll.PayRunId
-import com.theprodeogroup.fish.domain.payroll.PayRunRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
@@ -35,32 +31,36 @@ import java.util.Currency
 
 /**
  * The HR/Payroll system's posting interface, opened up over HTTP
- * (docs/DDD_Design.md Section 10.20) - `PostPayRunUseCase`/
+ * (docs/DDD_Design.md Section 10.20) - `RecordPayRunUseCase`/
  * `RemeasureLeaveAccrualUseCase`/`UtilizeLeaveAccrualUseCase` are
  * confirmed as exactly the fixed contract the separate, not-built-here
  * HR/Payroll system calls into (the same relationship Lending/Scrip/
- * Osusu already have to this repo) - these three routes are that
- * contract's actual HTTP surface, following the identical auth ->
- * tenant-ownership -> use-case -> `Result`-to-HTTP pattern already
- * established by `journalEntryRoutes`/`purchaseOrderRoutes` (Section
- * 10.19), applied mechanically now that the pattern is proven.
+ * Osusu already have to this repo) - these routes are that contract's
+ * actual HTTP surface, following the identical auth -> tenant-ownership
+ * -> use-case -> `Result`-to-HTTP pattern already established by
+ * `journalEntryRoutes` (Section 10.19), applied mechanically now that
+ * the pattern is proven.
  *
- * **Three routes, not two** - `RemeasureLeaveAccrualUseCase` and
- * `UtilizeLeaveAccrualUseCase` are separate use cases (Section 10.18's
- * own reasoning: genuinely distinct domain operations, matching
+ * **`POST /pay-runs/{payRunId}/post` (`PostPayRunUseCase`) retired
+ * 2026-09-01** - confirmed dead via `fish-hr-payroll`'s own
+ * `KtorGlEngineGateway`, which only ever calls `POST /payroll/record-pay-run`.
+ * `PayRun` has no double-post guard of its own (unlike `PurchaseOrder`'s
+ * `PurchaseOrderNotDraft`), so a persisted-lookup-by-ID posting flow
+ * with nothing to create one was the exact same dead end
+ * `PostPurchaseOrderUseCase`/`PostSalesOrderUseCase`/
+ * `PostInventoryReceiptUseCase`/`PostInventoryIssueUseCase` all turned
+ * out to be - retired the same day for the same reason.
+ *
+ * **Remeasure and Utilize are separate use cases** (Section 10.18's own
+ * reasoning: genuinely distinct domain operations, matching
  * `PostJournalEntryUseCase`/`ReverseJournalEntryUseCase`'s split), so
  * they get separate routes rather than one route with an operation
  * discriminator.
  *
- * **Two more routes added alongside the original three** -
- * `POST /payroll/record-pay-run` and `POST /leave-accruals` close the
- * gap those three left: neither `PostPayRunUseCase` nor
- * `RemeasureLeaveAccrualUseCase`/`UtilizeLeaveAccrualUseCase` has any
- * way to create the `PayRun`/`LeaveAccrual` they require by ID. Both
- * new routes follow `recordSaleAndCollectionRoutes`' precedent for a
- * thin interface with no owning aggregate: `companyId` travels in the
- * request body rather than being derived from a path-resolved
- * aggregate.
+ * **`POST /payroll/record-pay-run` and `POST /leave-accruals`** follow
+ * `recordSaleAndCollectionRoutes`' precedent for a thin interface with
+ * no owning aggregate: `companyId` travels in the request body rather
+ * than being derived from a path-resolved aggregate.
  *
  * **Idempotency-Key support** (docs/GL_Production_Readiness_Plan.md) -
  * every route here that actually posts a `JournalEntry` (all but
@@ -69,15 +69,9 @@ import java.util.Currency
  * deliberately excluded - `GetOrCreateLeaveAccrualUseCase` is already
  * idempotent by design (by `(companyId, employeeId)`, per its own
  * KDoc), so a second idempotency mechanism on top would be pure
- * ceremony. `PostPayRunUseCase`'s route is the one place this
- * genuinely matters most in this file: `PayRun` has no double-post
- * guard of its own at all (unlike `PurchaseOrder`'s `PurchaseOrderNotDraft`),
- * so an idempotency key is the *only* protection against a retried
- * request posting the same pay run twice.
+ * ceremony.
  */
 fun Route.payrollRoutes(
-    postPayRunUseCase: PostPayRunUseCase,
-    payRunRepository: PayRunRepository,
     remeasureLeaveAccrualUseCase: RemeasureLeaveAccrualUseCase,
     utilizeLeaveAccrualUseCase: UtilizeLeaveAccrualUseCase,
     leaveAccrualRepository: LeaveAccrualRepository,
@@ -86,57 +80,6 @@ fun Route.payrollRoutes(
     companyRepository: CompanyRepository,
     idempotencyKeyRepository: IdempotencyKeyRepository
 ) {
-    post("/pay-runs/{payRunId}/post") {
-        val payRunIdRaw = call.parameters["payRunId"]
-        if (payRunIdRaw == null) {
-            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "payRunId path parameter is required"))
-            return@post
-        }
-        val payRunUuid = call.parseUuid(payRunIdRaw) ?: return@post
-        val payRun = payRunRepository.findById(PayRunId(payRunUuid))
-        if (payRun == null) {
-            call.respond(HttpStatusCode.NotFound, ErrorResponseDto("not_found", "PayRun not found"))
-            return@post
-        }
-        val tenantId = call.resolveTenantForCompany(payRun.companyId, companyRepository) ?: return@post
-        if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
-
-        val request = call.receive<PostPayRunRequestDto>()
-        val periodUuid = call.parseUuid(request.periodId) ?: return@post
-        val wagesAccountUuid = call.parseUuid(request.wagesExpenseAccountId) ?: return@post
-        val salariesAccountUuid = call.parseUuid(request.salariesExpenseAccountId) ?: return@post
-        val cashAccountUuid = call.parseUuid(request.cashAccountId) ?: return@post
-
-        call.respondIdempotently(
-            idempotencyKeyRepository, tenantId, "post-pay-run", Json.encodeToString(PostPayRunRequestDto.serializer(), request)
-        ) {
-            val result = postPayRunUseCase.execute(
-                PostPayRunUseCase.Request(
-                    PayRunId(payRunUuid), PeriodId(periodUuid),
-                    AccountId(wagesAccountUuid), AccountId(salariesAccountUuid), AccountId(cashAccountUuid)
-                )
-            )
-
-            when (result) {
-                is PostPayRunResult.Success ->
-                    HttpStatusCode.OK to Json.encodeToString(
-                        PostPayRunResponseDto.serializer(),
-                        PostPayRunResponseDto(result.payRun.id.value.toString(), result.journalEntry.id.value.toString(), result.journalEntry.status.name)
-                    )
-                is PostPayRunResult.PayRunNotFound -> HttpStatusCode.NotFound to errorResponseJson("pay_run_not_found")
-                is PostPayRunResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
-                is PostPayRunResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
-                is PostPayRunResult.WagesExpenseAccountNotFound ->
-                    HttpStatusCode.NotFound to errorResponseJson("wages_expense_account_not_found", result.accountId.value.toString())
-                is PostPayRunResult.SalariesExpenseAccountNotFound ->
-                    HttpStatusCode.NotFound to errorResponseJson("salaries_expense_account_not_found", result.accountId.value.toString())
-                is PostPayRunResult.CashAccountNotFound ->
-                    HttpStatusCode.NotFound to errorResponseJson("cash_account_not_found", result.accountId.value.toString())
-            }
-        }
-    }
-
     post("/leave-accruals/{leaveAccrualId}/remeasure") {
         val leaveAccrual = call.loadLeaveAccrual(leaveAccrualRepository) ?: return@post
         val tenantId = call.resolveTenantForCompany(leaveAccrual.companyId, companyRepository) ?: return@post

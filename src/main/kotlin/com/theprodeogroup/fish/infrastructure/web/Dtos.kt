@@ -42,25 +42,13 @@ data class JournalEntryResponseDto(
 
 /**
  * The HR/Payroll posting interface's wire shapes (docs/DDD_Design.md
- * Section 10.20) - `PostPayRun`/`RemeasureLeaveAccrual`/`UtilizeLeaveAccrual`
+ * Section 10.20) - `RecordPayRun`/`RemeasureLeaveAccrual`/`UtilizeLeaveAccrual`
  * are the fixed contract the (separate, not-built-here) HR/Payroll
  * system calls into, per the already-confirmed HR/Payroll separation.
+ * `PostPayRunRequestDto`/`PostPayRunResponseDto` (the persisted-lookup-
+ * by-ID flow) were removed 2026-09-01 alongside `PostPayRunUseCase` -
+ * dead, confirmed unused by `fish-hr-payroll`'s own gateway.
  */
-@Serializable
-data class PostPayRunRequestDto(
-    val periodId: String,
-    val wagesExpenseAccountId: String,
-    val salariesExpenseAccountId: String,
-    val cashAccountId: String
-)
-
-@Serializable
-data class PostPayRunResponseDto(
-    val payRunId: String,
-    val journalEntryId: String,
-    val journalEntryStatus: String
-)
-
 @Serializable
 data class RemeasureLeaveAccrualRequestDto(
     val targetAmount: String,

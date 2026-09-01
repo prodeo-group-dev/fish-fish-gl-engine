@@ -25,7 +25,7 @@ private val TODAY = LocalDate.of(2026, 8, 20)
 
 /**
  * SOP (fish-sales-order-processing) computes the amount and calls this -
- * no owning aggregate in this repo anymore, matching PostPayRunUseCase's
+ * no owning aggregate in this repo anymore, matching RecordPayRunUseCase's
  * "calling system computes the number" shape but with no domain object
  * at all to load (docs/Sales_Order_Processing_DDD_Design.md Section 0).
  */

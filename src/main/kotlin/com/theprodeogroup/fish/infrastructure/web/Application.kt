@@ -20,7 +20,6 @@ import com.theprodeogroup.fish.application.KybGracePeriodSweep
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
-import com.theprodeogroup.fish.application.PostPayRunUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
@@ -34,7 +33,6 @@ import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.payroll.LeaveAccrualRepository
-import com.theprodeogroup.fish.domain.payroll.PayRunRepository
 import com.theprodeogroup.fish.domain.sales.CustomerRepository
 import com.theprodeogroup.fish.domain.tax.TaxComputationRepository
 import com.theprodeogroup.fish.domain.tax.TaxRuleRepository
@@ -53,7 +51,6 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedIdempotencyKeyR
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedJournalEntryRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedLeaveAccrualRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedMembershipRepository
-import com.theprodeogroup.fish.infrastructure.persistence.ExposedPayRunRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedPeriodRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTaxComputationRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTaxRuleRepository
@@ -101,7 +98,7 @@ import java.time.Duration
  * scope before building - covering both shapes of use case this
  * codebase has, so the pattern was reviewable before being repeated.**
  * **Section 10.20 applies that now-proven pattern to the HR/Payroll
- * posting interface** (`PostPayRunUseCase`/`RemeasureLeaveAccrualUseCase`/
+ * posting interface** (`RecordPayRunUseCase`/`RemeasureLeaveAccrualUseCase`/
  * `UtilizeLeaveAccrualUseCase`) - the fixed contract the separate,
  * not-built-here HR/Payroll system calls into, confirmed with the user
  * directly.
@@ -129,7 +126,6 @@ fun Application.productionModule() {
     val userRepository = ExposedUserRepository()
     val membershipRepository = ExposedMembershipRepository()
     val creditorRepository = ExposedCreditorRepository()
-    val payRunRepository = ExposedPayRunRepository()
     val leaveAccrualRepository = ExposedLeaveAccrualRepository()
     val customerRepository = ExposedCustomerRepository()
     val idempotencyKeyRepository = ExposedIdempotencyKeyRepository()
@@ -151,7 +147,6 @@ fun Application.productionModule() {
     val taxComputationRepository = ExposedTaxComputationRepository()
     val computeTaxUseCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
     val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
-    val postPayRunUseCase = PostPayRunUseCase(payRunRepository, periodRepository, accountRepository, journalEntryRepository)
     val remeasureLeaveAccrualUseCase = RemeasureLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
     val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
     val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -222,8 +217,6 @@ fun Application.productionModule() {
         accountRepository = accountRepository,
         journalEntryRepository = journalEntryRepository,
         postJournalEntryUseCase = postJournalEntryUseCase,
-        payRunRepository = payRunRepository,
-        postPayRunUseCase = postPayRunUseCase,
         leaveAccrualRepository = leaveAccrualRepository,
         remeasureLeaveAccrualUseCase = remeasureLeaveAccrualUseCase,
         utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase,
@@ -276,8 +269,6 @@ fun Application.fishModule(
     accountRepository: AccountRepository,
     journalEntryRepository: JournalEntryRepository,
     postJournalEntryUseCase: PostJournalEntryUseCase,
-    payRunRepository: PayRunRepository,
-    postPayRunUseCase: PostPayRunUseCase,
     leaveAccrualRepository: LeaveAccrualRepository,
     remeasureLeaveAccrualUseCase: RemeasureLeaveAccrualUseCase,
     utilizeLeaveAccrualUseCase: UtilizeLeaveAccrualUseCase,
@@ -367,7 +358,6 @@ fun Application.fishModule(
                     postJournalEntryUseCase, periodRepository, accountRepository, journalEntryRepository, companyRepository, idempotencyKeyRepository
                 )
                 payrollRoutes(
-                    postPayRunUseCase, payRunRepository,
                     remeasureLeaveAccrualUseCase, utilizeLeaveAccrualUseCase, leaveAccrualRepository,
                     recordPayRunUseCase, getOrCreateLeaveAccrualUseCase,
                     companyRepository, idempotencyKeyRepository
