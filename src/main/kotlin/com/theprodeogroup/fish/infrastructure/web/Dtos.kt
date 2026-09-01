@@ -576,6 +576,12 @@ data class RecordAdminPhoneNumberResponseDto(
 )
 
 @Serializable
+data class CompanySummaryDto(
+    val id: String,
+    val name: String
+)
+
+@Serializable
 data class MyTenantDto(
     val tenantId: String,
     val tenantName: String,
@@ -586,7 +592,7 @@ data class MyTenantDto(
     val adminPhoneNumber: String?,
     val adminPhoneVerificationStatus: String,
     val phoneVerificationDeadline: String?,
-    val companyIds: List<String>,
+    val companies: List<CompanySummaryDto>,
     val grantedModules: List<String>
 )
 

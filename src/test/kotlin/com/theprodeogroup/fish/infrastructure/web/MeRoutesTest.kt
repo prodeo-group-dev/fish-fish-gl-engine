@@ -226,7 +226,7 @@ class MeRoutesTest {
         tenantDto.tenantStatus shouldBe "ACTIVE"
         tenantDto.adminPhoneVerificationStatus shouldBe VerificationStatus.PENDING.name
         tenantDto.phoneVerificationDeadline shouldBe fixture.tenant.phoneVerificationDeadline.toString()
-        tenantDto.companyIds shouldBe listOf(fixture.tenant.companyIds.single().value.toString())
+        tenantDto.companies shouldBe listOf(CompanySummaryDto(fixture.tenant.companyIds.single().value.toString(), "Purse UK"))
     }
 
     @Test

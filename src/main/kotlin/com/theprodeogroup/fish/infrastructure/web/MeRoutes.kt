@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.domain.tenancy.TenantRepository
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -21,8 +22,14 @@ import io.ktor.server.routing.get
  * this package) - this only ever returns the caller's own
  * [AuthenticatedCaller.memberships], never another User's data, so
  * there's no X-Tenant-Id/`authorizeTenantForWrite` check to make.
+ *
+ * Resolves each Company's name, not just its id (2026-09-01, "on
+ * logging in to fish I should be given the options to choose the
+ * company I want to work on") - a caller with Memberships spanning
+ * multiple Tenants and/or Companies needs real names to pick from, not
+ * raw UUIDs.
  */
-fun Route.meRoutes(tenantRepository: TenantRepository) {
+fun Route.meRoutes(tenantRepository: TenantRepository, companyRepository: CompanyRepository) {
     get("/me") {
         val caller = call.principal<AuthenticatedCaller>()
         if (caller == null) {
@@ -32,6 +39,9 @@ fun Route.meRoutes(tenantRepository: TenantRepository) {
 
         val tenants = caller.memberships.mapNotNull { membership ->
             val tenant = tenantRepository.findById(membership.tenantId) ?: return@mapNotNull null
+            val companies = tenant.companyIds.mapNotNull { companyId ->
+                companyRepository.findById(companyId)?.let { CompanySummaryDto(it.id.value.toString(), it.name) }
+            }
             MyTenantDto(
                 tenantId = tenant.id.value.toString(),
                 tenantName = tenant.name,
@@ -42,7 +52,7 @@ fun Route.meRoutes(tenantRepository: TenantRepository) {
                 adminPhoneNumber = tenant.adminPhoneNumber?.value,
                 adminPhoneVerificationStatus = tenant.adminPhoneVerificationStatus.name,
                 phoneVerificationDeadline = tenant.phoneVerificationDeadline?.toString(),
-                companyIds = tenant.companyIds.map { it.value.toString() },
+                companies = companies,
                 grantedModules = membership.grantedModules.map { it.name }
             )
         }
