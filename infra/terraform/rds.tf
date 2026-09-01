@@ -62,6 +62,19 @@ resource "aws_security_group" "rds" {
     security_groups = [aws_security_group.sop_service.id]
   }
 
+  # IM (im.tf, 2026-09-01) shares this same RDS instance too, same
+  # reasoning as POP/SOP's own ingress rules above - a new database
+  # (im_production), not a second instance. Missed on the first apply -
+  # the app crash-looped with a Postgres connect timeout until this was
+  # added.
+  ingress {
+    description     = "Postgres from the IM ECS service"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.im_service.id]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0

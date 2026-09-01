@@ -105,9 +105,13 @@ resource "aws_iam_role_policy_attachment" "im_ecs_task_execution_managed" {
 
 data "aws_iam_policy_document" "im_ecs_task_execution_secrets" {
   statement {
-    effect    = "Allow"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = [aws_secretsmanager_secret.im_db_password.arn]
+    effect  = "Allow"
+    actions = ["secretsmanager:GetSecretValue"]
+    resources = [
+      aws_secretsmanager_secret.im_db_password.arn,
+      aws_secretsmanager_secret.im_service_account_password.arn,
+      aws_secretsmanager_secret.im_service_account_client_secret.arn
+    ]
   }
 }
 
@@ -269,7 +273,7 @@ resource "aws_lb_target_group" "im" {
 
 resource "aws_lb_listener_rule" "im" {
   listener_arn = aws_lb_listener.https.arn
-  priority     = 101 # after POP's 100, ahead of GL's own bare default_action
+  priority     = 102 # after POP's 100 and SOP's 101, ahead of GL's own bare default_action
 
   action {
     type             = "forward"
