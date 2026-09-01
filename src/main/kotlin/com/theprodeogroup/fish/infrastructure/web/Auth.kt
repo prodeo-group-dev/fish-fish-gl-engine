@@ -20,6 +20,7 @@ import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.auth.Authentication
 import io.ktor.server.auth.authenticate
+import io.ktor.server.auth.jwt.JWTCredential
 import io.ktor.server.auth.jwt.jwt
 import io.ktor.server.auth.principal
 import io.ktor.server.request.header
@@ -33,6 +34,9 @@ import java.util.concurrent.TimeUnit
 
 /** The primary JWT auth configuration this app registers - see [installFishJwtAuth]. */
 const val FISH_JWT_AUTH_NAME = "fish-jwt"
+
+/** The service-account JWT auth configuration - see [installFishJwtAuth] and [buildJwksServiceVerifier]. */
+const val FISH_JWT_SERVICE_AUTH_NAME = "fish-jwt-service"
 
 /**
  * The onboarding-only JWT auth configuration - see [installFishJwtAuth].
@@ -77,19 +81,27 @@ const val FISH_JWT_ONBOARDING_AUTH_NAME = "fish-jwt-onboarding"
 fun Application.installFishJwtAuth(
     verifier: JWTVerifier,
     userRepository: UserRepository,
-    membershipRepository: MembershipRepository
+    membershipRepository: MembershipRepository,
+    // Defaults to reusing [verifier] - every existing test call site
+    // (fishModule, 18 route test files) passes only the primary
+    // verifier, and registering the service provider against the same
+    // verifier is harmless (it just accepts the same single audience
+    // twice, under two names) rather than a hard requirement to update
+    // every test. Production always passes a real, distinct one.
+    serviceVerifier: JWTVerifier = verifier
 ) {
     install(Authentication) {
         jwt(FISH_JWT_AUTH_NAME) {
             this.verifier(verifier)
-            validate { credential ->
-                val email = credential.payload.getClaim("email").asString() ?: return@validate null
-                val user = userRepository.findByEmail(email) ?: return@validate null
-                val activeMemberships = membershipRepository.findAllByUser(user.id)
-                    .filter { it.status == MembershipStatus.ACTIVE }
-                if (activeMemberships.isEmpty()) return@validate null
-                AuthenticatedCaller(user, activeMemberships)
+            validate { credential -> credential.toAuthenticatedCaller(userRepository, membershipRepository) }
+            challenge { _, _ ->
+                call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
+        }
+
+        jwt(FISH_JWT_SERVICE_AUTH_NAME) {
+            this.verifier(serviceVerifier)
+            validate { credential -> credential.toAuthenticatedCaller(userRepository, membershipRepository) }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
@@ -118,6 +130,18 @@ fun Application.installFishJwtAuth(
     }
 }
 
+/** Shared by [FISH_JWT_AUTH_NAME] and [FISH_JWT_SERVICE_AUTH_NAME] - identical identity resolution, only the accepted audience differs between the two providers. */
+private fun JWTCredential.toAuthenticatedCaller(
+    userRepository: UserRepository,
+    membershipRepository: MembershipRepository
+): AuthenticatedCaller? {
+    val email = payload.getClaim("email").asString() ?: return null
+    val user = userRepository.findByEmail(email) ?: return null
+    val activeMemberships = membershipRepository.findAllByUser(user.id).filter { it.status == MembershipStatus.ACTIVE }
+    if (activeMemberships.isEmpty()) return null
+    return AuthenticatedCaller(user, activeMemberships)
+}
+
 /**
  * Builds the production [JWTVerifier] - JWKS-backed, per-`kid` key
  * lookup against `FISH_JWT_JWKS_URL`, the standard shape for verifying
@@ -129,12 +153,44 @@ fun Application.installFishJwtAuth(
  * required with no default - same "no safe default for a
  * security-relevant value" reasoning `DatabaseConfig` already applies
  * to database credentials.
+ *
+ * **Only ever built with a single audience** - com.auth0's own
+ * `withAudience(vararg)` was tried first for a second, service-account
+ * audience (2026-09-01) and turned out to require the token's `aud`
+ * claim contain *every* listed value, not *any* of them (confirmed via
+ * a throwaway `IncorrectClaimException` test) - useless for "accept
+ * either of two single-audience tokens." [buildJwksServiceVerifier]
+ * builds the second verifier instead; [installFishJwtAuth] registers
+ * both as separate Ktor auth providers and [fishAuthenticated] accepts
+ * either, which is what Ktor's own multi-provider `authenticate(...)`
+ * already exists to do - no custom OR-logic needed once framed this way.
  */
 fun buildJwksVerifier(): JWTVerifier {
     val issuer = System.getenv("FISH_JWT_ISSUER")
         ?: error("FISH_JWT_ISSUER environment variable is required - no default for a security-relevant value")
     val audience = System.getenv("FISH_JWT_AUDIENCE")
         ?: error("FISH_JWT_AUDIENCE environment variable is required - no default for a security-relevant value")
+    return buildJwksVerifierFor(issuer, audience)
+}
+
+/**
+ * The service-account counterpart to [buildJwksVerifier] - a second,
+ * single-audience verifier for `FISH_JWT_SERVICE_AUDIENCE` (SOP's
+ * dedicated Cognito app client, `infra/terraform/sop_service_account.tf`),
+ * not a second value squeezed into the same verifier (see
+ * [buildJwksVerifier]'s own KDoc for why that doesn't work). Returns
+ * `null` when unset - genuinely optional, unlike `FISH_JWT_AUDIENCE`;
+ * [Application.productionModule] falls back to reusing the primary
+ * verifier when this is `null`, so nothing breaks if it's ever unset.
+ */
+fun buildJwksServiceVerifier(): JWTVerifier? {
+    val issuer = System.getenv("FISH_JWT_ISSUER")
+        ?: error("FISH_JWT_ISSUER environment variable is required - no default for a security-relevant value")
+    val serviceAudience = System.getenv("FISH_JWT_SERVICE_AUDIENCE")?.takeIf { it.isNotBlank() } ?: return null
+    return buildJwksVerifierFor(issuer, serviceAudience)
+}
+
+private fun buildJwksVerifierFor(issuer: String, audience: String): JWTVerifier {
     val jwksUrl = System.getenv("FISH_JWT_JWKS_URL")
         ?: error("FISH_JWT_JWKS_URL environment variable is required - no default for a security-relevant value")
 
@@ -162,9 +218,13 @@ fun buildJwksVerifier(): JWTVerifier {
 
 /**
  * Registers every route under [build] behind [FISH_JWT_AUTH_NAME] JWT
- * auth - a thin wrapper over Ktor's own `authenticate(...)`, named for
- * discoverability from route files without every route file needing to
- * know the auth provider's literal name.
+ * auth (or [FISH_JWT_SERVICE_AUTH_NAME], the service-account
+ * counterpart - Ktor's own `authenticate(vararg names)` already treats
+ * multiple provider names as OR-alternatives, exactly the "accept
+ * either of two single-audience tokens" behavior needed here) - a thin
+ * wrapper over Ktor's own `authenticate(...)`, named for discoverability
+ * from route files without every route file needing to know the auth
+ * provider's literal name.
  *
  * Receiver is [Route], not [Routing], specifically so this can be nested
  * inside another `route(...) { }` block (e.g. the `/api` prefix in
@@ -173,7 +233,7 @@ fun buildJwksVerifier(): JWTVerifier {
  * itself is a [Route], so every existing call site still resolves.
  */
 fun Route.fishAuthenticated(build: Route.() -> Unit): Route =
-    authenticate(FISH_JWT_AUTH_NAME, build = build)
+    authenticate(FISH_JWT_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME, build = build)
 
 /** [fishAuthenticated]'s counterpart for [FISH_JWT_ONBOARDING_AUTH_NAME] - see that constant's KDoc. */
 fun Route.fishOnboarding(build: Route.() -> Unit): Route =

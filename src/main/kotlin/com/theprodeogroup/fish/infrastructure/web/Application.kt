@@ -232,6 +232,7 @@ fun Application.productionModule() {
 
     fishModule(
         verifier = buildJwksVerifier(),
+        serviceVerifier = buildJwksServiceVerifier(),
         userRepository = userRepository,
         membershipRepository = membershipRepository,
         companyRepository = companyRepository,
@@ -293,6 +294,7 @@ fun Application.productionModule() {
  */
 fun Application.fishModule(
     verifier: JWTVerifier,
+    serviceVerifier: JWTVerifier? = null,
     userRepository: UserRepository,
     membershipRepository: MembershipRepository,
     companyRepository: CompanyRepository,
@@ -382,7 +384,7 @@ fun Application.fishModule(
             call.respond(HttpStatusCode.InternalServerError, ErrorResponseDto("internal_error"))
         }
     }
-    installFishJwtAuth(verifier, userRepository, membershipRepository)
+    installFishJwtAuth(verifier, userRepository, membershipRepository, serviceVerifier ?: verifier)
 
     routing {
         // Unprefixed and outside /api deliberately - the ALB target
