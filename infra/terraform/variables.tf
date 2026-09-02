@@ -269,6 +269,48 @@ variable "sop_im_service_account_email" {
   default     = "sop-im-service@theprodeogroup.com"
 }
 
+variable "hr_service_account_email" {
+  description = "The Cognito username/email for HR's service-account identity (hr_service_account.tf) - resolves HR_GL_ENGINE_SERVICE_ACCOUNT_USERNAME/PASSWORD. Never sent an email (message_action = SUPPRESS), so this doesn't need to be a real, monitored mailbox."
+  type        = string
+  default     = "hr-service@theprodeogroup.com"
+}
+
+variable "hr_gl_engine_tenant_id" {
+  description = "HR_GL_ENGINE_TENANT_ID - Prodeo Group's real tenant UUID in GL's own system, same value as im_gl_engine_tenant_id/pop_gl_engine_tenant_id/sop_gl_engine_tenant_id (all four call the same GL Engine as the same tenant). Unlike IM/POP/SOP, HR has no fixed company id - RunPayrollUseCase.Request.companyId is caller-supplied per call, since HR's own scope (HR_Payroll_Requirements_Use_Cases.md) spans multiple Companies under this one Tenant (Scrip/Purse/Prodeo Capital/Prodeo Property SPV)."
+  type        = string
+  default     = "9fa2198b-2a6f-467d-97ac-6f6fbce6a9fd"
+}
+
+variable "hr_short_name" {
+  description = "Short identifier for HR's length-constrained AWS resources (ALB target group name has a 32-char limit) - same reasoning as im_short_name."
+  type        = string
+  default     = "fish-hr"
+}
+
+variable "hr_domain_name" {
+  description = "FQDN HR is reachable at - a dedicated subdomain, matching im_domain_name's own reasoning (a separate service with its own ALB listener rule and ACM certificate, not a path on GL's own domain)."
+  type        = string
+  default     = "hr-api.theprodeogroup.com"
+}
+
+variable "hr_db_name" {
+  description = "HR's own Postgres database name on the shared RDS instance (rds.tf) - separate logical database, own credentials, same reasoning as im_db_name."
+  type        = string
+  default     = "hr_production"
+}
+
+variable "hr_db_user" {
+  description = "HR's own Postgres user - separate credentials from GL's/IM's/POP's/SOP's own, same reasoning as im_db_user."
+  type        = string
+  default     = "hr_app"
+}
+
+variable "hr_github_oidc_subject" {
+  description = "The OIDC subject claim allowed to assume HR's deploy role - restricts deploys to pushes on master specifically. See iam.tf's github_oidc_subject for the GL equivalent."
+  type        = string
+  default     = "repo:prodeo-group-dev/fish-hr-payroll:ref:refs/heads/master"
+}
+
 variable "im_short_name" {
   description = "Short identifier for IM's length-constrained AWS resources (ALB target group name has a 32-char limit) - same reasoning as pop_short_name."
   type        = string

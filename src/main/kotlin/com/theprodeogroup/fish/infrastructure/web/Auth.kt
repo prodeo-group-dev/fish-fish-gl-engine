@@ -41,6 +41,9 @@ const val FISH_JWT_SERVICE_AUTH_NAME = "fish-jwt-service"
 /** IM's own service-account JWT auth configuration - see [installFishJwtAuth] and [buildJwksServiceVerifierForIm]. A separate provider, not a second audience squeezed into [FISH_JWT_SERVICE_AUTH_NAME]'s verifier - see [buildJwksVerifier]'s own KDoc for why that doesn't work. */
 const val FISH_JWT_SERVICE_AUTH_NAME_IM = "fish-jwt-service-im"
 
+/** HR/Payroll's own service-account JWT auth configuration (2026-09-02, "Scope and build HR's HTTP layer") - see [installFishJwtAuth] and [buildJwksServiceVerifierForHr]. Same reasoning as [FISH_JWT_SERVICE_AUTH_NAME_IM]: a separate provider per service caller, not a shared audience. */
+const val FISH_JWT_SERVICE_AUTH_NAME_HR = "fish-jwt-service-hr"
+
 /**
  * The onboarding-only JWT auth configuration - see [installFishJwtAuth].
  * Registered separately from [FISH_JWT_AUTH_NAME] because it deliberately
@@ -98,7 +101,11 @@ fun Application.installFishJwtAuth(
     // from SOP's, since [buildJwksVerifier]'s own KDoc already
     // established that one verifier can't accept either-of-two
     // audiences - each service caller needs its own verifier/provider).
-    imServiceVerifier: JWTVerifier = verifier
+    imServiceVerifier: JWTVerifier = verifier,
+    // HR/Payroll's own service-account verifier, same shape as
+    // [imServiceVerifier] - HR gained a real HTTP layer and its own
+    // outbound-calling Cognito identity 2026-09-02.
+    hrServiceVerifier: JWTVerifier = verifier
 ) {
     install(Authentication) {
         jwt(FISH_JWT_AUTH_NAME) {
@@ -119,6 +126,14 @@ fun Application.installFishJwtAuth(
 
         jwt(FISH_JWT_SERVICE_AUTH_NAME_IM) {
             this.verifier(imServiceVerifier)
+            validate { credential -> credential.toAuthenticatedCaller(userRepository, membershipRepository) }
+            challenge { _, _ ->
+                call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
+            }
+        }
+
+        jwt(FISH_JWT_SERVICE_AUTH_NAME_HR) {
+            this.verifier(hrServiceVerifier)
             validate { credential -> credential.toAuthenticatedCaller(userRepository, membershipRepository) }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
@@ -216,6 +231,14 @@ fun buildJwksServiceVerifierForIm(): JWTVerifier? {
     return buildJwksVerifierFor(issuer, serviceAudience)
 }
 
+/** [buildJwksServiceVerifier]'s counterpart for HR/Payroll's own service account (`FISH_JWT_SERVICE_AUDIENCE_HR`, HR's dedicated Cognito app client, `infra/terraform/hr_service_account.tf`). Returns `null` when unset, same reasoning. */
+fun buildJwksServiceVerifierForHr(): JWTVerifier? {
+    val issuer = System.getenv("FISH_JWT_ISSUER")
+        ?: error("FISH_JWT_ISSUER environment variable is required - no default for a security-relevant value")
+    val serviceAudience = System.getenv("FISH_JWT_SERVICE_AUDIENCE_HR")?.takeIf { it.isNotBlank() } ?: return null
+    return buildJwksVerifierFor(issuer, serviceAudience)
+}
+
 private fun buildJwksVerifierFor(issuer: String, audience: String): JWTVerifier {
     val jwksUrl = System.getenv("FISH_JWT_JWKS_URL")
         ?: error("FISH_JWT_JWKS_URL environment variable is required - no default for a security-relevant value")
@@ -259,7 +282,7 @@ private fun buildJwksVerifierFor(issuer: String, audience: String): JWTVerifier 
  * itself is a [Route], so every existing call site still resolves.
  */
 fun Route.fishAuthenticated(build: Route.() -> Unit): Route =
-    authenticate(FISH_JWT_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME_IM, build = build)
+    authenticate(FISH_JWT_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME_IM, FISH_JWT_SERVICE_AUTH_NAME_HR, build = build)
 
 /** [fishAuthenticated]'s counterpart for [FISH_JWT_ONBOARDING_AUTH_NAME] - see that constant's KDoc. */
 fun Route.fishOnboarding(build: Route.() -> Unit): Route =

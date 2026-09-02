@@ -114,3 +114,12 @@ output "github_runner_instance_id" {
   description = "Target for `aws ssm start-session --target <this>` - see github_runner.tf's closing comment for the one-time manual registration step this instance still needs after apply."
   value       = aws_instance.github_runner.id
 }
+
+output "hr_acm_validation_record" {
+  description = "DNS validation record to add at the external provider for hr-api.theprodeogroup.com - a CNAME: name -> value, exactly as ACM generated them. Add this FIRST, before re-running terraform apply (hr.tf's aws_acm_certificate_validation.hr blocks on it)."
+  value = {
+    name  = tolist(aws_acm_certificate.hr.domain_validation_options)[0].resource_record_name
+    type  = tolist(aws_acm_certificate.hr.domain_validation_options)[0].resource_record_type
+    value = tolist(aws_acm_certificate.hr.domain_validation_options)[0].resource_record_value
+  }
+}
