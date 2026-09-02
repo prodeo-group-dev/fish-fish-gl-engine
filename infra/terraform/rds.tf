@@ -75,6 +75,19 @@ resource "aws_security_group" "rds" {
     security_groups = [aws_security_group.im_service.id]
   }
 
+  # HR (hr.tf, 2026-09-02) shares this same RDS instance too, same
+  # reasoning as POP/SOP/IM's own ingress rules above - a new database
+  # (hr_production), not a second instance. Same gap as IM's own first
+  # apply - added proactively here rather than waiting to rediscover it
+  # via another crash-looped connect timeout.
+  ingress {
+    description     = "Postgres from the HR ECS service"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.hr_service.id]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
