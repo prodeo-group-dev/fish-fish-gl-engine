@@ -409,6 +409,8 @@ data class OnboardTenantRequestDto(
     val clientType: String,
     val jurisdiction: String,
     val companyBaseCurrency: String,
+    /** 1 (January) through 12 (December) - "the fiscal year has to be set during Tenant onboarding" (2026-09-02), required, no default. */
+    val fiscalYearStartMonth: Int,
     val adminName: String,
     val openingCashBalance: String? = null,
     val moduleManagementPreferences: List<ModuleManagementPreferenceDto> = emptyList()
@@ -429,6 +431,8 @@ data class AddCompanyToTenantRequestDto(
     val clientType: String,
     val jurisdiction: String,
     val companyBaseCurrency: String,
+    /** 1 (January) through 12 (December) - same requirement as OnboardTenantRequestDto's own field. */
+    val fiscalYearStartMonth: Int,
     val openingCashBalance: String? = null
 )
 

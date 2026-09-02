@@ -63,7 +63,8 @@ class AddCompanyToTenantUseCaseIntegrationTest {
             OnboardTenantUseCase.Request(
                 tenantName = tenant.name, tenantSegment = tenant.segment, tenantBaseCurrency = GBP,
                 companyName = "Bootstrap Company", clientType = ClientType.NON_PROFIT, jurisdiction = "GB",
-                companyBaseCurrency = GBP, adminEmail = "founder-${UUID.randomUUID()}@example.com", adminName = "Founder"
+                companyBaseCurrency = GBP, fiscalYearStartMonth = 1,
+                adminEmail = "founder-${UUID.randomUUID()}@example.com", adminName = "Founder"
             )
         )
         val activeTenant = bootstrap.tenant
@@ -72,6 +73,7 @@ class AddCompanyToTenantUseCaseIntegrationTest {
             AddCompanyToTenantUseCase.Request(
                 tenantId = activeTenant.id, companyName = "Sierra Leone Entity",
                 clientType = ClientType.NON_PROFIT, jurisdiction = "SL", companyBaseCurrency = Currency.getInstance("SLE"),
+                fiscalYearStartMonth = 4,
                 openingCashBalance = BigDecimal("750.00")
             )
         )

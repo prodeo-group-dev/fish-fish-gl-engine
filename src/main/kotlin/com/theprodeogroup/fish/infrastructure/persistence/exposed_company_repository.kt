@@ -87,6 +87,7 @@ class ExposedCompanyRepository : CompanyRepository {
         statement[CompaniesTable.jurisdiction] = company.jurisdiction
         statement[CompaniesTable.baseCurrency] = company.baseCurrency.currencyCode
         statement[CompaniesTable.goingConcernStatus] = company.goingConcernStatus.name
+        statement[CompaniesTable.fiscalYearStartMonth] = company.fiscalYearStartMonth
     }
 
     private fun ResultRow.toCompany(moduleManagementPreferences: List<ModuleManagementPreference>): Company = Company.reconstitute(
@@ -96,6 +97,7 @@ class ExposedCompanyRepository : CompanyRepository {
         clientType = ClientType.valueOf(this[CompaniesTable.clientType]),
         jurisdiction = this[CompaniesTable.jurisdiction],
         baseCurrency = Currency.getInstance(this[CompaniesTable.baseCurrency]),
+        fiscalYearStartMonth = this[CompaniesTable.fiscalYearStartMonth],
         goingConcernStatus = GoingConcernStatus.valueOf(this[CompaniesTable.goingConcernStatus]),
         moduleManagementPreferences = moduleManagementPreferences
     )

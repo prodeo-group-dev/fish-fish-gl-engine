@@ -85,6 +85,61 @@ class CompanyTest {
         company.moduleManagementPreferences shouldBe preferences
     }
 
+    @Test
+    fun `given no fiscalYearStartMonth supplied, when a Company is created, then it defaults to January`() {
+        val company = Company.create(
+            tenantId = TenantId.generate(),
+            name = "Acme Trading Ltd",
+            clientType = ClientType.COMPANY_LIMITED,
+            jurisdiction = "UK",
+            baseCurrency = GBP
+        )
+
+        company.fiscalYearStartMonth shouldBe 1
+    }
+
+    @Test
+    fun `given a UK-style April fiscal year, when a Company is created, then fiscalYearStartMonth is stored as given`() {
+        val company = Company.create(
+            tenantId = TenantId.generate(),
+            name = "Acme Trading Ltd",
+            clientType = ClientType.COMPANY_LIMITED,
+            jurisdiction = "UK",
+            baseCurrency = GBP,
+            fiscalYearStartMonth = 4
+        )
+
+        company.fiscalYearStartMonth shouldBe 4
+    }
+
+    @Test
+    fun `given a fiscalYearStartMonth of 0, when a Company is created, then it fails`() {
+        io.kotest.assertions.throwables.shouldThrow<IllegalArgumentException> {
+            Company.create(
+                tenantId = TenantId.generate(),
+                name = "Acme Trading Ltd",
+                clientType = ClientType.COMPANY_LIMITED,
+                jurisdiction = "UK",
+                baseCurrency = GBP,
+                fiscalYearStartMonth = 0
+            )
+        }
+    }
+
+    @Test
+    fun `given a fiscalYearStartMonth of 13, when a Company is created, then it fails`() {
+        io.kotest.assertions.throwables.shouldThrow<IllegalArgumentException> {
+            Company.create(
+                tenantId = TenantId.generate(),
+                name = "Acme Trading Ltd",
+                clientType = ClientType.COMPANY_LIMITED,
+                jurisdiction = "UK",
+                baseCurrency = GBP,
+                fiscalYearStartMonth = 13
+            )
+        }
+    }
+
     private fun readyCompany(): Company = Company.create(
         tenantId = TenantId.generate(),
         name = "Acme Trading Ltd",

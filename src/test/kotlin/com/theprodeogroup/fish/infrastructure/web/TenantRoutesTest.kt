@@ -197,6 +197,7 @@ class TenantRoutesTest {
               "clientType": "NON_PROFIT",
               "jurisdiction": "GB",
               "companyBaseCurrency": "GBP",
+              "fiscalYearStartMonth": 1,
               "adminName": "New Admin"
             }
         """.trimIndent()
@@ -246,7 +247,7 @@ class TenantRoutesTest {
             setBody(
                 """{"tenantName": "New Co", "tenantSegment": "EXTERNAL_B2B", "tenantBaseCurrency": "GBP",
                     "companyName": "New Co UK", "clientType": "NON_PROFIT", "jurisdiction": "GB",
-                    "companyBaseCurrency": "GBP", "adminName": "New Admin",
+                    "companyBaseCurrency": "GBP", "fiscalYearStartMonth": 1, "adminName": "New Admin",
                     "moduleManagementPreferences": [
                         {"module": "GL", "selfManaged": true},
                         {"module": "HR", "selfManaged": false, "delegateName": "Jane Doe", "delegateEmail": "jane@example.com"}
@@ -269,7 +270,7 @@ class TenantRoutesTest {
             setBody(
                 """{"tenantName": "New Co", "tenantSegment": "EXTERNAL_B2B", "tenantBaseCurrency": "GBP",
                     "companyName": "New Co UK", "clientType": "NON_PROFIT", "jurisdiction": "GB",
-                    "companyBaseCurrency": "GBP", "adminName": "New Admin",
+                    "companyBaseCurrency": "GBP", "fiscalYearStartMonth": 1, "adminName": "New Admin",
                     "moduleManagementPreferences": [{"module": "NOT_A_REAL_MODULE", "selfManaged": true}]}"""
             )
         }
@@ -289,7 +290,7 @@ class TenantRoutesTest {
             setBody(
                 """{"tenantName": "New Co", "tenantSegment": "EXTERNAL_B2B", "tenantBaseCurrency": "GBP",
                     "companyName": "New Co UK", "clientType": "NON_PROFIT", "jurisdiction": "GB",
-                    "companyBaseCurrency": "GBP", "adminName": "New Admin",
+                    "companyBaseCurrency": "GBP", "fiscalYearStartMonth": 1, "adminName": "New Admin",
                     "moduleManagementPreferences": [{"module": "SOP", "selfManaged": false, "delegateName": "Jane Doe"}]}"""
             )
         }
@@ -309,7 +310,7 @@ class TenantRoutesTest {
             setBody(
                 """{"tenantName": "New Co", "tenantSegment": "NOT_A_REAL_SEGMENT", "tenantBaseCurrency": "GBP",
                     "companyName": "New Co UK", "clientType": "NON_PROFIT", "jurisdiction": "GB",
-                    "companyBaseCurrency": "GBP", "adminName": "New Admin"}"""
+                    "companyBaseCurrency": "GBP", "fiscalYearStartMonth": 1, "adminName": "New Admin"}"""
             )
         }
 
@@ -345,7 +346,7 @@ class TenantRoutesTest {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(EXISTING_ADMIN_EMAIL)}")
             header("X-Tenant-Id", fixture.existingTenant.id.value.toString())
             contentType(ContentType.Application.Json)
-            setBody("""{"companyName": "Existing Co SL", "clientType": "NON_PROFIT", "jurisdiction": "SL", "companyBaseCurrency": "GBP"}""")
+            setBody("""{"companyName": "Existing Co SL", "clientType": "NON_PROFIT", "jurisdiction": "SL", "companyBaseCurrency": "GBP", "fiscalYearStartMonth": 1}""")
         }
 
         response.status shouldBe HttpStatusCode.Created
@@ -363,7 +364,7 @@ class TenantRoutesTest {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(OUTSIDER_EMAIL)}")
             header("X-Tenant-Id", fixture.existingTenant.id.value.toString())
             contentType(ContentType.Application.Json)
-            setBody("""{"companyName": "Existing Co SL", "clientType": "NON_PROFIT", "jurisdiction": "SL", "companyBaseCurrency": "GBP"}""")
+            setBody("""{"companyName": "Existing Co SL", "clientType": "NON_PROFIT", "jurisdiction": "SL", "companyBaseCurrency": "GBP", "fiscalYearStartMonth": 1}""")
         }
 
         response.status shouldBe HttpStatusCode.Forbidden

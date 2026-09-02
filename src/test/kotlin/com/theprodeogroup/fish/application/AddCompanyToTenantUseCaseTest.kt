@@ -51,7 +51,8 @@ class AddCompanyToTenantUseCaseTest {
         companyName = "Purse Sierra Leone",
         clientType = ClientType.NON_PROFIT,
         jurisdiction = "SL",
-        companyBaseCurrency = currency
+        companyBaseCurrency = currency,
+        fiscalYearStartMonth = 1
     )
 
     @Test

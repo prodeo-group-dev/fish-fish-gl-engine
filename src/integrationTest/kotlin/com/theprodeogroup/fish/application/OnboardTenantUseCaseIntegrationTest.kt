@@ -69,6 +69,7 @@ class OnboardTenantUseCaseIntegrationTest {
             clientType = ClientType.NON_PROFIT,
             jurisdiction = "GB",
             companyBaseCurrency = GBP,
+            fiscalYearStartMonth = 1,
             adminEmail = "founder-${UUID.randomUUID()}@example.com",
             adminName = "Founding Admin"
         )
@@ -106,6 +107,7 @@ class OnboardTenantUseCaseIntegrationTest {
             clientType = ClientType.NON_PROFIT,
             jurisdiction = "GB",
             companyBaseCurrency = GBP,
+            fiscalYearStartMonth = 1,
             adminEmail = "founder-${UUID.randomUUID()}@example.com",
             adminName = "Founding Admin",
             openingCashBalance = BigDecimal("1000.00")

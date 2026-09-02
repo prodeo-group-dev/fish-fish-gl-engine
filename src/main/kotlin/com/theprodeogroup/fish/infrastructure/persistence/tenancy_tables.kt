@@ -54,6 +54,7 @@ object CompaniesTable : Table("companies") {
     val jurisdiction = varchar("jurisdiction", 100)
     val baseCurrency = varchar("base_currency", 3)
     val goingConcernStatus = varchar("going_concern_status", 20)
+    val fiscalYearStartMonth = integer("fiscal_year_start_month")
 
     override val primaryKey = PrimaryKey(id)
 }

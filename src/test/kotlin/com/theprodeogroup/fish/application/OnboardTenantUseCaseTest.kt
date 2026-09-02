@@ -44,6 +44,7 @@ class OnboardTenantUseCaseTest {
         clientType = ClientType.NON_PROFIT,
         jurisdiction = "GB",
         companyBaseCurrency = GBP,
+        fiscalYearStartMonth = 1,
         adminEmail = "founder@purse.example",
         adminName = "Founding Admin"
     )

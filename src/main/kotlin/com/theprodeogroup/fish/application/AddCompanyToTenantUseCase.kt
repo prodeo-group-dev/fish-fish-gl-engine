@@ -90,6 +90,7 @@ class AddCompanyToTenantUseCase(
         val clientType: ClientType,
         val jurisdiction: String,
         val companyBaseCurrency: Currency,
+        val fiscalYearStartMonth: Int,
         val openingCashBalance: BigDecimal? = null
     )
 
@@ -105,7 +106,8 @@ class AddCompanyToTenantUseCase(
         val tenant = tenantRepository.findById(request.tenantId) ?: return null
 
         val company = Company.create(
-            tenant.id, request.companyName, request.clientType, request.jurisdiction, request.companyBaseCurrency
+            tenant.id, request.companyName, request.clientType, request.jurisdiction, request.companyBaseCurrency,
+            fiscalYearStartMonth = request.fiscalYearStartMonth
         )
 
         val additionResult = tenant.addCompany(company.id)

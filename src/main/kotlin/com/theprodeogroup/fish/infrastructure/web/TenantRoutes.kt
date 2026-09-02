@@ -92,6 +92,10 @@ fun Route.tenantRoutesOnboarding(onboardTenantUseCase: OnboardTenantUseCase) {
                 return@post
             }
         }
+        if (request.fiscalYearStartMonth !in 1..12) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "fiscalYearStartMonth must be between 1 (January) and 12 (December)"))
+            return@post
+        }
         val moduleManagementPreferences = mutableListOf<ModuleManagementPreference>()
         for (preferenceDto in request.moduleManagementPreferences) {
             val module = try {
@@ -125,6 +129,7 @@ fun Route.tenantRoutesOnboarding(onboardTenantUseCase: OnboardTenantUseCase) {
                 clientType = clientType,
                 jurisdiction = request.jurisdiction,
                 companyBaseCurrency = companyBaseCurrency,
+                fiscalYearStartMonth = request.fiscalYearStartMonth,
                 adminEmail = identity.email,
                 adminName = request.adminName,
                 openingCashBalance = openingCashBalance,
@@ -182,6 +187,10 @@ fun Route.tenantRoutesAuthenticated(
                 return@post
             }
         }
+        if (request.fiscalYearStartMonth !in 1..12) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "fiscalYearStartMonth must be between 1 (January) and 12 (December)"))
+            return@post
+        }
 
         val result = addCompanyToTenantUseCase.execute(
             AddCompanyToTenantUseCase.Request(
@@ -190,6 +199,7 @@ fun Route.tenantRoutesAuthenticated(
                 clientType = clientType,
                 jurisdiction = request.jurisdiction,
                 companyBaseCurrency = companyBaseCurrency,
+                fiscalYearStartMonth = request.fiscalYearStartMonth,
                 openingCashBalance = openingCashBalance
             )
         )

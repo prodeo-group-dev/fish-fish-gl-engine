@@ -15,6 +15,21 @@ import java.util.Currency
  * relationships (parent/consolidation) are confirmed design (Section 3.2)
  * but not built here - not load-bearing for this aggregate to work, per
  * the agreed minimal-build scope.
+ *
+ * [fiscalYearStartMonth] (2026-09-02, "the fiscal year has to be set
+ * during Tenant onboarding") - the calendar month (1=January...12=December)
+ * this Company's financial year begins in, e.g. 4 for a UK-style
+ * April-March year, 1 for a plain calendar year. Defaults to January
+ * here at the domain-constructor level so the many existing tests that
+ * just need "a Company" and don't care about fiscal timing aren't
+ * forced to supply one; [com.theprodeogroup.fish.application.OnboardTenantUseCase.Request]/
+ * [com.theprodeogroup.fish.application.AddCompanyToTenantUseCase.Request]
+ * have no such default - a real onboarding call must supply it
+ * explicitly, matching the user's own framing.  Stored only, not yet
+ * load-bearing for anything - [Period] creation/[openingPeriod] still
+ * defaults to a plain calendar month starting "today," not derived
+ * from this field. Deliberately deferred: driving Period generation
+ * off a fiscal year is a separate, bigger feature this doesn't build.
  */
 class Company private constructor(
     val id: CompanyId,
@@ -23,6 +38,7 @@ class Company private constructor(
     val clientType: ClientType,
     val jurisdiction: String,
     val baseCurrency: Currency,
+    val fiscalYearStartMonth: Int,
     val moduleManagementPreferences: List<ModuleManagementPreference> = emptyList()
 ) {
     /**
@@ -54,8 +70,14 @@ class Company private constructor(
             jurisdiction: String,
             baseCurrency: Currency,
             id: CompanyId = CompanyId.generate(),
+            fiscalYearStartMonth: Int = 1,
             moduleManagementPreferences: List<ModuleManagementPreference> = emptyList()
-        ): Company = Company(id, tenantId, name, clientType, jurisdiction, baseCurrency, moduleManagementPreferences)
+        ): Company {
+            require(fiscalYearStartMonth in 1..12) {
+                "fiscalYearStartMonth must be between 1 (January) and 12 (December): $fiscalYearStartMonth"
+            }
+            return Company(id, tenantId, name, clientType, jurisdiction, baseCurrency, fiscalYearStartMonth, moduleManagementPreferences)
+        }
 
         /**
          * Rebuilds an already-valid Company from persisted state (Section 10) -
@@ -69,10 +91,11 @@ class Company private constructor(
             clientType: ClientType,
             jurisdiction: String,
             baseCurrency: Currency,
+            fiscalYearStartMonth: Int,
             goingConcernStatus: GoingConcernStatus,
             moduleManagementPreferences: List<ModuleManagementPreference> = emptyList()
         ): Company {
-            val company = Company(id, tenantId, name, clientType, jurisdiction, baseCurrency, moduleManagementPreferences)
+            val company = Company(id, tenantId, name, clientType, jurisdiction, baseCurrency, fiscalYearStartMonth, moduleManagementPreferences)
             company.goingConcernStatus = goingConcernStatus
             return company
         }

@@ -119,6 +119,7 @@ class OnboardTenantUseCase(
         val clientType: ClientType,
         val jurisdiction: String,
         val companyBaseCurrency: Currency,
+        val fiscalYearStartMonth: Int,
         val adminEmail: String,
         val adminName: String,
         val openingCashBalance: BigDecimal? = null,
@@ -142,6 +143,7 @@ class OnboardTenantUseCase(
 
         val company = Company.create(
             tenant.id, request.companyName, request.clientType, request.jurisdiction, request.companyBaseCurrency,
+            fiscalYearStartMonth = request.fiscalYearStartMonth,
             moduleManagementPreferences = request.moduleManagementPreferences
         )
         companyRepository.save(company)
