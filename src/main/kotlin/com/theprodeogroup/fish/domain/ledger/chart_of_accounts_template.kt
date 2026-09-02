@@ -54,6 +54,19 @@ object ChartOfAccountsTemplate {
     const val CASH_CODE = "1000"
     const val OPENING_BALANCE_EQUITY_CODE = "3900"
 
+    /**
+     * Payroll accounts (added 2026-09-02, UC-HR15/[ComputePayrollPostingContextUseCase]) -
+     * seeded on every template except [ClientType.INDIVIDUAL] (personal
+     * finance has no employees). `ACCRUED_LEAVE_LIABILITY_CODE` sits in
+     * the 2000s Liability range next to Accounts Payable (2000), not
+     * the 5000s alongside the expense accounts - it's IAS 19's
+     * accumulating-leave *liability* `LeaveAccrual` already carries.
+     */
+    const val WAGES_EXPENSE_CODE = "5200"
+    const val SALARIES_EXPENSE_CODE = "5300"
+    const val LEAVE_EXPENSE_CODE = "5400"
+    const val ACCRUED_LEAVE_LIABILITY_CODE = "2200"
+
     fun accountsFor(clientType: ClientType, companyId: CompanyId): List<Account> =
         when (clientType) {
             ClientType.INDIVIDUAL -> individualAccounts(companyId)
@@ -77,57 +90,76 @@ object ChartOfAccountsTemplate {
     )
 
     private fun soleTraderAccounts(companyId: CompanyId): List<Account> = listOf(
-        asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT),
-        asset(companyId, "1100", "Accounts Receivable", AccountClassification.CURRENT),
-        asset(companyId, "1200", "Fixed Assets", AccountClassification.NON_CURRENT),
-        liability(companyId, "2000", "Accounts Payable", AccountClassification.CURRENT),
-        liability(companyId, "2100", "Loans Payable", AccountClassification.NON_CURRENT),
-        equity(companyId, "3000", "Owner's Capital"),
-        equity(companyId, "3100", "Owner's Drawings"),
-        openingBalanceEquity(companyId),
-        revenue(companyId, "4000", "Sales Revenue"),
-        expense(companyId, "5000", "Operating Expenses"),
-    )
+        listOf(
+            asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT),
+            asset(companyId, "1100", "Accounts Receivable", AccountClassification.CURRENT),
+            asset(companyId, "1200", "Fixed Assets", AccountClassification.NON_CURRENT),
+            liability(companyId, "2000", "Accounts Payable", AccountClassification.CURRENT),
+            liability(companyId, "2100", "Loans Payable", AccountClassification.NON_CURRENT),
+            equity(companyId, "3000", "Owner's Capital"),
+            equity(companyId, "3100", "Owner's Drawings"),
+            openingBalanceEquity(companyId),
+            revenue(companyId, "4000", "Sales Revenue"),
+            expense(companyId, "5000", "Operating Expenses"),
+        ),
+        payrollAccounts(companyId),
+    ).flatten()
 
     private fun partnershipAccounts(companyId: CompanyId): List<Account> = listOf(
-        asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT),
-        asset(companyId, "1100", "Accounts Receivable", AccountClassification.CURRENT),
-        asset(companyId, "1200", "Fixed Assets", AccountClassification.NON_CURRENT),
-        liability(companyId, "2000", "Accounts Payable", AccountClassification.CURRENT),
-        liability(companyId, "2100", "Loans Payable", AccountClassification.NON_CURRENT),
-        equity(companyId, "3000", "Partners' Capital"),
-        equity(companyId, "3100", "Partners' Drawings"),
-        openingBalanceEquity(companyId),
-        revenue(companyId, "4000", "Sales Revenue"),
-        expense(companyId, "5000", "Operating Expenses"),
-    )
+        listOf(
+            asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT),
+            asset(companyId, "1100", "Accounts Receivable", AccountClassification.CURRENT),
+            asset(companyId, "1200", "Fixed Assets", AccountClassification.NON_CURRENT),
+            liability(companyId, "2000", "Accounts Payable", AccountClassification.CURRENT),
+            liability(companyId, "2100", "Loans Payable", AccountClassification.NON_CURRENT),
+            equity(companyId, "3000", "Partners' Capital"),
+            equity(companyId, "3100", "Partners' Drawings"),
+            openingBalanceEquity(companyId),
+            revenue(companyId, "4000", "Sales Revenue"),
+            expense(companyId, "5000", "Operating Expenses"),
+        ),
+        payrollAccounts(companyId),
+    ).flatten()
 
     private fun companyLimitedAccounts(companyId: CompanyId): List<Account> = listOf(
-        asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT),
-        asset(companyId, "1100", "Accounts Receivable", AccountClassification.CURRENT),
-        asset(companyId, "1200", "Fixed Assets", AccountClassification.NON_CURRENT),
-        liability(companyId, "2000", "Accounts Payable", AccountClassification.CURRENT),
-        liability(companyId, "2100", "Loans Payable", AccountClassification.NON_CURRENT),
-        equity(companyId, "3000", "Share Capital"),
-        equity(companyId, "3100", "Retained Earnings"),
-        equity(companyId, "3200", "Dividends"),
-        openingBalanceEquity(companyId),
-        revenue(companyId, "4000", "Sales Revenue"),
-        expense(companyId, "5000", "Operating Expenses"),
-    )
+        listOf(
+            asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT),
+            asset(companyId, "1100", "Accounts Receivable", AccountClassification.CURRENT),
+            asset(companyId, "1200", "Fixed Assets", AccountClassification.NON_CURRENT),
+            liability(companyId, "2000", "Accounts Payable", AccountClassification.CURRENT),
+            liability(companyId, "2100", "Loans Payable", AccountClassification.NON_CURRENT),
+            equity(companyId, "3000", "Share Capital"),
+            equity(companyId, "3100", "Retained Earnings"),
+            equity(companyId, "3200", "Dividends"),
+            openingBalanceEquity(companyId),
+            revenue(companyId, "4000", "Sales Revenue"),
+            expense(companyId, "5000", "Operating Expenses"),
+        ),
+        payrollAccounts(companyId),
+    ).flatten()
 
     private fun nonProfitAccounts(companyId: CompanyId): List<Account> = listOf(
-        asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT),
-        asset(companyId, "1100", "Accounts Receivable", AccountClassification.CURRENT),
-        asset(companyId, "1200", "Fixed Assets", AccountClassification.NON_CURRENT),
-        liability(companyId, "2000", "Accounts Payable", AccountClassification.CURRENT),
-        equity(companyId, "3000", "Unrestricted Net Assets"),
-        equity(companyId, "3100", "Restricted Net Assets"),
-        openingBalanceEquity(companyId),
-        revenue(companyId, "4000", "Donations Income"),
-        revenue(companyId, "4100", "Grants Income"),
-        expense(companyId, "5000", "Program Expenses"),
-        expense(companyId, "5100", "Administrative Expenses"),
+        listOf(
+            asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT),
+            asset(companyId, "1100", "Accounts Receivable", AccountClassification.CURRENT),
+            asset(companyId, "1200", "Fixed Assets", AccountClassification.NON_CURRENT),
+            liability(companyId, "2000", "Accounts Payable", AccountClassification.CURRENT),
+            equity(companyId, "3000", "Unrestricted Net Assets"),
+            equity(companyId, "3100", "Restricted Net Assets"),
+            openingBalanceEquity(companyId),
+            revenue(companyId, "4000", "Donations Income"),
+            revenue(companyId, "4100", "Grants Income"),
+            expense(companyId, "5000", "Program Expenses"),
+            expense(companyId, "5100", "Administrative Expenses"),
+        ),
+        payrollAccounts(companyId),
+    ).flatten()
+
+    private fun payrollAccounts(companyId: CompanyId): List<Account> = listOf(
+        expense(companyId, WAGES_EXPENSE_CODE, "Wages Expense"),
+        expense(companyId, SALARIES_EXPENSE_CODE, "Salaries Expense"),
+        expense(companyId, LEAVE_EXPENSE_CODE, "Leave Expense"),
+        liability(companyId, ACCRUED_LEAVE_LIABILITY_CODE, "Accrued Leave Liability", AccountClassification.CURRENT),
     )
 
     private fun asset(companyId: CompanyId, code: String, name: String, classification: AccountClassification) =

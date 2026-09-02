@@ -91,4 +91,37 @@ class ChartOfAccountsTemplateTest {
             openingBalanceEquity.type shouldBe AccountType.EQUITY
         }
     }
+
+    @Test
+    fun `given every business ClientType, when a template is requested, then it includes payroll accounts at the documented codes`() {
+        for (clientType in ClientType.entries.filter { it != ClientType.INDIVIDUAL }) {
+            val accounts = ChartOfAccountsTemplate.accountsFor(clientType, CompanyId.generate())
+
+            val wages = accounts.single { it.code == ChartOfAccountsTemplate.WAGES_EXPENSE_CODE }
+            wages.name shouldBe "Wages Expense"
+            wages.type shouldBe AccountType.EXPENSE
+
+            val salaries = accounts.single { it.code == ChartOfAccountsTemplate.SALARIES_EXPENSE_CODE }
+            salaries.name shouldBe "Salaries Expense"
+            salaries.type shouldBe AccountType.EXPENSE
+
+            val leaveExpense = accounts.single { it.code == ChartOfAccountsTemplate.LEAVE_EXPENSE_CODE }
+            leaveExpense.name shouldBe "Leave Expense"
+            leaveExpense.type shouldBe AccountType.EXPENSE
+
+            val accruedLeaveLiability = accounts.single { it.code == ChartOfAccountsTemplate.ACCRUED_LEAVE_LIABILITY_CODE }
+            accruedLeaveLiability.name shouldBe "Accrued Leave Liability"
+            accruedLeaveLiability.type shouldBe AccountType.LIABILITY
+        }
+    }
+
+    @Test
+    fun `given INDIVIDUAL, when a template is requested, then it has no payroll accounts`() {
+        val accounts = ChartOfAccountsTemplate.accountsFor(ClientType.INDIVIDUAL, CompanyId.generate())
+
+        accounts.none { it.code == ChartOfAccountsTemplate.WAGES_EXPENSE_CODE } shouldBe true
+        accounts.none { it.code == ChartOfAccountsTemplate.SALARIES_EXPENSE_CODE } shouldBe true
+        accounts.none { it.code == ChartOfAccountsTemplate.LEAVE_EXPENSE_CODE } shouldBe true
+        accounts.none { it.code == ChartOfAccountsTemplate.ACCRUED_LEAVE_LIABILITY_CODE } shouldBe true
+    }
 }

@@ -101,6 +101,17 @@ data class PurchasePostingContextResponseDto(
     val currency: String
 )
 
+@Serializable
+data class PayrollPostingContextResponseDto(
+    val periodId: String,
+    val wagesExpenseAccountId: String,
+    val salariesExpenseAccountId: String,
+    val cashAccountId: String,
+    val accruedLeaveLiabilityAccountId: String,
+    val leaveExpenseAccountId: String,
+    val currency: String
+)
+
 /**
  * Wire shapes for `RecordSaleUseCase`/`RecordCollectionUseCase`
  * (docs/Sales_Order_Processing_DDD_Design.md Section 0) - the two thin
