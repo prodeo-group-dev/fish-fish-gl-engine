@@ -19,7 +19,8 @@ sealed class PurchasePostingContextResult {
         val apControlAccountId: AccountId,
         val expenseOrAssetAccountId: AccountId,
         val settlementAccountId: AccountId,
-        val currency: Currency
+        val currency: Currency,
+        val facilityLiabilityAccountId: AccountId? = null
     ) : PurchasePostingContextResult()
     data object CompanyNotFound : PurchasePostingContextResult()
     data object NoOpenPeriod : PurchasePostingContextResult()
@@ -49,6 +50,14 @@ sealed class PurchasePostingContextResult {
  * `settlementAccountId` is [ChartOfAccountsTemplate.CASH_CODE] ("1000"),
  * the same Cash account `CreateSalesInvoiceUseCase` already debits for
  * a cash sale.
+ *
+ * `facilityLiabilityAccountId` closes FR-PO06: nullable, and its
+ * absence is never a hard failure here (unlike AP/Expense/Cash) - a
+ * Company that never runs trade finance simply won't have one
+ * configured, and the only caller that actually needs it
+ * (POP's `/purchase-orders/{id}/pay`, when `ExecutingParty.BANK`) is
+ * responsible for treating a `null` here as its own configuration
+ * error, not this use case.
  */
 class ComputePurchasePostingContextUseCase(
     private val companyRepository: CompanyRepository,
@@ -68,7 +77,12 @@ class ComputePurchasePostingContextUseCase(
             ?: return PurchasePostingContextResult.ExpenseAccountNotConfigured
         val cashAccount = accounts.firstOrNull { it.type == AccountType.ASSET && it.code == ChartOfAccountsTemplate.CASH_CODE }
             ?: return PurchasePostingContextResult.CashAccountNotConfigured
+        val facilityLiabilityAccount = accounts.firstOrNull {
+            it.type == AccountType.LIABILITY && it.code == ChartOfAccountsTemplate.FACILITY_LIABILITY_CODE
+        }
 
-        return PurchasePostingContextResult.Success(period.id, apAccount.id, expenseAccount.id, cashAccount.id, company.baseCurrency)
+        return PurchasePostingContextResult.Success(
+            period.id, apAccount.id, expenseAccount.id, cashAccount.id, company.baseCurrency, facilityLiabilityAccount?.id
+        )
     }
 }

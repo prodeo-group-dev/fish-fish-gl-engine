@@ -75,7 +75,7 @@ private val TODAY: LocalDate = LocalDate.now()
 /** `GET /companies/{companyId}/purchase-posting-context` - see PurchasePostingContextRoutes.kt's own KDoc. */
 class PurchasePostingContextRoutesTest {
 
-    private class Fixture(configureAccounts: Boolean = true, openPeriod: Boolean = true) {
+    private class Fixture(configureAccounts: Boolean = true, openPeriod: Boolean = true, configureFacilityLiability: Boolean = true) {
         val userRepository = FakeUserRepository()
         val membershipRepository = FakeMembershipRepository()
         val companyRepository = FakeCompanyRepository()
@@ -149,6 +149,9 @@ class PurchasePostingContextRoutesTest {
         val cashAccount = if (configureAccounts) {
             Account.create(company.id, AccountType.ASSET, com.theprodeogroup.fish.domain.ledger.AccountClassification.CURRENT, "1000", "Cash").also { accountRepository.save(it) }
         } else null
+        val facilityLiabilityAccount = if (configureAccounts && configureFacilityLiability) {
+            Account.create(company.id, AccountType.LIABILITY, com.theprodeogroup.fish.domain.ledger.AccountClassification.CURRENT, "2300", "Trade Finance Facility Payable").also { accountRepository.save(it) }
+        } else null
 
         fun installInto(app: Application) {
             app.fishModule(
@@ -213,6 +216,23 @@ class PurchasePostingContextRoutesTest {
         body.expenseOrAssetAccountId shouldBe fixture.expenseAccount!!.id.value.toString()
         body.settlementAccountId shouldBe fixture.cashAccount!!.id.value.toString()
         body.currency shouldBe "GBP"
+        body.facilityLiabilityAccountId shouldBe fixture.facilityLiabilityAccount!!.id.value.toString()
+    }
+
+    @Test
+    fun `given no Trade Finance Facility Payable account configured, when GET purchase-posting-context is called, then it still returns 200 with a null facilityLiabilityAccountId`() = testApplication {
+        val fixture = Fixture(configureFacilityLiability = false)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/purchase-posting-context") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.id.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: PurchasePostingContextResponseDto = response.body()
+        body.facilityLiabilityAccountId shouldBe null
     }
 
     @Test

@@ -98,7 +98,8 @@ data class PurchasePostingContextResponseDto(
     val apControlAccountId: String,
     val expenseOrAssetAccountId: String,
     val settlementAccountId: String,
-    val currency: String
+    val currency: String,
+    val facilityLiabilityAccountId: String? = null
 )
 
 @Serializable

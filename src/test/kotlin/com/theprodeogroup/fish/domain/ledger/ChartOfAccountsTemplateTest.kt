@@ -124,4 +124,23 @@ class ChartOfAccountsTemplateTest {
         accounts.none { it.code == ChartOfAccountsTemplate.LEAVE_EXPENSE_CODE } shouldBe true
         accounts.none { it.code == ChartOfAccountsTemplate.ACCRUED_LEAVE_LIABILITY_CODE } shouldBe true
     }
+
+    @Test
+    fun `given every business ClientType, when a template is requested, then it includes a Trade Finance Facility Payable liability at the documented code`() {
+        for (clientType in ClientType.entries.filter { it != ClientType.INDIVIDUAL }) {
+            val accounts = ChartOfAccountsTemplate.accountsFor(clientType, CompanyId.generate())
+
+            val facilityLiability = accounts.single { it.code == ChartOfAccountsTemplate.FACILITY_LIABILITY_CODE }
+            facilityLiability.name shouldBe "Trade Finance Facility Payable"
+            facilityLiability.type shouldBe AccountType.LIABILITY
+            facilityLiability.classification shouldBe AccountClassification.CURRENT
+        }
+    }
+
+    @Test
+    fun `given INDIVIDUAL, when a template is requested, then it has no Trade Finance Facility Payable account`() {
+        val accounts = ChartOfAccountsTemplate.accountsFor(ClientType.INDIVIDUAL, CompanyId.generate())
+
+        accounts.none { it.code == ChartOfAccountsTemplate.FACILITY_LIABILITY_CODE } shouldBe true
+    }
 }

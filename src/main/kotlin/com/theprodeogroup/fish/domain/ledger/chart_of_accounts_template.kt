@@ -67,6 +67,23 @@ object ChartOfAccountsTemplate {
     const val LEAVE_EXPENSE_CODE = "5400"
     const val ACCRUED_LEAVE_LIABILITY_CODE = "2200"
 
+    /**
+     * Trade finance facility liability - closes the FR-PO06 gap
+     * (docs/Purchase_Order_Processing_DDD_Design.md): when a Bank
+     * executes a supplier payment on the financing structure's behalf
+     * ([com.theprodeogroup.fish.domain.purchasing.CreditorId] paid via
+     * POP's `ExecutingParty.BANK`), the settlement side of that posting
+     * is this liability, not Cash - the cash didn't come from the
+     * Company's own account. Distinct from `Loans Payable` (2100,
+     * already seeded) rather than reusing it: a revolving trade
+     * facility drawdown is a specific, short-term (hence `CURRENT`)
+     * obligation, not the same thing as a term loan. Seeded on every
+     * business template, same scoping [payrollAccounts] already uses -
+     * personal finance ([ClientType.INDIVIDUAL]) never runs a trade
+     * finance facility.
+     */
+    const val FACILITY_LIABILITY_CODE = "2300"
+
     fun accountsFor(clientType: ClientType, companyId: CompanyId): List<Account> =
         when (clientType) {
             ClientType.INDIVIDUAL -> individualAccounts(companyId)
@@ -103,6 +120,7 @@ object ChartOfAccountsTemplate {
             expense(companyId, "5000", "Operating Expenses"),
         ),
         payrollAccounts(companyId),
+        facilityLiabilityAccounts(companyId),
     ).flatten()
 
     private fun partnershipAccounts(companyId: CompanyId): List<Account> = listOf(
@@ -119,6 +137,7 @@ object ChartOfAccountsTemplate {
             expense(companyId, "5000", "Operating Expenses"),
         ),
         payrollAccounts(companyId),
+        facilityLiabilityAccounts(companyId),
     ).flatten()
 
     private fun companyLimitedAccounts(companyId: CompanyId): List<Account> = listOf(
@@ -136,6 +155,7 @@ object ChartOfAccountsTemplate {
             expense(companyId, "5000", "Operating Expenses"),
         ),
         payrollAccounts(companyId),
+        facilityLiabilityAccounts(companyId),
     ).flatten()
 
     private fun nonProfitAccounts(companyId: CompanyId): List<Account> = listOf(
@@ -153,7 +173,12 @@ object ChartOfAccountsTemplate {
             expense(companyId, "5100", "Administrative Expenses"),
         ),
         payrollAccounts(companyId),
+        facilityLiabilityAccounts(companyId),
     ).flatten()
+
+    private fun facilityLiabilityAccounts(companyId: CompanyId): List<Account> = listOf(
+        liability(companyId, FACILITY_LIABILITY_CODE, "Trade Finance Facility Payable", AccountClassification.CURRENT),
+    )
 
     private fun payrollAccounts(companyId: CompanyId): List<Account> = listOf(
         expense(companyId, WAGES_EXPENSE_CODE, "Wages Expense"),
