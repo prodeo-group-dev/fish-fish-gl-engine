@@ -44,6 +44,9 @@ const val FISH_JWT_SERVICE_AUTH_NAME_IM = "fish-jwt-service-im"
 /** HR/Payroll's own service-account JWT auth configuration (2026-09-02, "Scope and build HR's HTTP layer") - see [installFishJwtAuth] and [buildJwksServiceVerifierForHr]. Same reasoning as [FISH_JWT_SERVICE_AUTH_NAME_IM]: a separate provider per service caller, not a shared audience. */
 const val FISH_JWT_SERVICE_AUTH_NAME_HR = "fish-jwt-service-hr"
 
+/** POP's own service-account JWT auth configuration (docs/POP_GL_Service_Account_Closure_Plan.md) - see [installFishJwtAuth] and [buildJwksServiceVerifierForPop]. Same reasoning as [FISH_JWT_SERVICE_AUTH_NAME_IM]/[FISH_JWT_SERVICE_AUTH_NAME_HR]: a separate provider per service caller, not a shared audience. Closes the gap where POP_GL_ENGINE_BEARER_TOKEN was never actually wired to anything - `/purchasing/record-obligation`/`/purchasing/record-payment` previously had no way for POP to authenticate at all. */
+const val FISH_JWT_SERVICE_AUTH_NAME_POP = "fish-jwt-service-pop"
+
 /**
  * The onboarding-only JWT auth configuration - see [installFishJwtAuth].
  * Registered separately from [FISH_JWT_AUTH_NAME] because it deliberately
@@ -105,7 +108,10 @@ fun Application.installFishJwtAuth(
     // HR/Payroll's own service-account verifier, same shape as
     // [imServiceVerifier] - HR gained a real HTTP layer and its own
     // outbound-calling Cognito identity 2026-09-02.
-    hrServiceVerifier: JWTVerifier = verifier
+    hrServiceVerifier: JWTVerifier = verifier,
+    // POP's own service-account verifier, same shape as [imServiceVerifier]/
+    // [hrServiceVerifier] - closes docs/POP_GL_Service_Account_Closure_Plan.md.
+    popServiceVerifier: JWTVerifier = verifier
 ) {
     install(Authentication) {
         jwt(FISH_JWT_AUTH_NAME) {
@@ -134,6 +140,14 @@ fun Application.installFishJwtAuth(
 
         jwt(FISH_JWT_SERVICE_AUTH_NAME_HR) {
             this.verifier(hrServiceVerifier)
+            validate { credential -> credential.toAuthenticatedCaller(userRepository, membershipRepository) }
+            challenge { _, _ ->
+                call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
+            }
+        }
+
+        jwt(FISH_JWT_SERVICE_AUTH_NAME_POP) {
+            this.verifier(popServiceVerifier)
             validate { credential -> credential.toAuthenticatedCaller(userRepository, membershipRepository) }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
@@ -239,6 +253,14 @@ fun buildJwksServiceVerifierForHr(): JWTVerifier? {
     return buildJwksVerifierFor(issuer, serviceAudience)
 }
 
+/** [buildJwksServiceVerifier]'s counterpart for POP's own service account (`FISH_JWT_SERVICE_AUDIENCE_POP`, POP's dedicated Cognito app client, `infra/terraform/pop_gl_service_account.tf`). Returns `null` when unset, same reasoning - docs/POP_GL_Service_Account_Closure_Plan.md. */
+fun buildJwksServiceVerifierForPop(): JWTVerifier? {
+    val issuer = System.getenv("FISH_JWT_ISSUER")
+        ?: error("FISH_JWT_ISSUER environment variable is required - no default for a security-relevant value")
+    val serviceAudience = System.getenv("FISH_JWT_SERVICE_AUDIENCE_POP")?.takeIf { it.isNotBlank() } ?: return null
+    return buildJwksVerifierFor(issuer, serviceAudience)
+}
+
 private fun buildJwksVerifierFor(issuer: String, audience: String): JWTVerifier {
     val jwksUrl = System.getenv("FISH_JWT_JWKS_URL")
         ?: error("FISH_JWT_JWKS_URL environment variable is required - no default for a security-relevant value")
@@ -282,7 +304,7 @@ private fun buildJwksVerifierFor(issuer: String, audience: String): JWTVerifier 
  * itself is a [Route], so every existing call site still resolves.
  */
 fun Route.fishAuthenticated(build: Route.() -> Unit): Route =
-    authenticate(FISH_JWT_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME_IM, FISH_JWT_SERVICE_AUTH_NAME_HR, build = build)
+    authenticate(FISH_JWT_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME_IM, FISH_JWT_SERVICE_AUTH_NAME_HR, FISH_JWT_SERVICE_AUTH_NAME_POP, build = build)
 
 /** [fishAuthenticated]'s counterpart for [FISH_JWT_ONBOARDING_AUTH_NAME] - see that constant's KDoc. */
 fun Route.fishOnboarding(build: Route.() -> Unit): Route =

@@ -56,6 +56,9 @@ resource "aws_ecs_task_definition" "this" {
         { name = "FISH_JWT_SERVICE_AUDIENCE", value = aws_cognito_user_pool_client.sop_service.id },
         { name = "FISH_JWT_SERVICE_AUDIENCE_IM", value = aws_cognito_user_pool_client.im_service.id },
         { name = "FISH_JWT_SERVICE_AUDIENCE_HR", value = aws_cognito_user_pool_client.hr_service.id },
+        # Trusts POP's own service-account identity (pop_gl_service_account.tf) -
+        # closes docs/POP_GL_Service_Account_Closure_Plan.md.
+        { name = "FISH_JWT_SERVICE_AUDIENCE_POP", value = aws_cognito_user_pool_client.pop_gl_service.id },
         { name = "FISH_JWT_JWKS_URL", value = local.fish_jwt_jwks_url },
         # Was unset ("wherever fish-gl-web ends up actually hosted,
         # which isn't decided yet" - Application.kt's own comment) until

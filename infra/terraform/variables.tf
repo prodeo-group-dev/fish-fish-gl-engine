@@ -275,6 +275,12 @@ variable "hr_service_account_email" {
   default     = "hr-service@theprodeogroup.com"
 }
 
+variable "pop_gl_service_account_email" {
+  description = "The Cognito username/email for POP's service-account identity for calling GL (pop_gl_service_account.tf) - resolves POP_GL_ENGINE_SERVICE_ACCOUNT_USERNAME/PASSWORD. Never sent an email (message_action = SUPPRESS), so this doesn't need to be a real, monitored mailbox. docs/POP_GL_Service_Account_Closure_Plan.md."
+  type        = string
+  default     = "pop-gl-service@theprodeogroup.com"
+}
+
 variable "hr_gl_engine_tenant_id" {
   description = "HR_GL_ENGINE_TENANT_ID - Prodeo Group's real tenant UUID in GL's own system, same value as im_gl_engine_tenant_id/pop_gl_engine_tenant_id/sop_gl_engine_tenant_id (all four call the same GL Engine as the same tenant). Unlike IM/POP/SOP, HR has no fixed company id - RunPayrollUseCase.Request.companyId is caller-supplied per call, since HR's own scope (HR_Payroll_Requirements_Use_Cases.md) spans multiple Companies under this one Tenant (Scrip/Purse/Prodeo Capital/Prodeo Property SPV)."
   type        = string

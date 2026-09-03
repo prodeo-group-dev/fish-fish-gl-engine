@@ -2,11 +2,15 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.auth0.jwt.interfaces.JWTVerifier
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.AssessFixedAssetImpairmentUseCase
 import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
 import com.theprodeogroup.fish.application.ComputeCashFlowUseCase
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
+import com.theprodeogroup.fish.application.ComputeFixedAssetRegisterUseCase
 import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
+import com.theprodeogroup.fish.application.CreateFixedAssetUseCase
 import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
+import com.theprodeogroup.fish.application.DisposeFixedAssetUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeInventoryPostingContextUseCase
@@ -24,6 +28,7 @@ import com.theprodeogroup.fish.application.CreateAccountUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.RecordOpeningBalanceUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
+import com.theprodeogroup.fish.application.RecordFixedAssetDepreciationUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.RecordPayRunUseCase
@@ -32,6 +37,7 @@ import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
 import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
+import com.theprodeogroup.fish.domain.fixedassets.FixedAssetRepository
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
@@ -49,6 +55,7 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedAccountReposito
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCompanyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCreditorRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCustomerRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedFixedAssetRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedSalesInvoiceRecordRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedIdempotencyKeyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedJournalEntryRepository
@@ -133,6 +140,7 @@ fun Application.productionModule() {
     val customerRepository = ExposedCustomerRepository()
     val idempotencyKeyRepository = ExposedIdempotencyKeyRepository()
     val tenantRepository = ExposedTenantRepository()
+    val fixedAssetRepository = ExposedFixedAssetRepository()
 
     val onboardTenantUseCase = OnboardTenantUseCase(
         tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository
@@ -179,6 +187,11 @@ fun Application.productionModule() {
     val computeBalanceSheetUseCase = ComputeBalanceSheetUseCase(companyRepository, accountRepository, journalEntryRepository)
     val computeProfitAndLossUseCase = ComputeProfitAndLossUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
     val computeCashFlowUseCase = ComputeCashFlowUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+    val createFixedAssetUseCase = CreateFixedAssetUseCase(companyRepository, fixedAssetRepository)
+    val recordFixedAssetDepreciationUseCase = RecordFixedAssetDepreciationUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
+    val assessFixedAssetImpairmentUseCase = AssessFixedAssetImpairmentUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
+    val disposeFixedAssetUseCase = DisposeFixedAssetUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
+    val computeFixedAssetRegisterUseCase = ComputeFixedAssetRegisterUseCase(companyRepository, fixedAssetRepository)
 
     // In-process scheduler for KybGracePeriodSweep (docs/DDD_Design.md
     // Section 9.4, extended 2026-08-27 to also cover the admin phone
@@ -209,6 +222,7 @@ fun Application.productionModule() {
         serviceVerifier = buildJwksServiceVerifier(),
         imServiceVerifier = buildJwksServiceVerifierForIm(),
         hrServiceVerifier = buildJwksServiceVerifierForHr(),
+        popServiceVerifier = buildJwksServiceVerifierForPop(),
         userRepository = userRepository,
         membershipRepository = membershipRepository,
         companyRepository = companyRepository,
@@ -246,7 +260,13 @@ fun Application.productionModule() {
         computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase,
         computeBalanceSheetUseCase = computeBalanceSheetUseCase,
         computeProfitAndLossUseCase = computeProfitAndLossUseCase,
-        computeCashFlowUseCase = computeCashFlowUseCase
+        computeCashFlowUseCase = computeCashFlowUseCase,
+        fixedAssetRepository = fixedAssetRepository,
+        createFixedAssetUseCase = createFixedAssetUseCase,
+        recordFixedAssetDepreciationUseCase = recordFixedAssetDepreciationUseCase,
+        assessFixedAssetImpairmentUseCase = assessFixedAssetImpairmentUseCase,
+        disposeFixedAssetUseCase = disposeFixedAssetUseCase,
+        computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase
     )
 }
 
@@ -264,6 +284,7 @@ fun Application.fishModule(
     serviceVerifier: JWTVerifier? = null,
     imServiceVerifier: JWTVerifier? = null,
     hrServiceVerifier: JWTVerifier? = null,
+    popServiceVerifier: JWTVerifier? = null,
     userRepository: UserRepository,
     membershipRepository: MembershipRepository,
     companyRepository: CompanyRepository,
@@ -301,7 +322,13 @@ fun Application.fishModule(
     computeSalesToExpenseRatioUseCase: ComputeSalesToExpenseRatioUseCase,
     computeBalanceSheetUseCase: ComputeBalanceSheetUseCase,
     computeProfitAndLossUseCase: ComputeProfitAndLossUseCase,
-    computeCashFlowUseCase: ComputeCashFlowUseCase
+    computeCashFlowUseCase: ComputeCashFlowUseCase,
+    fixedAssetRepository: FixedAssetRepository,
+    createFixedAssetUseCase: CreateFixedAssetUseCase,
+    recordFixedAssetDepreciationUseCase: RecordFixedAssetDepreciationUseCase,
+    assessFixedAssetImpairmentUseCase: AssessFixedAssetImpairmentUseCase,
+    disposeFixedAssetUseCase: DisposeFixedAssetUseCase,
+    computeFixedAssetRegisterUseCase: ComputeFixedAssetRegisterUseCase
 ) {
     install(ContentNegotiation) { json() }
     install(CallLogging) { level = Level.INFO }
@@ -346,7 +373,7 @@ fun Application.fishModule(
     }
     installFishJwtAuth(
         verifier, userRepository, membershipRepository,
-        serviceVerifier ?: verifier, imServiceVerifier ?: verifier, hrServiceVerifier ?: verifier
+        serviceVerifier ?: verifier, imServiceVerifier ?: verifier, hrServiceVerifier ?: verifier, popServiceVerifier ?: verifier
     )
 
     routing {
@@ -399,6 +426,11 @@ fun Application.fishModule(
                 salesToExpenseRatioRoutes(computeSalesToExpenseRatioUseCase, companyRepository)
                 reportsRoutes(computeBalanceSheetUseCase, computeProfitAndLossUseCase, computeCashFlowUseCase, companyRepository)
                 taxRoutes(computeTaxUseCase, companyRepository, taxRuleRepository, taxComputationRepository)
+                fixedAssetRoutes(
+                    createFixedAssetUseCase, recordFixedAssetDepreciationUseCase, assessFixedAssetImpairmentUseCase,
+                    disposeFixedAssetUseCase, computeFixedAssetRegisterUseCase, fixedAssetRepository, periodRepository,
+                    companyRepository, idempotencyKeyRepository
+                )
             }
         }
     }

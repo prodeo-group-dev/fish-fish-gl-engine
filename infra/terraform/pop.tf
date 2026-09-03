@@ -20,14 +20,14 @@
 # certificate per distinct piece of infrastructure" as this repo's own
 # precedent).
 #
-# POP_GL_ENGINE_BEARER_TOKEN is deliberately NOT set below - it's a
-# lambda in POP's own Application.kt, evaluated only when the two
-# GL-Engine-calling routes (three-way match, supplier payment) are
-# actually invoked, not at process startup (verified by reading the
-# source before writing this, not assumed). Every other route works
-# immediately. How POP authenticates to GL Engine is a deliberately
-# deferred decision - see the Order Fulfillment plan's own framing,
-# same treatment SES got for eOrder delivery.
+# POP's GL-calling credential (docs/POP_GL_Service_Account_Closure_Plan.md) -
+# a Cognito service-account identity (pop_gl_service_account.tf),
+# mirroring the already-proven pattern the POP_IM_* block below uses.
+# Previously deferred entirely: POP_GL_ENGINE_BEARER_TOKEN was a bare
+# System.getenv() read in POP's own Application.kt with no value ever
+# set here, so the three-way-match/supplier-payment routes threw the
+# moment they were actually invoked, even though every other route
+# worked immediately (verified by reading the source, not assumed).
 
 # --- ECR ----------------------------------------------------------------
 
@@ -420,11 +420,19 @@ resource "aws_ecs_task_definition" "pop" {
         # DNS-verified first (a manual step, same two-phase pattern as
         # every ACM cert in this file) - unset/failing until then.
         { name = "POP_NOTIFICATION_FROM_EMAIL", value = "orders@${var.pop_notification_from_domain}" },
-        # POP_GL_ENGINE_BEARER_TOKEN deliberately omitted - see file header.
+        # POP's own call into GL (docs/POP_GL_Service_Account_Closure_Plan.md) -
+        # Cognito service-account auth, same shape as the IM block below,
+        # closing the POP_GL_ENGINE_BEARER_TOKEN gap the file header used
+        # to describe (that env var no longer exists - it was never
+        # actually wired to anything, just a dangling System.getenv()
+        # read in POP's own Application.kt).
+        { name = "POP_GL_ENGINE_COGNITO_REGION", value = var.aws_region },
+        { name = "POP_GL_ENGINE_SERVICE_ACCOUNT_CLIENT_ID", value = aws_cognito_user_pool_client.pop_gl_service.id },
+        { name = "POP_GL_ENGINE_SERVICE_ACCOUNT_USERNAME", value = var.pop_gl_service_account_email },
         # POP's own call into IM (2026-09-01, "scope out how POP's
         # receive-line would call IM") - Cognito service-account auth,
-        # not a static bearer token like the (still-unresolved)
-        # POP_GL_ENGINE_BEARER_TOKEN gap above.
+        # same pattern as the GL block above, just a different app
+        # client/user (a different `aud` claim, a different audience).
         { name = "POP_IM_BASE_URL", value = "https://${var.im_domain_name}/api" },
         { name = "POP_IM_COGNITO_REGION", value = var.aws_region },
         { name = "POP_IM_SERVICE_ACCOUNT_CLIENT_ID", value = aws_cognito_user_pool_client.pop_im_service.id },
@@ -433,6 +441,8 @@ resource "aws_ecs_task_definition" "pop" {
 
       secrets = [
         { name = "POP_DB_PASSWORD", valueFrom = aws_secretsmanager_secret.pop_db_password.arn },
+        { name = "POP_GL_ENGINE_SERVICE_ACCOUNT_PASSWORD", valueFrom = aws_secretsmanager_secret.pop_gl_service_account_password.arn },
+        { name = "POP_GL_ENGINE_SERVICE_ACCOUNT_CLIENT_SECRET", valueFrom = aws_secretsmanager_secret.pop_gl_service_account_client_secret.arn },
         { name = "POP_IM_SERVICE_ACCOUNT_PASSWORD", valueFrom = aws_secretsmanager_secret.pop_im_service_account_password.arn },
         { name = "POP_IM_SERVICE_ACCOUNT_CLIENT_SECRET", valueFrom = aws_secretsmanager_secret.pop_im_service_account_client_secret.arn }
       ]
