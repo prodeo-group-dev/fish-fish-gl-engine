@@ -34,11 +34,13 @@ private val TODAY = LocalDate.of(2026, 8, 21)
  * aggregate" architecture (docs/Sales_Processing_Requirements_Specification.md
  * Section 5.2) - `Customer.assessExpectedCreditLoss()` caps its target
  * against `Customer.balance` and reads/writes `Customer.allowanceForExpectedCreditLoss`,
- * both of which only the *old* `SalesOrder.deliverLine()`/
- * `Customer.receivePayment()` pathway keeps current. Sales/collections
- * posted via the new `RecordSaleUseCase`/`RecordCollectionUseCase`
+ * both of which only `Customer.recordSale()`/`receivePayment()` keep
+ * current - called by `CreateSalesInvoiceUseCase` (GL's own native
+ * "record a sale" pathway; the earlier `SalesOrder.deliverLine()`
+ * pathway this note originally named has since been retired entirely).
+ * Sales/collections posted via the new `RecordSaleUseCase`/`RecordCollectionUseCase`
  * never touch `Customer` at all, so that capping/tracking would be
- * silently wrong for any customer using the new pathway.
+ * silently wrong for any customer using that pathway instead.
  *
  * This use case caps against [AccountsReceivableAging.totalOutstanding]
  * instead - already Ledger-derived from posted `JournalLine`s tagged

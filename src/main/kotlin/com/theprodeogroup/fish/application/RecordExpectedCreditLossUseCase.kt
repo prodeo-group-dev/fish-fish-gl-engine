@@ -44,11 +44,14 @@ sealed class RecordExpectedCreditLossResult {
  * architecture. `Customer.assessExpectedCreditLoss()` (the pre-existing
  * logic this ports) caps its target allowance against `Customer.balance`
  * and reads/writes `Customer.allowanceForExpectedCreditLoss` - both
- * only stay current via the *old* `SalesOrder.deliverLine()`/
- * `Customer.receivePayment()` pathway. Sales/collections posted through
- * `RecordSaleUseCase`/`RecordCollectionUseCase` never touch `Customer`
- * at all, so for any customer using the new pathway that capping was
- * silently wrong, not just unbuilt.
+ * only stay current via `Customer.recordSale()`/`receivePayment()`,
+ * called by `CreateSalesInvoiceUseCase` (GL's own native "record a
+ * sale" pathway; the earlier `SalesOrder.deliverLine()` pathway this
+ * note originally named has since been retired entirely). Sales/
+ * collections posted through `RecordSaleUseCase`/`RecordCollectionUseCase`
+ * never touch `Customer` at all, so for any customer using that
+ * pathway instead, capping against `Customer.balance` was silently
+ * wrong, not just unbuilt.
  *
  * This use case caps against [AccountsReceivableAging.totalOutstanding]
  * instead - already Ledger-derived from posted `JournalLine`s tagged
