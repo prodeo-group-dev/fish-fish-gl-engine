@@ -125,7 +125,15 @@ data "aws_iam_policy_document" "pop_ecs_task_execution_secrets" {
       # same gap IM's own execution role hit and needed fixing for its
       # GL-facing secrets, avoided here from the start.
       aws_secretsmanager_secret.pop_im_service_account_password.arn,
-      aws_secretsmanager_secret.pop_im_service_account_client_secret.arn
+      aws_secretsmanager_secret.pop_im_service_account_client_secret.arn,
+      # POP's own service-account credentials for calling GL
+      # (docs/POP_GL_Service_Account_Closure_Plan.md, closed 2026-09-03) -
+      # this statement was never updated when pop_gl_service_account.tf's
+      # secrets were added, so the execution role couldn't actually pull
+      # them at container startup - confirmed by direct inspection before
+      # deploying, not assumed from the closure plan's own file list.
+      aws_secretsmanager_secret.pop_gl_service_account_password.arn,
+      aws_secretsmanager_secret.pop_gl_service_account_client_secret.arn
     ]
   }
 }
