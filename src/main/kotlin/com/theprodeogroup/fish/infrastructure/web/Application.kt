@@ -79,6 +79,8 @@ import io.ktor.server.application.install
 import io.ktor.server.application.log
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
+import io.ktor.server.plugins.callid.CallId
+import io.ktor.server.plugins.callid.callIdMdc
 import io.ktor.server.plugins.callloging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.cors.routing.CORS
@@ -331,7 +333,34 @@ fun Application.fishModule(
     computeFixedAssetRegisterUseCase: ComputeFixedAssetRegisterUseCase
 ) {
     install(ContentNegotiation) { json() }
-    install(CallLogging) { level = Level.INFO }
+    // CallId first, CallLogging second - callIdMdc puts the id CallId
+    // generates/retrieves into MDC's "requestId" key, which logback.xml's
+    // LogstashEncoder then includes in every JSON log line for this
+    // request's lifecycle (docs/GL_Production_Readiness_Assessment.md's
+    // "no structured logging" finding - this is the piece that actually
+    // makes logs queryable across services, not just JSON-shaped).
+    install(CallId) {
+        retrieveFromHeader(HttpHeaders.XRequestId)
+        generate { java.util.UUID.randomUUID().toString() }
+        verify { it.isNotEmpty() }
+        replyToHeader(HttpHeaders.XRequestId)
+    }
+    install(CallLogging) {
+        level = Level.INFO
+        callIdMdc("requestId")
+        // Ktor's default format embeds raw ANSI color codes into the
+        // status text - harmless in a plain-text console, but they land
+        // inside the JSON "message" field's string value once
+        // LogstashEncoder is in the loop, showing up as literal escape
+        // bytes in CloudWatch instead of rendering as color. Plain text
+        // only; the fields that actually make this queryable
+        // (level/logger_name/requestId) come from logback.xml, not this
+        // string.
+        format { call ->
+            val status = call.response.status()?.value ?: "-"
+            "$status ${call.request.httpMethod.value} ${call.request.path()}"
+        }
+    }
     // fish-gl-web (a browser-based PWA) calls this API cross-origin -
     // discovered missing 2026-08-26 testing the first real deploy
     // against the new frontend, which every browser would otherwise

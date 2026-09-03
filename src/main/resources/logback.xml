@@ -1,0 +1,25 @@
+<!--
+  Structured (JSON) console logging (docs/GL_Production_Readiness_Assessment.md
+  finding "no structured logging" - plain log lines, nothing queryable across
+  services in production). Console output only, not a file appender - ECS's
+  awslogs log driver already captures stdout and ships it to the CloudWatch
+  log group configured in infra/terraform/ecs.tf, so a second sink here would
+  just duplicate that pipeline.
+
+  includeMdcKeyName "requestId" pulls in the per-request correlation id
+  Application.kt's CallId plugin puts into MDC via callIdMdc("requestId") -
+  the piece that actually makes this "queryable across services": filter
+  CloudWatch Logs Insights by one requestId to see that request's entire log
+  trail, not just guess from timestamps.
+-->
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>requestId</includeMdcKeyName>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="STDOUT" />
+    </root>
+</configuration>

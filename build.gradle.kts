@@ -70,9 +70,15 @@ dependencies {
     implementation("io.ktor:ktor-server-auth-jwt:$ktorVersion")
     implementation("io.ktor:ktor-server-status-pages:$ktorVersion")
     implementation("io.ktor:ktor-server-call-logging:$ktorVersion")
+    implementation("io.ktor:ktor-server-call-id:$ktorVersion")
     implementation("io.ktor:ktor-server-cors:$ktorVersion")
     implementation("com.auth0:jwks-rsa:0.22.1")
     implementation("ch.qos.logback:logback-classic:1.5.12")
+    // Structured (JSON) log output (docs/GL_Production_Readiness_Assessment.md
+    // finding "no structured logging") - CloudWatch Logs Insights can query
+    // individual fields (requestId, level, logger) directly once log lines
+    // are JSON instead of plain text.
+    implementation("net.logstash.logback:logstash-logback-encoder:8.0")
 
     // RecordAdminPhoneNumberUseCase's own check that Cognito genuinely
     // verified a phone number before GL's database records it as such
