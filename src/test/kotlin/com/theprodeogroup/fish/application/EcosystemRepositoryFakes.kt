@@ -1,5 +1,8 @@
 package com.theprodeogroup.fish.application
 
+import com.theprodeogroup.fish.domain.fixedassets.FixedAsset
+import com.theprodeogroup.fish.domain.fixedassets.FixedAssetId
+import com.theprodeogroup.fish.domain.fixedassets.FixedAssetRepository
 import com.theprodeogroup.fish.domain.purchasing.Creditor
 import com.theprodeogroup.fish.domain.purchasing.CreditorId
 import com.theprodeogroup.fish.domain.purchasing.CreditorRepository
@@ -50,4 +53,15 @@ class FakeSalesInvoiceRecordRepository : SalesInvoiceRecordRepository {
     }
     override fun findAllByCompany(companyId: CompanyId): List<SalesInvoiceRecord> =
         saveCalls.filter { it.companyId == companyId }.sortedByDescending { it.recordedAt }
+}
+
+class FakeFixedAssetRepository : FixedAssetRepository {
+    val saveCalls = mutableListOf<FixedAssetId>()
+    private val store = mutableMapOf<FixedAssetId, FixedAsset>()
+    override fun save(fixedAsset: FixedAsset) {
+        saveCalls.add(fixedAsset.id)
+        store[fixedAsset.id] = fixedAsset
+    }
+    override fun findById(id: FixedAssetId): FixedAsset? = store[id]
+    override fun findAllByCompany(companyId: CompanyId): List<FixedAsset> = store.values.filter { it.companyId == companyId }
 }

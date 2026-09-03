@@ -9,6 +9,12 @@ import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
 import com.theprodeogroup.fish.application.FakeStaffInviteNotificationGateway
 import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
 import com.theprodeogroup.fish.application.ComputeCashFlowUseCase
+import com.theprodeogroup.fish.application.AssessFixedAssetImpairmentUseCase
+import com.theprodeogroup.fish.application.ComputeFixedAssetRegisterUseCase
+import com.theprodeogroup.fish.application.CreateFixedAssetUseCase
+import com.theprodeogroup.fish.application.DisposeFixedAssetUseCase
+import com.theprodeogroup.fish.application.FakeFixedAssetRepository
+import com.theprodeogroup.fish.application.RecordFixedAssetDepreciationUseCase
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
@@ -133,6 +139,12 @@ class ReportsRoutesTest {
         val computeBalanceSheetUseCase = ComputeBalanceSheetUseCase(companyRepository, accountRepository, journalEntryRepository)
         val computeProfitAndLossUseCase = ComputeProfitAndLossUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeCashFlowUseCase = ComputeCashFlowUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+        val fixedAssetRepository = FakeFixedAssetRepository()
+        val createFixedAssetUseCase = CreateFixedAssetUseCase(companyRepository, fixedAssetRepository)
+        val recordFixedAssetDepreciationUseCase = RecordFixedAssetDepreciationUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
+        val assessFixedAssetImpairmentUseCase = AssessFixedAssetImpairmentUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
+        val disposeFixedAssetUseCase = DisposeFixedAssetUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeFixedAssetRegisterUseCase = ComputeFixedAssetRegisterUseCase(companyRepository, fixedAssetRepository)
 
         val tenant = Tenant.onboard("Purse", TenantSegment.INTERNAL_VENTURE, GBP)
         val company = Company.create(tenant.id, "Purse UK", ClientType.NON_PROFIT, "GB", GBP)
@@ -211,7 +223,13 @@ class ReportsRoutesTest {
                 computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase,
                 computeBalanceSheetUseCase = computeBalanceSheetUseCase,
                 computeProfitAndLossUseCase = computeProfitAndLossUseCase,
-                computeCashFlowUseCase = computeCashFlowUseCase
+                computeCashFlowUseCase = computeCashFlowUseCase,
+                fixedAssetRepository = fixedAssetRepository,
+                createFixedAssetUseCase = createFixedAssetUseCase,
+                recordFixedAssetDepreciationUseCase = recordFixedAssetDepreciationUseCase,
+                assessFixedAssetImpairmentUseCase = assessFixedAssetImpairmentUseCase,
+                disposeFixedAssetUseCase = disposeFixedAssetUseCase,
+                computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase
             )
         }
     }

@@ -32,6 +32,12 @@ import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
 import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
 import com.theprodeogroup.fish.application.ComputeCashFlowUseCase
+import com.theprodeogroup.fish.application.AssessFixedAssetImpairmentUseCase
+import com.theprodeogroup.fish.application.ComputeFixedAssetRegisterUseCase
+import com.theprodeogroup.fish.application.CreateFixedAssetUseCase
+import com.theprodeogroup.fish.application.DisposeFixedAssetUseCase
+import com.theprodeogroup.fish.application.FakeFixedAssetRepository
+import com.theprodeogroup.fish.application.RecordFixedAssetDepreciationUseCase
 import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
@@ -130,6 +136,12 @@ class AdminPhoneRoutesTest {
         val computeBalanceSheetUseCase = ComputeBalanceSheetUseCase(companyRepository, accountRepository, journalEntryRepository)
         val computeProfitAndLossUseCase = ComputeProfitAndLossUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeCashFlowUseCase = ComputeCashFlowUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+        val fixedAssetRepository = FakeFixedAssetRepository()
+        val createFixedAssetUseCase = CreateFixedAssetUseCase(companyRepository, fixedAssetRepository)
+        val recordFixedAssetDepreciationUseCase = RecordFixedAssetDepreciationUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
+        val assessFixedAssetImpairmentUseCase = AssessFixedAssetImpairmentUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
+        val disposeFixedAssetUseCase = DisposeFixedAssetUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
+        val computeFixedAssetRegisterUseCase = ComputeFixedAssetRegisterUseCase(companyRepository, fixedAssetRepository)
 
 
         fun installInto(app: Application) {
@@ -172,7 +184,13 @@ class AdminPhoneRoutesTest {
                 computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase,
                 computeBalanceSheetUseCase = computeBalanceSheetUseCase,
                 computeProfitAndLossUseCase = computeProfitAndLossUseCase,
-                computeCashFlowUseCase = computeCashFlowUseCase
+                computeCashFlowUseCase = computeCashFlowUseCase,
+                fixedAssetRepository = fixedAssetRepository,
+                createFixedAssetUseCase = createFixedAssetUseCase,
+                recordFixedAssetDepreciationUseCase = recordFixedAssetDepreciationUseCase,
+                assessFixedAssetImpairmentUseCase = assessFixedAssetImpairmentUseCase,
+                disposeFixedAssetUseCase = disposeFixedAssetUseCase,
+                computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase
             )
         }
     }

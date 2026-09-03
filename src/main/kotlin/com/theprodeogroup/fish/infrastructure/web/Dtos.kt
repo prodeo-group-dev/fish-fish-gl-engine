@@ -663,3 +663,83 @@ data class CashFlowResponseDto(
     val activityAmounts: List<CashFlowActivityAmountDto>,
     val uncategorizedAmount: String
 )
+
+@Serializable
+data class CreateFixedAssetRequestDto(
+    val companyId: String,
+    val name: String,
+    val category: String,
+    val cost: String,
+    val currency: String,
+    val acquisitionDate: String,
+    val usefulLifeYears: Int? = null
+)
+
+/** Shared shape for a single Fixed Asset - a `POST /fixed-assets` response and one [FixedAssetRegisterResponseDto] line alike. */
+@Serializable
+data class FixedAssetSummaryDto(
+    val id: String,
+    val companyId: String,
+    val name: String,
+    val category: String,
+    val cost: String,
+    val currency: String,
+    val acquisitionDate: String,
+    val usefulLifeYears: Int?,
+    val accumulatedDepreciation: String,
+    val accumulatedImpairmentLoss: String,
+    val netBookValue: String,
+    val carryingAmount: String,
+    val isDisposed: Boolean
+)
+
+/** `GET /companies/{companyId}/reports/fixed-asset-register`. */
+@Serializable
+data class FixedAssetRegisterResponseDto(
+    val currency: String,
+    val lines: List<FixedAssetSummaryDto>,
+    val totalCost: String,
+    val totalAccumulatedDepreciation: String,
+    val totalAccumulatedImpairmentLoss: String,
+    val totalNetBookValue: String,
+    val totalCarryingAmount: String
+)
+
+@Serializable
+data class RecordFixedAssetDepreciationRequestDto(
+    val depreciationExpenseAccountId: String,
+    val accumulatedDepreciationAccountId: String,
+    val periodId: String,
+    val date: String
+)
+
+@Serializable
+data class AssessFixedAssetImpairmentRequestDto(
+    val recoverableAmount: String,
+    val currency: String,
+    val impairmentExpenseAccountId: String,
+    val accumulatedImpairmentAccountId: String,
+    val periodId: String,
+    val date: String
+)
+
+@Serializable
+data class DisposeFixedAssetRequestDto(
+    val proceeds: String,
+    val currency: String,
+    val cashAccountId: String,
+    val fixedAssetAccountId: String,
+    val accumulatedDepreciationAccountId: String,
+    val saleOfFixedAssetAccountId: String,
+    val periodId: String,
+    val date: String,
+    val accumulatedImpairmentAccountId: String? = null
+)
+
+/** Response for the three fixed-asset posting routes (depreciation/impairment/disposal) - just the resulting `JournalEntry` plus the asset's refreshed figures. */
+@Serializable
+data class FixedAssetPostingResponseDto(
+    val journalEntryId: String,
+    val journalEntryStatus: String,
+    val fixedAsset: FixedAssetSummaryDto
+)

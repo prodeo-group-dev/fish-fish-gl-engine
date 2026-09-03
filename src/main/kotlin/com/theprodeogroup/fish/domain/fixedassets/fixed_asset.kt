@@ -293,5 +293,25 @@ class FixedAsset private constructor(
             }
             return FixedAsset(id, companyId, name, category, cost, acquisitionDate, usefulLifeYears)
         }
+
+        /** Rebuilds a [FixedAsset] from persisted state, bypassing [create]'s validation - same "reconstitute" precedent as `Creditor`/`Customer`. */
+        internal fun reconstitute(
+            id: FixedAssetId,
+            companyId: CompanyId,
+            name: String,
+            category: AssetCategory,
+            cost: Money,
+            acquisitionDate: LocalDate,
+            usefulLifeYears: Int?,
+            accumulatedDepreciation: Money,
+            accumulatedImpairmentLoss: Money,
+            isDisposed: Boolean
+        ): FixedAsset {
+            val asset = FixedAsset(id, companyId, name, category, cost, acquisitionDate, usefulLifeYears)
+            asset.accumulatedDepreciation = accumulatedDepreciation
+            asset.accumulatedImpairmentLoss = accumulatedImpairmentLoss
+            asset.isDisposed = isDisposed
+            return asset
+        }
     }
 }
