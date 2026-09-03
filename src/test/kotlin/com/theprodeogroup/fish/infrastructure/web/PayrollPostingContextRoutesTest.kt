@@ -29,7 +29,9 @@ import com.theprodeogroup.fish.application.FakeTenantRepository
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
+import com.theprodeogroup.fish.application.CreateAccountUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
+import com.theprodeogroup.fish.application.RecordOpeningBalanceUseCase
 import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
@@ -91,6 +93,8 @@ class PayrollPostingContextRoutesTest {
         val computeTaxUseCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
         val inviteStaffMemberUseCase = InviteStaffMemberUseCase(tenantRepository, userRepository, membershipRepository, FakeStaffInviteNotificationGateway())
         val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val createAccountUseCase = CreateAccountUseCase(companyRepository, accountRepository)
+        val recordOpeningBalanceUseCase = RecordOpeningBalanceUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val leaveAccrualRepository = FakeLeaveAccrualRepository()
         val remeasureLeaveAccrualUseCase = RemeasureLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
         val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
@@ -171,6 +175,8 @@ class PayrollPostingContextRoutesTest {
                 accountRepository = accountRepository,
                 journalEntryRepository = journalEntryRepository,
                 postJournalEntryUseCase = postJournalEntryUseCase,
+                createAccountUseCase = createAccountUseCase,
+                recordOpeningBalanceUseCase = recordOpeningBalanceUseCase,
                 leaveAccrualRepository = leaveAccrualRepository,
                 remeasureLeaveAccrualUseCase = remeasureLeaveAccrualUseCase,
                 utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase,

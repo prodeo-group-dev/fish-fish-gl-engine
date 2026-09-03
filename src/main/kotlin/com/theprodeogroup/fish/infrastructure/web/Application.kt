@@ -20,7 +20,9 @@ import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
 import com.theprodeogroup.fish.application.KybGracePeriodSweep
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
+import com.theprodeogroup.fish.application.CreateAccountUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
+import com.theprodeogroup.fish.application.RecordOpeningBalanceUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
@@ -148,6 +150,8 @@ fun Application.productionModule() {
     val taxComputationRepository = ExposedTaxComputationRepository()
     val computeTaxUseCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
     val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
+    val createAccountUseCase = CreateAccountUseCase(companyRepository, accountRepository)
+    val recordOpeningBalanceUseCase = RecordOpeningBalanceUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
     val remeasureLeaveAccrualUseCase = RemeasureLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
     val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
     val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -219,6 +223,8 @@ fun Application.productionModule() {
         accountRepository = accountRepository,
         journalEntryRepository = journalEntryRepository,
         postJournalEntryUseCase = postJournalEntryUseCase,
+        createAccountUseCase = createAccountUseCase,
+        recordOpeningBalanceUseCase = recordOpeningBalanceUseCase,
         leaveAccrualRepository = leaveAccrualRepository,
         remeasureLeaveAccrualUseCase = remeasureLeaveAccrualUseCase,
         utilizeLeaveAccrualUseCase = utilizeLeaveAccrualUseCase,
@@ -272,6 +278,8 @@ fun Application.fishModule(
     accountRepository: AccountRepository,
     journalEntryRepository: JournalEntryRepository,
     postJournalEntryUseCase: PostJournalEntryUseCase,
+    createAccountUseCase: CreateAccountUseCase,
+    recordOpeningBalanceUseCase: RecordOpeningBalanceUseCase,
     leaveAccrualRepository: LeaveAccrualRepository,
     remeasureLeaveAccrualUseCase: RemeasureLeaveAccrualUseCase,
     utilizeLeaveAccrualUseCase: UtilizeLeaveAccrualUseCase,
@@ -361,7 +369,8 @@ fun Application.fishModule(
                 tenantRoutesAuthenticated(addCompanyToTenantUseCase, inviteStaffMemberUseCase, tenantRepository, userRepository, membershipRepository)
                 adminPhoneRoutes(recordAdminPhoneNumberUseCase)
                 journalEntryRoutes(
-                    postJournalEntryUseCase, periodRepository, accountRepository, journalEntryRepository, companyRepository, idempotencyKeyRepository
+                    postJournalEntryUseCase, createAccountUseCase, recordOpeningBalanceUseCase,
+                    periodRepository, accountRepository, journalEntryRepository, companyRepository, idempotencyKeyRepository
                 )
                 payrollRoutes(
                     remeasureLeaveAccrualUseCase, utilizeLeaveAccrualUseCase, leaveAccrualRepository,

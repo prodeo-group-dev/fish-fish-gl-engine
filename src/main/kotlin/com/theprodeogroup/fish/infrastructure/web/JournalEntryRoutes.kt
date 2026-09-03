@@ -1,12 +1,17 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import com.theprodeogroup.fish.application.CreateAccountUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryResult
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
+import com.theprodeogroup.fish.application.RecordOpeningBalanceUseCase
 import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
+import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
+import com.theprodeogroup.fish.domain.ledger.AccountType
+import com.theprodeogroup.fish.domain.ledger.ExpenseClassification
 import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
 import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.common.Money
@@ -69,6 +74,8 @@ import java.util.UUID
  */
 fun Route.journalEntryRoutes(
     postJournalEntryUseCase: PostJournalEntryUseCase,
+    createAccountUseCase: CreateAccountUseCase,
+    recordOpeningBalanceUseCase: RecordOpeningBalanceUseCase,
     periodRepository: PeriodRepository,
     accountRepository: AccountRepository,
     journalEntryRepository: JournalEntryRepository,
@@ -90,8 +97,129 @@ fun Route.journalEntryRoutes(
         val accounts = accountRepository.findAllByCompany(companyId)
             .filter { it.active }
             .sortedBy { it.code }
-            .map { AccountSummaryDto(it.id.value.toString(), it.code, it.name, it.type.name) }
+            .map { AccountSummaryDto(it.id.value.toString(), it.code, it.name, it.type.name, it.classification?.name) }
         call.respond(accounts)
+    }
+
+    /**
+     * `POST /companies/{companyId}/accounts` (2026-09-03, "We need work
+     * on the Chart of Accounts. There is no setup for it.") - adds one
+     * Account beyond whatever [com.theprodeogroup.fish.domain.ledger.ChartOfAccountsTemplate]
+     * seeded at onboarding. [authorizeTenantForWrite], not [authorizeTenantForRead] -
+     * this changes state.
+     */
+    post("/companies/{companyId}/accounts") {
+        val companyIdRaw = call.parameters["companyId"]
+        if (companyIdRaw == null) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "companyId path parameter is required"))
+            return@post
+        }
+        val companyUuid = call.parseUuid(companyIdRaw) ?: return@post
+        val companyId = CompanyId(companyUuid)
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
+        if (!call.verifyClaimedTenant(tenantId)) return@post
+        call.authorizeTenantForWrite(tenantId) ?: return@post
+
+        val request = call.receive<CreateAccountRequestDto>()
+        val type = try {
+            AccountType.valueOf(request.type)
+        } catch (e: IllegalArgumentException) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "type must be one of ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE"))
+            return@post
+        }
+        val classification = request.classification?.let {
+            try {
+                AccountClassification.valueOf(it)
+            } catch (e: IllegalArgumentException) {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "classification must be CURRENT or NON_CURRENT"))
+                return@post
+            }
+        }
+        val expenseClassification = request.expenseClassification?.let {
+            try {
+                ExpenseClassification.valueOf(it)
+            } catch (e: IllegalArgumentException) {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "expenseClassification must be MANUFACTURING, TRADING, or PROFIT_AND_LOSS"))
+                return@post
+            }
+        }
+        val parentId = request.parentId?.let { call.parseUuid(it)?.let(::AccountId) ?: return@post }
+
+        when (
+            val result = createAccountUseCase.execute(
+                CreateAccountUseCase.Request(companyId, type, classification, request.code, request.name, expenseClassification, parentId)
+            )
+        ) {
+            is CreateAccountUseCase.Result.Success -> call.respond(
+                HttpStatusCode.Created,
+                AccountSummaryDto(
+                    result.account.id.value.toString(), result.account.code, result.account.name,
+                    result.account.type.name, result.account.classification?.name
+                )
+            )
+            CreateAccountUseCase.Result.CompanyNotFound ->
+                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
+            is CreateAccountUseCase.Result.DuplicateCode ->
+                call.respond(HttpStatusCode.Conflict, ErrorResponseDto("duplicate_code", "An account with code '${result.code}' already exists"))
+            is CreateAccountUseCase.Result.InvalidAccount ->
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_account", result.message))
+        }
+    }
+
+    /**
+     * `POST /companies/{companyId}/accounts/{accountId}/opening-balance`
+     * (2026-09-03, "the opening figures for the first fiscal year should
+     * be available throughout the year") - a standing action, callable
+     * any time there's an open Period covering the given date, not just
+     * during onboarding. See [RecordOpeningBalanceUseCase]'s own KDoc.
+     */
+    post("/companies/{companyId}/accounts/{accountId}/opening-balance") {
+        val companyIdRaw = call.parameters["companyId"]
+        val accountIdRaw = call.parameters["accountId"]
+        if (companyIdRaw == null || accountIdRaw == null) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "companyId and accountId path parameters are required"))
+            return@post
+        }
+        val companyUuid = call.parseUuid(companyIdRaw) ?: return@post
+        val companyId = CompanyId(companyUuid)
+        val accountUuid = call.parseUuid(accountIdRaw) ?: return@post
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
+        if (!call.verifyClaimedTenant(tenantId)) return@post
+        call.authorizeTenantForWrite(tenantId) ?: return@post
+
+        val request = call.receive<RecordOpeningBalanceRequestDto>()
+        val amount = request.amount.toBigDecimalOrNull()
+        if (amount == null) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "amount is not a valid decimal"))
+            return@post
+        }
+        val date = try {
+            LocalDate.parse(request.date)
+        } catch (e: DateTimeParseException) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "date must be ISO-8601 (YYYY-MM-DD)"))
+            return@post
+        }
+
+        when (
+            val result = recordOpeningBalanceUseCase.execute(
+                RecordOpeningBalanceUseCase.Request(companyId, AccountId(accountUuid), amount, date)
+            )
+        ) {
+            is RecordOpeningBalanceUseCase.Result.Success -> call.respond(
+                HttpStatusCode.Created,
+                OpeningBalanceResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+            )
+            RecordOpeningBalanceUseCase.Result.CompanyNotFound ->
+                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
+            RecordOpeningBalanceUseCase.Result.AccountNotFound ->
+                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("account_not_found", "Account not found"))
+            RecordOpeningBalanceUseCase.Result.OpeningBalanceEquityAccountNotConfigured ->
+                call.respond(HttpStatusCode.Conflict, ErrorResponseDto("opening_balance_equity_account_not_configured", "This Company's Chart of Accounts has no Opening Balance Equity account"))
+            RecordOpeningBalanceUseCase.Result.NoOpenPeriod ->
+                call.respond(HttpStatusCode.Conflict, ErrorResponseDto("no_open_period", "No open Period covers this date"))
+            is RecordOpeningBalanceUseCase.Result.InvalidAmount ->
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_amount", result.message))
+        }
     }
 
     get("/companies/{companyId}/journal-entries") {

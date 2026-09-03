@@ -187,7 +187,38 @@ data class AccountSummaryDto(
     val accountId: String,
     val code: String,
     val name: String,
-    val type: String
+    val type: String,
+    val classification: String? = null
+)
+
+/**
+ * `POST /companies/{companyId}/accounts` (2026-09-03, Chart of
+ * Accounts setup). [classification] is CURRENT or NON_CURRENT for
+ * Asset/Liability accounts - "Fixed" (Asset) or "Long term"
+ * (Liability) is NON_CURRENT, "Current" is CURRENT for either type;
+ * omit for Equity/Revenue/Expense, which don't use it.
+ */
+@Serializable
+data class CreateAccountRequestDto(
+    val type: String,
+    val code: String,
+    val name: String,
+    val classification: String? = null,
+    val expenseClassification: String? = null,
+    val parentId: String? = null
+)
+
+/** `POST /companies/{companyId}/accounts/{accountId}/opening-balance` - [amount] is always positive; the account's own normal balance decides debit vs. credit. */
+@Serializable
+data class RecordOpeningBalanceRequestDto(
+    val amount: String,
+    val date: String
+)
+
+@Serializable
+data class OpeningBalanceResponseDto(
+    val journalEntryId: String,
+    val status: String
 )
 
 /** One line within a [JournalEntryRecordDto] - the account resolved to its code/name, not left as a bare id. */
