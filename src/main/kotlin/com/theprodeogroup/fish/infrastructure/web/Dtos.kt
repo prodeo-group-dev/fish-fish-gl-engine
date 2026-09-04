@@ -606,6 +606,22 @@ data class SalesPostingContextResponseDto(
     val currency: String
 )
 
+/**
+ * Wire shapes for `POST /companies/{companyId}/customer-balances`
+ * (2026-09-04) - [ComputeCustomerBalancesRequestDto.customerIds] is
+ * caller-supplied (SOP's own Customer list); GL has no visibility into
+ * SOP's master data, only the ids it happens to have tagged onto
+ * Ledger lines so far.
+ */
+@Serializable
+data class ComputeCustomerBalancesRequestDto(val customerIds: List<String>)
+
+@Serializable
+data class CustomerBalanceDto(val customerId: String, val balance: String, val currency: String)
+
+@Serializable
+data class ComputeCustomerBalancesResponseDto(val balances: List<CustomerBalanceDto>)
+
 @Serializable
 data class MoneyVelocityResponseDto(
     val periodId: String,
