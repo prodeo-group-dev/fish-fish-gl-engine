@@ -1,8 +1,50 @@
 package com.theprodeogroup.fish.infrastructure.persistence
 
 import org.flywaydb.core.Flyway
+import org.flywaydb.core.api.callback.Callback
+import org.flywaydb.core.api.callback.Context
+import org.flywaydb.core.api.callback.Event
 import org.flywaydb.core.api.output.MigrateResult
 import javax.sql.DataSource
+
+/**
+ * V17/V18 seed a real Membership for Prodeo Group's production tenant
+ * (id `9fa2198b-2a6f-467d-97ac-6f6fbce6a9fd`), which already exists in
+ * production but not on a brand-new database (a fresh CI run, or a new
+ * developer's first local setup) - Flyway fails the FK constraint there
+ * with nothing upstream ever having created that Tenant row. Fixing this
+ * inside V17/V18 themselves isn't an option: both are already applied in
+ * production, and editing an already-applied migration's SQL changes its
+ * checksum, which crash-loops the live service on Flyway's next
+ * validateOnMigrate check. A callback sits outside the checksummed
+ * migration chain entirely, so it carries none of that risk - it only
+ * ever fires while V17 is about to be newly applied (already-applied
+ * migrations are skipped on every later `migrate()` call), so production
+ * never re-runs it. `ON CONFLICT DO NOTHING` keeps it a no-op wherever
+ * the tenant already exists for real.
+ */
+private val ensureProdeoGroupTenantExistsBeforeV17 = object : Callback {
+    private val prodeoGroupTenantId = "9fa2198b-2a6f-467d-97ac-6f6fbce6a9fd"
+
+    override fun supports(event: Event, context: Context?): Boolean =
+        event == Event.BEFORE_EACH_MIGRATE && context?.migrationInfo?.version?.toString() == "17"
+
+    override fun canHandleInTransaction(event: Event, context: Context): Boolean = true
+
+    override fun handle(event: Event, context: Context) {
+        context.connection.createStatement().use { statement ->
+            statement.execute(
+                """
+                INSERT INTO tenants (id, name, segment, base_currency, status, kyb_status, admin_kyc_status, admin_phone_verification_status)
+                VALUES ('$prodeoGroupTenantId', 'Prodeo Group', 'INTERNAL_VENTURE', 'GBP', 'ACTIVE', 'VERIFIED', 'VERIFIED', 'VERIFIED')
+                ON CONFLICT (id) DO NOTHING
+                """.trimIndent()
+            )
+        }
+    }
+
+    override fun getCallbackName(): String = "ensureProdeoGroupTenantExistsBeforeV17"
+}
 
 /**
  * Thin wrapper over Flyway (docs/DDD_Design.md Section 10). Migrations
@@ -37,6 +79,7 @@ object DatabaseMigrator {
         val flyway = Flyway.configure()
             .dataSource(dataSource)
             .locations("classpath:db/migration")
+            .callbacks(ensureProdeoGroupTenantExistsBeforeV17)
             .load()
         val resolvedCount = flyway.info().all().size
         check(resolvedCount > 0) {
