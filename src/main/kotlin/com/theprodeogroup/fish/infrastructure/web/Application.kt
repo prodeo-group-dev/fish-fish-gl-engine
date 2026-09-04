@@ -33,6 +33,7 @@ import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.RecordPayRunUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
+import com.theprodeogroup.fish.application.RecordSalesReturnUseCase
 import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
 import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
@@ -171,6 +172,7 @@ fun Application.productionModule() {
     )
     val listSalesInvoicesUseCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
     val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
+    val recordSalesReturnUseCase = RecordSalesReturnUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -249,6 +251,7 @@ fun Application.productionModule() {
         listSalesInvoicesUseCase = listSalesInvoicesUseCase,
         customerRepository = customerRepository,
         recordCollectionUseCase = recordCollectionUseCase,
+        recordSalesReturnUseCase = recordSalesReturnUseCase,
         recordVendorObligationUseCase = recordVendorObligationUseCase,
         recordVendorPaymentUseCase = recordVendorPaymentUseCase,
         recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,
@@ -311,6 +314,7 @@ fun Application.fishModule(
     listSalesInvoicesUseCase: ListSalesInvoicesUseCase,
     customerRepository: CustomerRepository,
     recordCollectionUseCase: RecordCollectionUseCase,
+    recordSalesReturnUseCase: RecordSalesReturnUseCase,
     recordVendorObligationUseCase: RecordVendorObligationUseCase,
     recordVendorPaymentUseCase: RecordVendorPaymentUseCase,
     recordInventoryReceiptUseCase: RecordInventoryReceiptUseCase,
@@ -434,6 +438,7 @@ fun Application.fishModule(
                     companyRepository, idempotencyKeyRepository
                 )
                 recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, idempotencyKeyRepository)
+                recordSalesReturnRoutes(recordSalesReturnUseCase, companyRepository, idempotencyKeyRepository)
                 createSalesInvoiceRoutes(createSalesInvoiceUseCase, listSalesInvoicesUseCase, companyRepository, customerRepository, idempotencyKeyRepository)
                 recordVendorObligationAndPaymentRoutes(recordVendorObligationUseCase, recordVendorPaymentUseCase, companyRepository, idempotencyKeyRepository)
                 recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)

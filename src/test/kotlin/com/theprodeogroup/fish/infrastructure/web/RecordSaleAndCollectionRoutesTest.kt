@@ -40,6 +40,7 @@ import com.theprodeogroup.fish.application.RecordFixedAssetDepreciationUseCase
 import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
+import com.theprodeogroup.fish.application.RecordSalesReturnUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.RecordPayRunUseCase
@@ -111,6 +112,7 @@ class RecordSaleAndCollectionRoutesTest {
         )
         val listSalesInvoicesUseCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
         val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordSalesReturnUseCase = RecordSalesReturnUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -178,6 +180,7 @@ class RecordSaleAndCollectionRoutesTest {
                 listSalesInvoicesUseCase = listSalesInvoicesUseCase,
                 customerRepository = customerRepository,
                 recordCollectionUseCase = recordCollectionUseCase,
+                recordSalesReturnUseCase = recordSalesReturnUseCase,
                 recordVendorObligationUseCase = recordVendorObligationUseCase,
                 recordVendorPaymentUseCase = recordVendorPaymentUseCase,
                 recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,
@@ -334,6 +337,50 @@ class RecordSaleAndCollectionRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.BadRequest
+    }
+
+    @Test
+    fun `given a valid record-sales-return request, when posted, then it returns 200 Posted`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/sales/record-sales-return") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "salesReturnsAccountId": "${fixture.revenueAccount.id.value}",
+                    |"arControlAccountId": "${fixture.arControlAccount.id.value}", "amount": "1200.00", "currency": "GBP",
+                    |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: RecordSalesReturnResponseDto = response.body()
+        body.status shouldBe "POSTED"
+    }
+
+    @Test
+    fun `given a Sales Returns Account that does not exist, when record-sales-return is posted, then it returns 404`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/sales/record-sales-return") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "salesReturnsAccountId": "${UUID.randomUUID()}",
+                    |"arControlAccountId": "${fixture.arControlAccount.id.value}", "amount": "1200.00", "currency": "GBP",
+                    |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.NotFound
     }
 
     @Test
