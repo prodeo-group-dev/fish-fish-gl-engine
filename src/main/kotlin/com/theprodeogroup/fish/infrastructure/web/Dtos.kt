@@ -162,6 +162,32 @@ data class RecordCollectionResponseDto(
 )
 
 /**
+ * Wire shape for `RecordSalesReturnUseCase`
+ * (docs/Returns_Inwards_Requirements_Specification.md Section 3.5) -
+ * SOP's Returns Inwards credit-note posting, same "no owning aggregate,
+ * companyId included directly" reasoning as [RecordSaleRequestDto]/
+ * [RecordCollectionRequestDto] above.
+ */
+@Serializable
+data class RecordSalesReturnRequestDto(
+    val companyId: String,
+    val periodId: String,
+    val date: String,
+    val salesReturnsAccountId: String,
+    val arControlAccountId: String,
+    val amount: String,
+    val currency: String,
+    val customerId: String,
+    val description: String? = null
+)
+
+@Serializable
+data class RecordSalesReturnResponseDto(
+    val journalEntryId: String,
+    val status: String
+)
+
+/**
  * Wire shapes for `CreateSalesInvoiceUseCase` - the business-owner-
  * facing "record a sale" form behind the SOP dashboard tab. Unlike
  * [RecordSaleRequestDto], the caller supplies no `periodId`/account
