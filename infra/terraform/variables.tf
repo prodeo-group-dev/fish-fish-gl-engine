@@ -376,6 +376,44 @@ variable "runner_root_volume_size" {
   default     = 40
 }
 
+# 2026-09-04: confirmed this self-hosted-runner approach is a dead end -
+# `gh workflow run` returns HTTP 422 "Actions has been disabled for this
+# user" even via workflow_dispatch, proving the block is on Actions
+# itself (user/account-level), not hosted-runner access specifically. A
+# self-hosted runner only changes WHERE a job executes once Actions
+# agrees to schedule it; here Actions refuses to create the run at all,
+# so this instance would never receive a job regardless. Left in place,
+# dormant (never applied - see terraform.tfstate) rather than removed,
+# in case the block ever narrows or lifts. Jenkins (jenkins.tf) is the
+# chosen replacement instead, scoped to GL only for now.
+
+# --- Self-hosted Jenkins (jenkins.tf) ---------------------------------
+#
+# 2026-09-04: replaces GitHub Actions for GL, as a proof of concept -
+# see github_runner.tf's own updated note above for why the self-hosted-
+# runner approach was a dead end. Jenkins sidesteps the block entirely
+# since it doesn't depend on GitHub Actions as a system - GitHub
+# webhooks (which trigger Jenkins builds) are a separate, unaffected
+# feature.
+
+variable "jenkins_instance_type" {
+  description = "EC2 instance type for the Jenkins controller. Originally sized t3.large (2 vCPU/8GB) to match runner_instance_type's own reasoning, but this account is restricted to Free Tier-eligible instance types only (confirmed via a failed apply - RunInstances rejected t3.large with InvalidParameterCombination, dry-run confirmed t3.micro/t2.micro are accepted) - almost certainly the same abuse-review restriction that disabled GitHub Actions, not something to engineer around silently. t3.micro is 1 vCPU/1GB - genuinely tight for Jenkins+Gradle+Docker running concurrently, compensated for with a swap file in user_data rather than assumed sufficient."
+  type        = string
+  default     = "t3.micro"
+}
+
+variable "jenkins_root_volume_size" {
+  description = "Root EBS volume size (GB) for the Jenkins instance - Docker image layers, Gradle caches, Jenkins' own job workspace history, and plugin data accumulate across builds; same reasoning as runner_root_volume_size."
+  type        = number
+  default     = 40
+}
+
+variable "jenkins_domain_name" {
+  description = "FQDN Jenkins is reachable at - a dedicated subdomain with its own ALB listener rule and ACM certificate, same pattern as pop_domain_name/sop_domain_name/im_domain_name/hr_domain_name."
+  type        = string
+  default     = "jenkins.theprodeogroup.com"
+}
+
 # --- Application configuration (JWT) ---------------------------------
 #
 # Provisioned by this config as of 2026-08-26 (cognito.tf) - previously

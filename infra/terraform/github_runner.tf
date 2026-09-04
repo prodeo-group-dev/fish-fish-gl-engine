@@ -4,6 +4,18 @@
 # in). Registers at the ORG level (var.github_organization), so this
 # one instance serves every repo in this project, not just fish-fish-gl-engine.
 #
+# **2026-09-04: confirmed a dead end, left in place dormant.** `gh
+# workflow run` against a workflow_dispatch trigger returns HTTP 422
+# "Actions has been disabled for this user" - proving the block is on
+# Actions itself (user/account-level), not hosted-runner access
+# specifically. A self-hosted runner only changes WHERE a job executes
+# once Actions agrees to schedule it; Actions refuses to create the run
+# at all here, so this instance would never receive a job regardless of
+# whether it's ever applied. Never applied (confirmed via
+# terraform.tfstate - zero aws_instance resources), so it costs nothing
+# to leave here in case the block ever narrows or lifts. Jenkins
+# (jenkins.tf) is the chosen replacement, scoped to GL only for now.
+#
 # Deliberately holds ZERO standing AWS permissions of its own - job-time
 # AWS access still comes entirely from the existing OIDC federation
 # (iam.tf), scoped exactly as it already restricts deploys (master-

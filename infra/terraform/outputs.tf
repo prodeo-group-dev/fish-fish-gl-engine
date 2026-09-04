@@ -123,3 +123,27 @@ output "hr_acm_validation_record" {
     value = tolist(aws_acm_certificate.hr.domain_validation_options)[0].resource_record_value
   }
 }
+
+output "jenkins_instance_id" {
+  description = "Target for `aws ssm start-session --target <this>` - use to complete the manual post-apply steps (plugin install, GitHub credential, multibranch job) documented in infra/terraform/README.md."
+  value       = aws_instance.jenkins.id
+}
+
+output "jenkins_url" {
+  description = "Where Jenkins is reachable once DNS is added (see jenkins_acm_validation_record below)."
+  value       = "https://${var.jenkins_domain_name}"
+}
+
+output "jenkins_acm_validation_record" {
+  description = "DNS validation record to add at the external provider for jenkins.theprodeogroup.com - a CNAME: name -> value, exactly as ACM generated them. Add this FIRST, before re-running terraform apply (jenkins.tf's aws_acm_certificate_validation.jenkins blocks on it). A second CNAME (jenkins.theprodeogroup.com -> alb_dns_name) is also needed once the cert validates."
+  value = {
+    name  = tolist(aws_acm_certificate.jenkins.domain_validation_options)[0].resource_record_name
+    type  = tolist(aws_acm_certificate.jenkins.domain_validation_options)[0].resource_record_type
+    value = tolist(aws_acm_certificate.jenkins.domain_validation_options)[0].resource_record_value
+  }
+}
+
+output "jenkins_admin_password_secret_arn" {
+  description = "aws secretsmanager get-secret-value --secret-id <this> --query SecretString --output text to retrieve the generated Jenkins admin password (username: admin)."
+  value       = aws_secretsmanager_secret.jenkins_admin_password.arn
+}
