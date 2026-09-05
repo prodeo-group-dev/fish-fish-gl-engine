@@ -41,7 +41,7 @@ fun Route.adminPhoneRoutes(recordAdminPhoneNumberUseCase: RecordAdminPhoneNumber
             return@post
         }
 
-        when (val result = recordAdminPhoneNumberUseCase.execute(tenantId, caller.user.email, phoneNumber)) {
+        when (val result = recordAdminPhoneNumberUseCase.execute(tenantId, caller.email, phoneNumber)) {
             is RecordAdminPhoneNumberUseCase.Result.Success -> call.respond(
                 HttpStatusCode.OK,
                 RecordAdminPhoneNumberResponseDto(

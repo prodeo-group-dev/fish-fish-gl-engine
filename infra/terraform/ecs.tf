@@ -60,6 +60,13 @@ resource "aws_ecs_task_definition" "this" {
         # closes docs/POP_GL_Service_Account_Closure_Plan.md.
         { name = "FISH_JWT_SERVICE_AUDIENCE_POP", value = aws_cognito_user_pool_client.pop_gl_service.id },
         { name = "FISH_JWT_JWKS_URL", value = local.fish_jwt_jwks_url },
+        # GL's own outbound call to EA (ea.tf) for the human-facing
+        # authorizeTenantFor*/`/me` rewiring -
+        # docs/Tenancy_Administration_Extraction_DDD_Design.md. EA is
+        # reached over its own public ALB endpoint, same as any other
+        # HTTPS client - no security-group change needed (see the
+        # rewiring plan's own verification notes).
+        { name = "EA_API_BASE_URL", value = "https://${var.ea_domain_name}" },
         # Was unset ("wherever fish-gl-web ends up actually hosted,
         # which isn't decided yet" - Application.kt's own comment) until
         # frontend.tf decided it: same domain as the API, via CloudFront.

@@ -142,7 +142,7 @@ fun Route.createSalesInvoiceRoutes(
             val result = createSalesInvoiceUseCase.execute(
                 CreateSalesInvoiceUseCase.Request(
                     companyId, saleType, saleMethod, request.customerName, Money(amountValue, currency), date,
-                    caller.user.email, request.description
+                    caller.email, request.description
                 )
             )
 

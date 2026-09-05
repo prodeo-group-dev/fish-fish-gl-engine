@@ -33,6 +33,7 @@ import com.theprodeogroup.fish.application.FakeMembershipRepository
 import com.theprodeogroup.fish.application.FakePeriodRepository
 import com.theprodeogroup.fish.application.FakeSalesInvoiceRecordRepository
 import com.theprodeogroup.fish.application.FakeTenantRepository
+import com.theprodeogroup.fish.application.FakeEaMembershipGateway
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.OnboardTenantUseCase
@@ -180,6 +181,7 @@ class ExpenseVelocityRoutesTest {
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
+                eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository, tenantRepository),
                 userRepository = userRepository,
                 membershipRepository = membershipRepository,
                 companyRepository = companyRepository,

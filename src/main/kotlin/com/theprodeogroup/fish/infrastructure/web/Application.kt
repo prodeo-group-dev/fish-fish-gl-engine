@@ -51,6 +51,8 @@ import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
 import com.theprodeogroup.fish.domain.tenancy.TenantRepository
 import com.theprodeogroup.fish.domain.tenancy.UserRepository
+import com.theprodeogroup.fish.infrastructure.ea.EaMembershipGateway
+import com.theprodeogroup.fish.infrastructure.ea.KtorEaMembershipGateway
 import com.theprodeogroup.fish.infrastructure.persistence.DatabaseConfig
 import com.theprodeogroup.fish.infrastructure.persistence.DatabaseMigrator
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedAccountRepository
@@ -75,7 +77,11 @@ import com.theprodeogroup.fish.infrastructure.notification.UnconfiguredStaffInvi
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation as ClientContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.serialization.kotlinx.json.json as clientJson
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.application.log
@@ -222,12 +228,24 @@ fun Application.productionModule() {
         }
     }
 
+    // EA (Enterprise Administration) - the human-facing half of
+    // docs/Tenancy_Administration_Extraction_DDD_Design.md's rewiring.
+    // No default/fallback for the base URL, same "no safe default for a
+    // security-relevant value" reasoning as FISH_JWT_ISSUER etc. -
+    // GL's own authorizeTenantFor*/`/me` genuinely cannot authorize a
+    // human caller without this configured.
+    val eaApiBaseUrl = System.getenv("EA_API_BASE_URL")
+        ?: error("EA_API_BASE_URL environment variable is required - no default for a security-relevant value")
+    val eaHttpClient = HttpClient(CIO) { install(ClientContentNegotiation) { clientJson() } }
+    val eaMembershipGateway = KtorEaMembershipGateway(eaHttpClient, eaApiBaseUrl)
+
     fishModule(
         verifier = buildJwksVerifier(),
         serviceVerifier = buildJwksServiceVerifier(),
         imServiceVerifier = buildJwksServiceVerifierForIm(),
         hrServiceVerifier = buildJwksServiceVerifierForHr(),
         popServiceVerifier = buildJwksServiceVerifierForPop(),
+        eaMembershipGateway = eaMembershipGateway,
         userRepository = userRepository,
         membershipRepository = membershipRepository,
         companyRepository = companyRepository,
@@ -291,6 +309,7 @@ fun Application.fishModule(
     imServiceVerifier: JWTVerifier? = null,
     hrServiceVerifier: JWTVerifier? = null,
     popServiceVerifier: JWTVerifier? = null,
+    eaMembershipGateway: EaMembershipGateway,
     userRepository: UserRepository,
     membershipRepository: MembershipRepository,
     companyRepository: CompanyRepository,
@@ -406,7 +425,7 @@ fun Application.fishModule(
         }
     }
     installFishJwtAuth(
-        verifier, userRepository, membershipRepository,
+        verifier, userRepository, membershipRepository, eaMembershipGateway,
         serviceVerifier ?: verifier, imServiceVerifier ?: verifier, hrServiceVerifier ?: verifier, popServiceVerifier ?: verifier
     )
 
@@ -443,7 +462,7 @@ fun Application.fishModule(
                 createSalesInvoiceRoutes(createSalesInvoiceUseCase, listSalesInvoicesUseCase, companyRepository, customerRepository, idempotencyKeyRepository)
                 recordVendorObligationAndPaymentRoutes(recordVendorObligationUseCase, recordVendorPaymentUseCase, companyRepository, idempotencyKeyRepository)
                 recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
-                meRoutes(tenantRepository, companyRepository)
+                meRoutes(companyRepository)
                 moneyVelocityRoutes(computeMoneyVelocityUseCase, companyRepository)
                 salesPostingContextRoutes(
                     ComputeSalesPostingContextUseCase(companyRepository, periodRepository, accountRepository), companyRepository

@@ -13,6 +13,9 @@ import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
 import com.theprodeogroup.fish.domain.tenancy.MembershipStatus
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.domain.tenancy.UserRepository
+import com.theprodeogroup.fish.infrastructure.ea.EaCallerLookupResult
+import com.theprodeogroup.fish.infrastructure.ea.EaMembershipGateway
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
@@ -27,10 +30,21 @@ import io.ktor.server.request.header
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.Routing
+import io.ktor.util.AttributeKey
 import java.net.URI
 import java.security.interfaces.RSAPrivateKey
 import java.security.interfaces.RSAPublicKey
 import java.util.concurrent.TimeUnit
+
+/**
+ * Where [installFishJwtAuth] stashes the [EaMembershipGateway] so
+ * `authorizeTenantForWrite`/`ForAdmin`/`ForModule`/`ForRead` can reach it
+ * without every one of their ~146 call sites across the codebase taking
+ * a new parameter - the same "shared dependency, resolved from
+ * `Application.attributes` rather than threaded through every call site"
+ * shape Ktor's own plugin system already uses internally.
+ */
+val EaMembershipGatewayKey = AttributeKey<EaMembershipGateway>("EaMembershipGateway")
 
 /** The primary JWT auth configuration this app registers - see [installFishJwtAuth]. */
 const val FISH_JWT_AUTH_NAME = "fish-jwt"
@@ -91,6 +105,15 @@ fun Application.installFishJwtAuth(
     verifier: JWTVerifier,
     userRepository: UserRepository,
     membershipRepository: MembershipRepository,
+    // The human-facing path's counterpart to EA
+    // (docs/Tenancy_Administration_Extraction_DDD_Design.md) - no
+    // default, matching [verifier]'s own "no safe default for a
+    // security-relevant value" reasoning. Every existing test fixture
+    // needs to pass a fake (see the EA rewiring plan's own "Test
+    // migration" step) rather than silently keep working against local
+    // repos, which is exactly the point: this should be impossible to
+    // forget.
+    eaMembershipGateway: EaMembershipGateway,
     // Defaults to reusing [verifier] - every existing test call site
     // (fishModule, 18 route test files) passes only the primary
     // verifier, and registering the service provider against the same
@@ -113,10 +136,12 @@ fun Application.installFishJwtAuth(
     // [hrServiceVerifier] - closes docs/POP_GL_Service_Account_Closure_Plan.md.
     popServiceVerifier: JWTVerifier = verifier
 ) {
+    attributes.put(EaMembershipGatewayKey, eaMembershipGateway)
+
     install(Authentication) {
         jwt(FISH_JWT_AUTH_NAME) {
             this.verifier(verifier)
-            validate { credential -> credential.toAuthenticatedCaller(userRepository, membershipRepository) }
+            validate { credential -> credential.toAuthenticatedCaller() }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
@@ -124,7 +149,7 @@ fun Application.installFishJwtAuth(
 
         jwt(FISH_JWT_SERVICE_AUTH_NAME) {
             this.verifier(serviceVerifier)
-            validate { credential -> credential.toAuthenticatedCaller(userRepository, membershipRepository) }
+            validate { credential -> credential.toServiceAccountCaller(userRepository, membershipRepository) }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
@@ -132,7 +157,7 @@ fun Application.installFishJwtAuth(
 
         jwt(FISH_JWT_SERVICE_AUTH_NAME_IM) {
             this.verifier(imServiceVerifier)
-            validate { credential -> credential.toAuthenticatedCaller(userRepository, membershipRepository) }
+            validate { credential -> credential.toServiceAccountCaller(userRepository, membershipRepository) }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
@@ -140,7 +165,7 @@ fun Application.installFishJwtAuth(
 
         jwt(FISH_JWT_SERVICE_AUTH_NAME_HR) {
             this.verifier(hrServiceVerifier)
-            validate { credential -> credential.toAuthenticatedCaller(userRepository, membershipRepository) }
+            validate { credential -> credential.toServiceAccountCaller(userRepository, membershipRepository) }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
@@ -148,7 +173,7 @@ fun Application.installFishJwtAuth(
 
         jwt(FISH_JWT_SERVICE_AUTH_NAME_POP) {
             this.verifier(popServiceVerifier)
-            validate { credential -> credential.toAuthenticatedCaller(userRepository, membershipRepository) }
+            validate { credential -> credential.toServiceAccountCaller(userRepository, membershipRepository) }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
@@ -177,16 +202,40 @@ fun Application.installFishJwtAuth(
     }
 }
 
-/** Shared by [FISH_JWT_AUTH_NAME] and [FISH_JWT_SERVICE_AUTH_NAME] - identical identity resolution, only the accepted audience differs between the two providers. */
-private fun JWTCredential.toAuthenticatedCaller(
+/**
+ * [FISH_JWT_AUTH_NAME]'s own identity resolution - proves the token is
+ * genuinely signed and carries an `email` claim, nothing more. Unlike
+ * the pre-EA version of this function, this does **not** check that any
+ * `User`/`Membership` exists anywhere in GL's own tables - that check
+ * moved to `authorizeTenantForWrite`/`ForAdmin`/`ForModule`/`ForRead`,
+ * which resolve membership via EA instead, at the point a request
+ * actually needs it. A caller with a validly-signed token but no
+ * Membership anywhere now passes this layer and is rejected downstream
+ * with 403 rather than 401 here - see the EA rewiring plan for why this
+ * is an accepted, deliberate change rather than a regression.
+ */
+private fun JWTCredential.toAuthenticatedCaller(): AuthenticatedCaller? {
+    val email = payload.getClaim("email").asString() ?: return null
+    return AuthenticatedCaller(email)
+}
+
+/**
+ * [FISH_JWT_SERVICE_AUTH_NAME]/`..._IM`/`..._HR`/`..._POP`'s shared
+ * identity resolution - unchanged from every JWT provider's behavior
+ * before the EA rewiring (still resolves against GL's own local
+ * `UserRepository`/`MembershipRepository`). Service-account callers stay
+ * on this path deliberately this pass - see [ServiceAccountCaller]'s own
+ * KDoc and the EA rewiring plan's "Deferred" section for why.
+ */
+private fun JWTCredential.toServiceAccountCaller(
     userRepository: UserRepository,
     membershipRepository: MembershipRepository
-): AuthenticatedCaller? {
+): ServiceAccountCaller? {
     val email = payload.getClaim("email").asString() ?: return null
     val user = userRepository.findByEmail(email) ?: return null
     val activeMemberships = membershipRepository.findAllByUser(user.id).filter { it.status == MembershipStatus.ACTIVE }
     if (activeMemberships.isEmpty()) return null
-    return AuthenticatedCaller(user, activeMemberships)
+    return ServiceAccountCaller(user, activeMemberships)
 }
 
 /**
@@ -311,36 +360,107 @@ fun Route.fishOnboarding(build: Route.() -> Unit): Route =
     authenticate(FISH_JWT_ONBOARDING_AUTH_NAME, build = build)
 
 /**
- * Resolves the calling [AuthenticatedCaller.memberships] entry matching
- * [tenantId] and requires [AccessLevel.WRITE] or above (2026-08-29,
- * replacing the old `Role.READ_ONLY` check - see [AccessLevel]'s own
- * KDoc for why enforcement moved off `Role` entirely: `Role` is
- * documented as "a label enum only, carrying no behavior," and never
- * had a permissions matrix defined for it in the spec).
- *
- * Responds and returns `null` on failure (401 - no `AuthenticatedCaller`
- * at all; 403 - authenticated but no Membership in this Tenant, or one
- * below [AccessLevel.WRITE]), matching the "respond inline, caller
- * checks for null" idiom every route in this package uses to keep route
- * bodies linear rather than nested.
+ * The authorized identity a successful `authorizeTenantFor*` call
+ * returns - deliberately just enough for the handful of call sites that
+ * read anything off it afterward (`caller.email`/`caller.name`, e.g.
+ * `InviteStaffMemberUseCase.Request.inviterName` in `TenantRoutes.kt`).
+ * Populated from EA's response for a human caller, or from GL's own
+ * local `User` for a service-account caller - callers of
+ * `authorizeTenantFor*` don't need to know or care which.
  */
-suspend fun ApplicationCall.authorizeTenantForWrite(tenantId: TenantId): AuthenticatedCaller? {
-    val caller = principal<AuthenticatedCaller>()
-    if (caller == null) {
+data class AuthorizedCaller(val email: String, val name: String)
+
+/** Strips the `Bearer ` prefix off this request's `Authorization` header, or `null` if missing/malformed. */
+private fun ApplicationCall.rawBearerToken(): String? =
+    request.header(HttpHeaders.Authorization)?.removePrefix("Bearer ")?.takeIf { it.isNotBlank() }
+
+/**
+ * The shared body of every `authorizeTenantFor*` function below -
+ * branches on which of [ServiceAccountCaller] (POP/SOP/IM/HR's own
+ * calls, still resolved against GL's local repos) or [AuthenticatedCaller]
+ * (a human caller, resolved via EA) actually authenticated this request,
+ * then applies the same [minAccessLevel]/[module] floor either way.
+ *
+ * **The EA-unreachable case responds 503, not 401/403** - a caller
+ * shouldn't have to guess whether "the request failed" means "you lack
+ * access" or "the dependency this now relies on is down"
+ * (`docs/Tenancy_Administration_Extraction_DDD_Design.md` §3's open
+ * latency/availability question, resolved here as fail-closed rather
+ * than silently falling back to anything).
+ */
+private suspend fun ApplicationCall.authorizeTenant(
+    tenantId: TenantId,
+    minAccessLevel: AccessLevel,
+    module: ManagedModule? = null
+): AuthorizedCaller? {
+    principal<ServiceAccountCaller>()?.let { serviceCaller ->
+        val membership = serviceCaller.memberships.firstOrNull { it.tenantId == tenantId }
+        if (membership == null) {
+            respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "No active Membership in the requested Tenant"))
+            return null
+        }
+        if (!membership.accessLevel.atLeast(minAccessLevel)) {
+            respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership's access level cannot perform this action"))
+            return null
+        }
+        if (module != null && module !in membership.grantedModules) {
+            respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership is not granted access to the $module module"))
+            return null
+        }
+        return AuthorizedCaller(serviceCaller.user.email, serviceCaller.user.name)
+    }
+
+    val humanCaller = principal<AuthenticatedCaller>()
+    if (humanCaller == null) {
         respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
         return null
     }
-    val membership = caller.memberships.firstOrNull { it.tenantId == tenantId }
-    if (membership == null) {
-        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "No active Membership in the requested Tenant"))
+    val token = rawBearerToken()
+    if (token == null) {
+        respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
         return null
     }
-    if (!membership.accessLevel.atLeast(AccessLevel.WRITE)) {
-        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership's access level cannot perform this action"))
-        return null
+
+    val gateway = application.attributes[EaMembershipGatewayKey]
+    return when (val result = gateway.lookupCaller(token)) {
+        is EaCallerLookupResult.Unauthorized -> {
+            respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
+            null
+        }
+        is EaCallerLookupResult.Failure -> {
+            respond(HttpStatusCode.ServiceUnavailable, ErrorResponseDto("service_unavailable", "Could not reach the authorization service"))
+            null
+        }
+        is EaCallerLookupResult.Success -> {
+            val membership = result.memberships.firstOrNull { it.tenantId == tenantId }
+            if (membership == null) {
+                respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "No active Membership in the requested Tenant"))
+                return null
+            }
+            if (!membership.accessLevel.atLeast(minAccessLevel)) {
+                respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership's access level cannot perform this action"))
+                return null
+            }
+            if (module != null && module !in membership.grantedModules) {
+                respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership is not granted access to the $module module"))
+                return null
+            }
+            AuthorizedCaller(result.email, result.name)
+        }
     }
-    return caller
 }
+
+/**
+ * Requires [AccessLevel.WRITE] or above in [tenantId] (2026-08-29,
+ * replacing the old `Role.READ_ONLY` check - see [AccessLevel]'s own
+ * KDoc for why enforcement moved off `Role` entirely). Responds and
+ * returns `null` on failure (401/403/503 - see [authorizeTenant]),
+ * matching the "respond inline, caller checks for null" idiom every
+ * route in this package uses to keep route bodies linear rather than
+ * nested.
+ */
+suspend fun ApplicationCall.authorizeTenantForWrite(tenantId: TenantId): AuthorizedCaller? =
+    authorizeTenant(tenantId, AccessLevel.WRITE)
 
 /**
  * [authorizeTenantForWrite]'s counterpart for a route that grants real
@@ -353,23 +473,8 @@ suspend fun ApplicationCall.authorizeTenantForWrite(tenantId: TenantId): Authent
  * user's own explicit direction (2026-08-31) that only an admin-level
  * Membership may invite staff.
  */
-suspend fun ApplicationCall.authorizeTenantForAdmin(tenantId: TenantId): AuthenticatedCaller? {
-    val caller = principal<AuthenticatedCaller>()
-    if (caller == null) {
-        respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
-        return null
-    }
-    val membership = caller.memberships.firstOrNull { it.tenantId == tenantId }
-    if (membership == null) {
-        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "No active Membership in the requested Tenant"))
-        return null
-    }
-    if (!membership.accessLevel.atLeast(AccessLevel.ADMIN)) {
-        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "Only an admin-level Membership can perform this action"))
-        return null
-    }
-    return caller
-}
+suspend fun ApplicationCall.authorizeTenantForAdmin(tenantId: TenantId): AuthorizedCaller? =
+    authorizeTenant(tenantId, AccessLevel.ADMIN)
 
 /**
  * [authorizeTenantForWrite]'s counterpart for a route scoped to one
@@ -383,27 +488,8 @@ suspend fun ApplicationCall.authorizeTenantForAdmin(tenantId: TenantId): Authent
  * them. This is a real, known gap, not an oversight: closing it for
  * every existing route is a separate piece of work.
  */
-suspend fun ApplicationCall.authorizeTenantForModule(tenantId: TenantId, module: ManagedModule, minAccessLevel: AccessLevel): AuthenticatedCaller? {
-    val caller = principal<AuthenticatedCaller>()
-    if (caller == null) {
-        respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
-        return null
-    }
-    val membership = caller.memberships.firstOrNull { it.tenantId == tenantId }
-    if (membership == null) {
-        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "No active Membership in the requested Tenant"))
-        return null
-    }
-    if (!membership.accessLevel.atLeast(minAccessLevel)) {
-        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership's access level cannot perform this action"))
-        return null
-    }
-    if (module !in membership.grantedModules) {
-        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership is not granted access to the $module module"))
-        return null
-    }
-    return caller
-}
+suspend fun ApplicationCall.authorizeTenantForModule(tenantId: TenantId, module: ManagedModule, minAccessLevel: AccessLevel): AuthorizedCaller? =
+    authorizeTenant(tenantId, minAccessLevel, module)
 
 /**
  * [authorizeTenantForWrite]'s counterpart for a route that only reads
@@ -419,23 +505,8 @@ suspend fun ApplicationCall.authorizeTenantForModule(tenantId: TenantId, module:
  * either a write ([authorizeTenantForWrite]) or needed no Tenant scope
  * at all ([MeRoutes]).
  */
-suspend fun ApplicationCall.authorizeTenantForRead(tenantId: TenantId): AuthenticatedCaller? {
-    val caller = principal<AuthenticatedCaller>()
-    if (caller == null) {
-        respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
-        return null
-    }
-    val membership = caller.memberships.firstOrNull { it.tenantId == tenantId }
-    if (membership == null) {
-        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "No active Membership in the requested Tenant"))
-        return null
-    }
-    if (!membership.accessLevel.atLeast(AccessLevel.READ)) {
-        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership's access level cannot perform this action"))
-        return null
-    }
-    return caller
-}
+suspend fun ApplicationCall.authorizeTenantForRead(tenantId: TenantId): AuthorizedCaller? =
+    authorizeTenant(tenantId, AccessLevel.READ)
 
 /**
  * Resolves which [TenantId] owns [companyId] - `Membership` is

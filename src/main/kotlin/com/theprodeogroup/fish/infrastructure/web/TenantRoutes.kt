@@ -249,7 +249,7 @@ fun Route.tenantRoutesAuthenticated(
                 email = request.email,
                 name = request.name,
                 role = role,
-                inviterName = caller.user.name,
+                inviterName = caller.name,
                 modules = modules
             )
         )

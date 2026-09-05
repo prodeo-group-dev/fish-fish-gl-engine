@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.application
 
+import com.auth0.jwt.JWT
 import com.theprodeogroup.fish.domain.tenancy.AdminPhoneVerificationChecker
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
@@ -7,6 +8,7 @@ import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.domain.tenancy.Membership
 import com.theprodeogroup.fish.domain.tenancy.MembershipId
 import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
+import com.theprodeogroup.fish.domain.tenancy.MembershipStatus
 import com.theprodeogroup.fish.domain.tenancy.PhoneNumber
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.StaffInviteNotificationGateway
@@ -18,6 +20,9 @@ import com.theprodeogroup.fish.domain.tenancy.TenantStatus
 import com.theprodeogroup.fish.domain.tenancy.User
 import com.theprodeogroup.fish.domain.tenancy.UserId
 import com.theprodeogroup.fish.domain.tenancy.UserRepository
+import com.theprodeogroup.fish.infrastructure.ea.CallerMembership
+import com.theprodeogroup.fish.infrastructure.ea.EaCallerLookupResult
+import com.theprodeogroup.fish.infrastructure.ea.EaMembershipGateway
 
 /**
  * In-memory stand-ins for the Tenancy repository interfaces, shared
@@ -105,4 +110,62 @@ class FakeAdminPhoneVerificationChecker(private var verified: Boolean = true) : 
     override fun isVerified(email: String, phoneNumber: PhoneNumber): Boolean = verified
 
     fun alwaysReject() { verified = false }
+}
+
+/**
+ * Test double standing in for a real network call to EA
+ * (`docs/Tenancy_Administration_Extraction_DDD_Design.md`'s human-facing
+ * rewiring) - decodes the forwarded token's `email` claim (no signature
+ * check needed here; a real EA independently re-verifies the token in
+ * production) and resolves the same way EA's own `GET /me` does, but
+ * against these same three fakes rather than a real database. Every
+ * existing route test fixture already seeds [userRepository]/
+ * [membershipRepository]/[tenantRepository] with exactly the Tenant/User/
+ * Membership data its tests need - this reuses that seeding rather than
+ * asking each affected test file to duplicate it a second time for a
+ * fake gateway.
+ *
+ * **Deliberately more tolerant than real EA's own `/me`** on one point:
+ * many existing route tests grant a `Membership` against a bare
+ * `TenantId.generate()` without ever saving a matching `Tenant` - a
+ * shortcut that never mattered before this rewiring, since
+ * `authorizeTenantFor*` never looked up `Tenant` at all. Real EA drops
+ * such a membership entirely (no `Tenant` to describe); this fake
+ * doesn't, since what these tests actually exercise is the
+ * authorization check itself (`role`/`accessLevel`/`grantedModules`),
+ * not `/me`'s own tenant-metadata resolution - falls back to empty/
+ * default values for the tenant-descriptive fields only.
+ */
+class FakeEaMembershipGateway(
+    private val userRepository: UserRepository,
+    private val membershipRepository: MembershipRepository,
+    private val tenantRepository: TenantRepository
+) : EaMembershipGateway {
+    override suspend fun lookupCaller(bearerToken: String): EaCallerLookupResult {
+        val email = runCatching { JWT.decode(bearerToken).getClaim("email").asString() }.getOrNull()
+            ?: return EaCallerLookupResult.Unauthorized
+
+        val user = userRepository.findByEmail(email) ?: return EaCallerLookupResult.Unauthorized
+        val activeMemberships = membershipRepository.findAllByUser(user.id).filter { it.status == MembershipStatus.ACTIVE }
+        if (activeMemberships.isEmpty()) return EaCallerLookupResult.Unauthorized
+
+        val memberships = activeMemberships.map { membership ->
+            val tenant = tenantRepository.findById(membership.tenantId)
+            CallerMembership(
+                tenantId = membership.tenantId,
+                tenantName = tenant?.name ?: "",
+                role = membership.role,
+                accessLevel = membership.accessLevel,
+                tenantStatus = tenant?.status?.name ?: TenantStatus.ACTIVE.name,
+                kybStatus = tenant?.kybStatus?.name ?: "",
+                adminKycStatus = tenant?.adminKycStatus?.name ?: "",
+                adminPhoneNumber = tenant?.adminPhoneNumber?.value,
+                adminPhoneVerificationStatus = tenant?.adminPhoneVerificationStatus?.name ?: "",
+                phoneVerificationDeadline = tenant?.phoneVerificationDeadline?.toString(),
+                grantedModules = membership.grantedModules
+            )
+        }
+
+        return EaCallerLookupResult.Success(email = user.email, name = user.name, memberships = memberships)
+    }
 }

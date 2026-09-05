@@ -31,6 +31,7 @@ import com.theprodeogroup.fish.application.FakeStaffInviteNotificationGateway
 import com.theprodeogroup.fish.application.FakeTaxComputationRepository
 import com.theprodeogroup.fish.application.FakeTaxRuleRepository
 import com.theprodeogroup.fish.application.FakeTenantRepository
+import com.theprodeogroup.fish.application.FakeEaMembershipGateway
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
@@ -201,6 +202,7 @@ class TaxRoutesTest {
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
+                eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository, tenantRepository),
                 userRepository = userRepository,
                 membershipRepository = membershipRepository,
                 companyRepository = companyRepository,

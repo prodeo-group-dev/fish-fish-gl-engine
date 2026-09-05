@@ -50,7 +50,6 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("io.kotest:kotest-assertions-core:5.9.1")
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
-    testImplementation("io.ktor:ktor-client-content-negotiation:$ktorVersion")
 
     implementation("org.jetbrains.exposed:exposed-core:$exposedVersion")
     implementation("org.jetbrains.exposed:exposed-dao:$exposedVersion")
@@ -73,6 +72,14 @@ dependencies {
     implementation("io.ktor:ktor-server-call-id:$ktorVersion")
     implementation("io.ktor:ktor-server-cors:$ktorVersion")
     implementation("com.auth0:jwks-rsa:0.22.1")
+
+    // Outbound HTTP client (docs/Tenancy_Administration_Extraction_DDD_Design.md
+    // §2's "call EA over HTTP with the caller's forwarded bearer token") -
+    // GL's first outbound service-to-service call; mirrors IM's own
+    // GlEngineGateway client dependencies exactly (IM/build.gradle.kts).
+    implementation("io.ktor:ktor-client-core:$ktorVersion")
+    implementation("io.ktor:ktor-client-cio:$ktorVersion")
+    implementation("io.ktor:ktor-client-content-negotiation:$ktorVersion")
     implementation("ch.qos.logback:logback-classic:1.5.12")
     // Structured (JSON) log output (docs/GL_Production_Readiness_Assessment.md
     // finding "no structured logging") - CloudWatch Logs Insights can query

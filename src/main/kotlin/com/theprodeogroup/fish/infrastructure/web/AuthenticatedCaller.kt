@@ -5,25 +5,34 @@ import com.theprodeogroup.fish.domain.tenancy.User
 import io.ktor.server.auth.Principal
 
 /**
- * The authenticated identity for one HTTP request (docs/DDD_Design.md
- * Section 10.19) - a Ktor `Principal` carrying the resolved FiSH `User`
- * and every currently-`ACTIVE` `Membership` they hold, across every
- * Tenant. Resolved once per request by [installFishJwtAuth] from a
- * validated JWT's `email` claim, via `UserRepository.findByEmail()` -
- * the join key `User.email` was already built for exactly this purpose
- * (Section 10.3's own KDoc: "mirrors User.email's role as the login
- * identifier").
+ * The authenticated *human* identity for one HTTP request
+ * (docs/Tenancy_Administration_Extraction_DDD_Design.md) - a Ktor
+ * `Principal` carrying only the JWT's verified `email` claim. As of the
+ * EA rewiring, this is deliberately all this type carries: membership
+ * resolution moved downstream to `authorizeTenantForWrite`/`ForAdmin`/
+ * `ForModule`/`ForRead` (`Auth.kt`), which call EA's own `GET /me` with
+ * this request's forwarded bearer token, rather than being resolved
+ * once at auth time from a local repository. Nothing in this codebase
+ * read `caller.user.id` before this change (confirmed by direct grep),
+ * so nothing is lost by dropping the full `User` object here.
  *
- * Deliberately carries every Membership, not just one - a request
- * targets a specific Tenant (via the `X-Tenant-Id` header, see
- * `authorizeTenantForWrite`/`authorizeTenantForRead` in `Auth.kt`), and
- * a User may hold Memberships in more than one Tenant (an accountant
- * working across multiple Group entities, for instance) - resolving
- * down to "the one relevant Membership for this request" is a
- * per-request authorization concern, not something to bake into the
- * Principal itself.
+ * See [ServiceAccountCaller] for POP/SOP/IM/HR's own service-account
+ * callers, which still resolve the old way (local `Membership` lookup)
+ * this pass - only the human-facing path calls out to EA so far.
  */
-data class AuthenticatedCaller(
+data class AuthenticatedCaller(val email: String) : Principal
+
+/**
+ * The authenticated identity for a POP/SOP/IM/HR service-account
+ * request - carries the resolved FiSH `User` and every currently-`ACTIVE`
+ * `Membership` it holds, exactly as [AuthenticatedCaller] did for every
+ * caller before the EA rewiring. Kept on the old local-repository path
+ * deliberately: these callers authenticate with a Cognito audience EA
+ * doesn't yet verify (`docs/Tenancy_Administration_Extraction_DDD_Design.md`'s
+ * still-open service-account migration) - see the EA rewiring plan's
+ * own "Deferred" section.
+ */
+data class ServiceAccountCaller(
     val user: User,
     val memberships: List<Membership>
 ) : Principal

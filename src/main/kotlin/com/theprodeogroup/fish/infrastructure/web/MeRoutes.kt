@@ -1,10 +1,12 @@
 package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
-import com.theprodeogroup.fish.domain.tenancy.TenantRepository
+import com.theprodeogroup.fish.infrastructure.ea.EaCallerLookupResult
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
 import io.ktor.server.auth.principal
+import io.ktor.server.request.header
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
@@ -19,9 +21,9 @@ import io.ktor.server.routing.get
  * App.tsx couldn't make at all before this route existed.
  *
  * No tenant-specific authorization needed (unlike every write route in
- * this package) - this only ever returns the caller's own
- * [AuthenticatedCaller.memberships], never another User's data, so
- * there's no X-Tenant-Id/`authorizeTenantForWrite` check to make.
+ * this package) - this only ever returns the caller's own memberships
+ * (resolved via EA, see [EaMembershipGatewayKey]), never another User's
+ * data, so there's no X-Tenant-Id/`authorizeTenantForWrite` check to make.
  *
  * Resolves each Company's name, not just its id (2026-09-01, "on
  * logging in to fish I should be given the options to choose the
@@ -40,41 +42,54 @@ import io.ktor.server.routing.get
  * [authorizeTenantForModule] already does in-process for GL's own
  * routes, just reachable over HTTP for a caller that isn't GL.
  */
-fun Route.meRoutes(tenantRepository: TenantRepository, companyRepository: CompanyRepository) {
+fun Route.meRoutes(companyRepository: CompanyRepository) {
     get("/me") {
+        // Not fishAuthenticated - /me is only ever reached with a human
+        // caller's own token (see this file's own KDoc: a calling
+        // service forwards *the human's* token here, never its own
+        // service-account one), so there's no ServiceAccountCaller
+        // branch to handle, unlike authorizeTenantFor* in Auth.kt.
         val caller = call.principal<AuthenticatedCaller>()
         if (caller == null) {
             call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
             return@get
         }
-
-        val tenants = caller.memberships.mapNotNull { membership ->
-            val tenant = tenantRepository.findById(membership.tenantId) ?: return@mapNotNull null
-            val companies = tenant.companyIds.mapNotNull { companyId ->
-                companyRepository.findById(companyId)?.let { CompanySummaryDto(it.id.value.toString(), it.name) }
-            }
-            MyTenantDto(
-                tenantId = tenant.id.value.toString(),
-                tenantName = tenant.name,
-                role = membership.role.name,
-                accessLevel = membership.accessLevel.name,
-                tenantStatus = tenant.status.name,
-                kybStatus = tenant.kybStatus.name,
-                adminKycStatus = tenant.adminKycStatus.name,
-                adminPhoneNumber = tenant.adminPhoneNumber?.value,
-                adminPhoneVerificationStatus = tenant.adminPhoneVerificationStatus.name,
-                phoneVerificationDeadline = tenant.phoneVerificationDeadline?.toString(),
-                companies = companies,
-                grantedModules = membership.grantedModules.map { it.name }
-            )
+        val token = call.request.header(HttpHeaders.Authorization)?.removePrefix("Bearer ")
+        if (token.isNullOrBlank()) {
+            call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
+            return@get
         }
 
-        call.respond(
-            MyProfileResponseDto(
-                email = caller.user.email,
-                name = caller.user.name,
-                tenants = tenants
-            )
-        )
+        val gateway = call.application.attributes[EaMembershipGatewayKey]
+        when (val result = gateway.lookupCaller(token)) {
+            is EaCallerLookupResult.Unauthorized -> {
+                call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
+            }
+            is EaCallerLookupResult.Failure -> {
+                call.respond(HttpStatusCode.ServiceUnavailable, ErrorResponseDto("service_unavailable", "Could not reach the authorization service"))
+            }
+            is EaCallerLookupResult.Success -> {
+                val tenants = result.memberships.map { membership ->
+                    val companies = companyRepository.findAllByTenant(membership.tenantId)
+                        .map { CompanySummaryDto(it.id.value.toString(), it.name) }
+                    MyTenantDto(
+                        tenantId = membership.tenantId.value.toString(),
+                        tenantName = membership.tenantName,
+                        role = membership.role.name,
+                        accessLevel = membership.accessLevel.name,
+                        tenantStatus = membership.tenantStatus,
+                        kybStatus = membership.kybStatus,
+                        adminKycStatus = membership.adminKycStatus,
+                        adminPhoneNumber = membership.adminPhoneNumber,
+                        adminPhoneVerificationStatus = membership.adminPhoneVerificationStatus,
+                        phoneVerificationDeadline = membership.phoneVerificationDeadline,
+                        companies = companies,
+                        grantedModules = membership.grantedModules.map { it.name }
+                    )
+                }
+
+                call.respond(MyProfileResponseDto(email = result.email, name = result.name, tenants = tenants))
+            }
+        }
     }
 }
