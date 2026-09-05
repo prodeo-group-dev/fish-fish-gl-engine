@@ -532,6 +532,7 @@ data class MyTenantDto(
     val tenantId: String,
     val tenantName: String,
     val role: String,
+    val accessLevel: String,
     val tenantStatus: String,
     val kybStatus: String,
     val adminKycStatus: String,

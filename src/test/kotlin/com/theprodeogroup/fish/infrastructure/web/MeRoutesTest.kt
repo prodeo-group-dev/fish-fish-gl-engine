@@ -50,6 +50,7 @@ import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
@@ -211,6 +212,7 @@ class MeRoutesTest {
         tenantDto.tenantId shouldBe fixture.tenant.id.value.toString()
         tenantDto.tenantName shouldBe "Purse"
         tenantDto.role shouldBe Role.OWNER_ADMIN.name
+        tenantDto.accessLevel shouldBe AccessLevel.ADMIN.name
         tenantDto.tenantStatus shouldBe "ACTIVE"
         tenantDto.adminPhoneVerificationStatus shouldBe VerificationStatus.PENDING.name
         tenantDto.phoneVerificationDeadline shouldBe fixture.tenant.phoneVerificationDeadline.toString()

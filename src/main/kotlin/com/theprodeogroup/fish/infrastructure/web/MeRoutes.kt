@@ -28,6 +28,17 @@ import io.ktor.server.routing.get
  * company I want to work on") - a caller with Memberships spanning
  * multiple Tenants and/or Companies needs real names to pick from, not
  * raw UUIDs.
+ *
+ * **[MyTenantDto.accessLevel] added 2026-09-04** ("each of GL/POP/IM/
+ * SOP/HR" cross-repo authorization) - `/me` is this platform's only
+ * externally-reachable way for POP/SOP/IM/HR to learn a caller's
+ * `AccessLevel`/`grantedModules` for a given Tenant, since Membership
+ * lives only in GL's own database. A calling service forwards the
+ * caller's own bearer token here, finds the entry matching its own
+ * configured Tenant, and checks `accessLevel`/`grantedModules` itself -
+ * the same [AccessLevel.atLeast] comparison
+ * [authorizeTenantForModule] already does in-process for GL's own
+ * routes, just reachable over HTTP for a caller that isn't GL.
  */
 fun Route.meRoutes(tenantRepository: TenantRepository, companyRepository: CompanyRepository) {
     get("/me") {
@@ -46,6 +57,7 @@ fun Route.meRoutes(tenantRepository: TenantRepository, companyRepository: Compan
                 tenantId = tenant.id.value.toString(),
                 tenantName = tenant.name,
                 role = membership.role.name,
+                accessLevel = membership.accessLevel.name,
                 tenantStatus = tenant.status.name,
                 kybStatus = tenant.kybStatus.name,
                 adminKycStatus = tenant.adminKycStatus.name,
