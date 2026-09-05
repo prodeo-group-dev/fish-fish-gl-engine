@@ -127,6 +127,18 @@ resource "aws_ecs_task_definition" "this" {
     # aws_ecs_service.this's own ignore_changes below) until CI's next
     # deploy explicitly calls update-service, which it does on every
     # push to master regardless.
+    #
+    # This is a real, recurring failure mode, not just a hypothetical -
+    # FISH_JWT_SERVICE_AUDIENCE_HR (added below 2026-09-02) sat missing
+    # from every live revision for ~3 days because this `-replace` step
+    # was never run, silently breaking HR/Payroll's service-account
+    # calls into GL the whole time (found 2026-09-05). Jenkins
+    # CI cannot catch this by re-reading this file's real values itself -
+    # infra/terraform/versions.tf's Terraform state is local-only, so CI
+    # has no state access - but the Jenkinsfile's "Verify ECS env vars
+    # match ecs.tf" stage now at least fails the build loudly if the
+    # live task definition's env/secret *names* don't match this file's,
+    # instead of deploying the drift forward unnoticed.
     ignore_changes = [container_definitions]
   }
 
