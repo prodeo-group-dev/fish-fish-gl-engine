@@ -425,7 +425,7 @@ fun Application.fishModule(
         }
     }
     installFishJwtAuth(
-        verifier, userRepository, membershipRepository, eaMembershipGateway,
+        verifier, eaMembershipGateway,
         serviceVerifier ?: verifier, imServiceVerifier ?: verifier, hrServiceVerifier ?: verifier, popServiceVerifier ?: verifier
     )
 

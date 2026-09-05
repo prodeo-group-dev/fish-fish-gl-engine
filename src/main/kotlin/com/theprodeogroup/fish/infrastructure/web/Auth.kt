@@ -9,10 +9,7 @@ import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.domain.tenancy.ManagedModule
-import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
-import com.theprodeogroup.fish.domain.tenancy.MembershipStatus
 import com.theprodeogroup.fish.domain.tenancy.TenantId
-import com.theprodeogroup.fish.domain.tenancy.UserRepository
 import com.theprodeogroup.fish.infrastructure.ea.EaCallerLookupResult
 import com.theprodeogroup.fish.infrastructure.ea.EaMembershipGateway
 import io.ktor.http.HttpHeaders
@@ -92,19 +89,13 @@ const val FISH_JWT_ONBOARDING_AUTH_NAME = "fish-jwt-onboarding"
  * form. It only ever *verifies* tokens issued by whatever external IdP
  * the deployment is configured against.
  *
- * **Identity resolution: JWT's `email` claim -> `User.email` -> `User`,
- * via the already-built `UserRepository.findByEmail()`** - the natural
- * join key, since `User.email` is explicitly documented as the login
- * identifier (Section 10.3). A JWT with no matching `User`, or naming a
- * `User` with zero `ACTIVE` `Membership`s anywhere, is treated as
- * unauthenticated (401) - user/Membership provisioning is
- * `OnboardTenantUseCase`'s job, not something that happens implicitly
- * on first API call.
+ * **Identity resolution: JWT's `email` claim only** - see
+ * [toAuthenticatedCaller]. Membership/access resolution happens
+ * downstream via EA (`authorizeTenantForWrite`/`ForAdmin`/`ForModule`/
+ * `ForRead`), not here.
  */
 fun Application.installFishJwtAuth(
     verifier: JWTVerifier,
-    userRepository: UserRepository,
-    membershipRepository: MembershipRepository,
     // The human-facing path's counterpart to EA
     // (docs/Tenancy_Administration_Extraction_DDD_Design.md) - no
     // default, matching [verifier]'s own "no safe default for a
@@ -112,7 +103,10 @@ fun Application.installFishJwtAuth(
     // needs to pass a fake (see the EA rewiring plan's own "Test
     // migration" step) rather than silently keep working against local
     // repos, which is exactly the point: this should be impossible to
-    // forget.
+    // forget. Now shared by every JWT provider (human and service-account
+    // alike) - POP/SOP/IM/HR's own calls were migrated onto this same
+    // path once EA's service-account verifier slots were wired
+    // (`EA_JWT_SERVICE_AUDIENCE_SOP/IM/HR/POP`, `infra/terraform/ea.tf`).
     eaMembershipGateway: EaMembershipGateway,
     // Defaults to reusing [verifier] - every existing test call site
     // (fishModule, 18 route test files) passes only the primary
@@ -149,7 +143,7 @@ fun Application.installFishJwtAuth(
 
         jwt(FISH_JWT_SERVICE_AUTH_NAME) {
             this.verifier(serviceVerifier)
-            validate { credential -> credential.toServiceAccountCaller(userRepository, membershipRepository) }
+            validate { credential -> credential.toAuthenticatedCaller() }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
@@ -157,7 +151,7 @@ fun Application.installFishJwtAuth(
 
         jwt(FISH_JWT_SERVICE_AUTH_NAME_IM) {
             this.verifier(imServiceVerifier)
-            validate { credential -> credential.toServiceAccountCaller(userRepository, membershipRepository) }
+            validate { credential -> credential.toAuthenticatedCaller() }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
@@ -165,7 +159,7 @@ fun Application.installFishJwtAuth(
 
         jwt(FISH_JWT_SERVICE_AUTH_NAME_HR) {
             this.verifier(hrServiceVerifier)
-            validate { credential -> credential.toServiceAccountCaller(userRepository, membershipRepository) }
+            validate { credential -> credential.toAuthenticatedCaller() }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
@@ -173,7 +167,7 @@ fun Application.installFishJwtAuth(
 
         jwt(FISH_JWT_SERVICE_AUTH_NAME_POP) {
             this.verifier(popServiceVerifier)
-            validate { credential -> credential.toServiceAccountCaller(userRepository, membershipRepository) }
+            validate { credential -> credential.toAuthenticatedCaller() }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
@@ -203,39 +197,23 @@ fun Application.installFishJwtAuth(
 }
 
 /**
- * [FISH_JWT_AUTH_NAME]'s own identity resolution - proves the token is
- * genuinely signed and carries an `email` claim, nothing more. Unlike
- * the pre-EA version of this function, this does **not** check that any
- * `User`/`Membership` exists anywhere in GL's own tables - that check
- * moved to `authorizeTenantForWrite`/`ForAdmin`/`ForModule`/`ForRead`,
- * which resolve membership via EA instead, at the point a request
- * actually needs it. A caller with a validly-signed token but no
- * Membership anywhere now passes this layer and is rejected downstream
- * with 403 rather than 401 here - see the EA rewiring plan for why this
- * is an accepted, deliberate change rather than a regression.
+ * Shared by every JWT provider [installFishJwtAuth] registers (human
+ * and, since the service-account migration, POP/SOP/IM/HR's own callers
+ * too) - proves the token is genuinely signed and carries an `email`
+ * claim, nothing more. This does **not** check that any `User`/
+ * `Membership` exists anywhere in GL's own tables - that check moved to
+ * `authorizeTenantForWrite`/`ForAdmin`/`ForModule`/`ForRead`, which
+ * resolve membership via EA instead, at the point a request actually
+ * needs it (EA now verifies every audience GL itself does -
+ * `EA_JWT_SERVICE_AUDIENCE_SOP/IM/HR/POP`, `infra/terraform/ea.tf`). A
+ * caller with a validly-signed token but no Membership anywhere passes
+ * this layer and is rejected downstream with 403 rather than 401 here -
+ * an accepted, deliberate change from the pre-EA behavior, not a
+ * regression.
  */
 private fun JWTCredential.toAuthenticatedCaller(): AuthenticatedCaller? {
     val email = payload.getClaim("email").asString() ?: return null
     return AuthenticatedCaller(email)
-}
-
-/**
- * [FISH_JWT_SERVICE_AUTH_NAME]/`..._IM`/`..._HR`/`..._POP`'s shared
- * identity resolution - unchanged from every JWT provider's behavior
- * before the EA rewiring (still resolves against GL's own local
- * `UserRepository`/`MembershipRepository`). Service-account callers stay
- * on this path deliberately this pass - see [ServiceAccountCaller]'s own
- * KDoc and the EA rewiring plan's "Deferred" section for why.
- */
-private fun JWTCredential.toServiceAccountCaller(
-    userRepository: UserRepository,
-    membershipRepository: MembershipRepository
-): ServiceAccountCaller? {
-    val email = payload.getClaim("email").asString() ?: return null
-    val user = userRepository.findByEmail(email) ?: return null
-    val activeMemberships = membershipRepository.findAllByUser(user.id).filter { it.status == MembershipStatus.ACTIVE }
-    if (activeMemberships.isEmpty()) return null
-    return ServiceAccountCaller(user, activeMemberships)
 }
 
 /**
@@ -364,9 +342,9 @@ fun Route.fishOnboarding(build: Route.() -> Unit): Route =
  * returns - deliberately just enough for the handful of call sites that
  * read anything off it afterward (`caller.email`/`caller.name`, e.g.
  * `InviteStaffMemberUseCase.Request.inviterName` in `TenantRoutes.kt`).
- * Populated from EA's response for a human caller, or from GL's own
- * local `User` for a service-account caller - callers of
- * `authorizeTenantFor*` don't need to know or care which.
+ * Populated from EA's response - every caller (human or POP/SOP/IM/HR's
+ * own service accounts) now resolves through EA, so there's nothing left
+ * for a call site to distinguish here.
  */
 data class AuthorizedCaller(val email: String, val name: String)
 
@@ -375,11 +353,13 @@ private fun ApplicationCall.rawBearerToken(): String? =
     request.header(HttpHeaders.Authorization)?.removePrefix("Bearer ")?.takeIf { it.isNotBlank() }
 
 /**
- * The shared body of every `authorizeTenantFor*` function below -
- * branches on which of [ServiceAccountCaller] (POP/SOP/IM/HR's own
- * calls, still resolved against GL's local repos) or [AuthenticatedCaller]
- * (a human caller, resolved via EA) actually authenticated this request,
- * then applies the same [minAccessLevel]/[module] floor either way.
+ * The shared body of every `authorizeTenantFor*` function below - looks
+ * up the calling token's membership/access via EA, then applies the same
+ * [minAccessLevel]/[module] floor. Every JWT provider [installFishJwtAuth]
+ * registers (human, and POP/SOP/IM/HR's own service accounts as of the
+ * migration onto EA's `EA_JWT_SERVICE_AUDIENCE_SOP/IM/HR/POP`) resolves
+ * to the same [AuthenticatedCaller] principal now - there is no longer a
+ * separate local-repo path to branch on.
  *
  * **The EA-unreachable case responds 503, not 401/403** - a caller
  * shouldn't have to guess whether "the request failed" means "you lack
@@ -393,25 +373,8 @@ private suspend fun ApplicationCall.authorizeTenant(
     minAccessLevel: AccessLevel,
     module: ManagedModule? = null
 ): AuthorizedCaller? {
-    principal<ServiceAccountCaller>()?.let { serviceCaller ->
-        val membership = serviceCaller.memberships.firstOrNull { it.tenantId == tenantId }
-        if (membership == null) {
-            respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "No active Membership in the requested Tenant"))
-            return null
-        }
-        if (!membership.accessLevel.atLeast(minAccessLevel)) {
-            respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership's access level cannot perform this action"))
-            return null
-        }
-        if (module != null && module !in membership.grantedModules) {
-            respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership is not granted access to the $module module"))
-            return null
-        }
-        return AuthorizedCaller(serviceCaller.user.email, serviceCaller.user.name)
-    }
-
-    val humanCaller = principal<AuthenticatedCaller>()
-    if (humanCaller == null) {
+    val caller = principal<AuthenticatedCaller>()
+    if (caller == null) {
         respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
         return null
     }

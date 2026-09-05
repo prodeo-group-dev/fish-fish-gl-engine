@@ -353,7 +353,19 @@ resource "aws_ecs_task_definition" "ea" {
         { name = "EA_JWT_ISSUER", value = local.fish_jwt_issuer },
         { name = "EA_JWT_AUDIENCE", value = local.fish_jwt_audience },
         { name = "EA_JWT_JWKS_URL", value = local.fish_jwt_jwks_url },
-        { name = "EA_CORS_ALLOWED_ORIGIN", value = "https://${var.domain_name}" }
+        { name = "EA_CORS_ALLOWED_ORIGIN", value = "https://${var.domain_name}" },
+        # Trusts POP/SOP/IM/HR's own service-account tokens when GL
+        # forwards them here (the service-account half of GL's EA
+        # rewiring - see Auth.kt's authorizeTenant()) - the exact same
+        # Cognito app clients GL itself already trusts for
+        # FISH_JWT_SERVICE_AUDIENCE/_IM/_HR/_POP (ecs.tf), reused rather
+        # than provisioning new ones. EA_JWT_SERVICE_AUDIENCE_GL is
+        # deliberately left unset - nothing calls EA using a GL-specific
+        # service identity yet.
+        { name = "EA_JWT_SERVICE_AUDIENCE_SOP", value = aws_cognito_user_pool_client.sop_service.id },
+        { name = "EA_JWT_SERVICE_AUDIENCE_IM", value = aws_cognito_user_pool_client.im_service.id },
+        { name = "EA_JWT_SERVICE_AUDIENCE_HR", value = aws_cognito_user_pool_client.hr_service.id },
+        { name = "EA_JWT_SERVICE_AUDIENCE_POP", value = aws_cognito_user_pool_client.pop_gl_service.id }
       ]
 
       secrets = [
