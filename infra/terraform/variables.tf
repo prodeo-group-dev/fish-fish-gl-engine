@@ -414,6 +414,36 @@ variable "jenkins_domain_name" {
   default     = "jenkins.theprodeogroup.com"
 }
 
+variable "ea_short_name" {
+  description = "Short identifier for EA's length-constrained AWS resources (ALB target group name has a 32-char limit) - same reasoning as hr_short_name/im_short_name."
+  type        = string
+  default     = "fish-ea"
+}
+
+variable "ea_domain_name" {
+  description = "FQDN EA is reachable at - a dedicated subdomain with its own ALB listener rule and ACM certificate, same pattern as pop_domain_name/sop_domain_name/im_domain_name/hr_domain_name. Matches the domain already named in docs/Tenancy_Administration_Extraction_DDD_Design.md."
+  type        = string
+  default     = "ea-api.theprodeogroup.com"
+}
+
+variable "ea_db_name" {
+  description = "EA's own Postgres database name on the shared RDS instance (rds.tf) - separate logical database, own credentials, same reasoning as hr_db_name."
+  type        = string
+  default     = "ea_production"
+}
+
+variable "ea_db_user" {
+  description = "EA's own Postgres user - separate credentials from every other sibling's own, same reasoning as hr_db_user."
+  type        = string
+  default     = "ea_app"
+}
+
+variable "ea_github_oidc_subject" {
+  description = "The OIDC subject claim allowed to assume EA's deploy role - restricts deploys to pushes on master specifically. Provisioned for consistency even though GitHub Actions is disabled account-wide (self-hosted Jenkins is used instead) - dormant, zero cost, same reasoning as every other sibling's own deploy role."
+  type        = string
+  default     = "repo:prodeo-group-dev/fish-enterprise-administration:ref:refs/heads/master"
+}
+
 # --- Application configuration (JWT) ---------------------------------
 #
 # Provisioned by this config as of 2026-08-26 (cognito.tf) - previously

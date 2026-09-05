@@ -88,6 +88,19 @@ resource "aws_security_group" "rds" {
     security_groups = [aws_security_group.hr_service.id]
   }
 
+  # EA (ea.tf, 2026-09-05) shares this same RDS instance too, same
+  # reasoning as every other sibling's own ingress rule above - a new
+  # database (ea_production), not a second instance. Added proactively
+  # rather than waiting to rediscover the gap via a crash-looped connect
+  # timeout, same as IM/HR's own comments already flag.
+  ingress {
+    description     = "Postgres from the EA ECS service"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ea_service.id]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0

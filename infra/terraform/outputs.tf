@@ -147,3 +147,30 @@ output "jenkins_admin_password_secret_arn" {
   description = "aws secretsmanager get-secret-value --secret-id <this> --query SecretString --output text to retrieve the generated Jenkins admin password (username: admin)."
   value       = aws_secretsmanager_secret.jenkins_admin_password.arn
 }
+
+output "ea_acm_validation_record" {
+  description = "DNS validation record to add at the external provider for ea-api.theprodeogroup.com - a CNAME: name -> value, exactly as ACM generated them. Add this FIRST, before re-running terraform apply (ea.tf's aws_acm_certificate_validation.ea blocks on it)."
+  value = {
+    name  = tolist(aws_acm_certificate.ea.domain_validation_options)[0].resource_record_name
+    type  = tolist(aws_acm_certificate.ea.domain_validation_options)[0].resource_record_type
+    value = tolist(aws_acm_certificate.ea.domain_validation_options)[0].resource_record_value
+  }
+}
+
+output "ea_ecr_repository_url" {
+  description = "Push target for EA's first manual deploy."
+  value       = aws_ecr_repository.ea.repository_url
+}
+
+output "ea_ecs_cluster_name" {
+  value = aws_ecs_cluster.this.name
+}
+
+output "ea_ecs_service_name" {
+  value = aws_ecs_service.ea.name
+}
+
+output "ea_target_group_arn" {
+  description = "aws elbv2 describe-target-health --target-group-arn <this> to verify EA's health check is passing after the first deploy."
+  value       = aws_lb_target_group.ea.arn
+}
