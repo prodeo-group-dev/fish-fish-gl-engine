@@ -71,7 +71,11 @@ data "aws_iam_policy_document" "jenkins_deploy" {
       "ecr:CompleteLayerUpload",
       "ecr:BatchGetImage"
     ]
-    resources = [aws_ecr_repository.this.arn]
+    # aws_ecr_repository.ea added 2026-09-06 - EA rolled onto this same
+    # Jenkins controller as a second Multibranch job, per
+    # project_self_hosted_jenkins_gl's own "deliberate, separate
+    # follow-on" note.
+    resources = [aws_ecr_repository.this.arn, aws_ecr_repository.ea.arn]
   }
 
   statement {
