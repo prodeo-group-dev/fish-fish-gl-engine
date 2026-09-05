@@ -156,7 +156,7 @@ fun Application.productionModule() {
         tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository
     )
     val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(
-        tenantRepository, companyRepository, accountRepository, periodRepository, journalEntryRepository
+        companyRepository, accountRepository, periodRepository, journalEntryRepository
     )
     val staffInviteNotificationGateway = System.getenv("GL_STAFF_INVITE_FROM_EMAIL")
         ?.let { SesStaffInviteNotificationGateway(it) }

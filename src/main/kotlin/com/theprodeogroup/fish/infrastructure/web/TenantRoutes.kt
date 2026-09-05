@@ -203,15 +203,11 @@ fun Route.tenantRoutesAuthenticated(
                 openingCashBalance = openingCashBalance
             )
         )
-        if (result == null) {
-            call.respond(HttpStatusCode.Conflict, ErrorResponseDto("tenant_not_found_or_closed", "Tenant not found, or not open to new Companies"))
-            return@post
-        }
 
         call.respond(
             HttpStatusCode.Created,
             AddCompanyToTenantResponseDto(
-                tenantId = result.tenant.id.value.toString(),
+                tenantId = tenantId.value.toString(),
                 companyId = result.company.id.value.toString(),
                 openingBalanceJournalEntryId = result.openingBalanceEntry?.id?.value?.toString()
             )

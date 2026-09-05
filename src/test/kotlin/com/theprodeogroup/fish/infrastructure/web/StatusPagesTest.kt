@@ -100,7 +100,7 @@ class StatusPagesTest {
         val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
         val tenantRepository = FakeTenantRepository()
         val onboardTenantUseCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository)
-        val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(tenantRepository, companyRepository, accountRepository, periodRepository, journalEntryRepository)
+        val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository)
         val taxRuleRepository = FakeTaxRuleRepository()
         val taxComputationRepository = FakeTaxComputationRepository()
         val computeTaxUseCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
