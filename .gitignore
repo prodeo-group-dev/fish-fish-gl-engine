@@ -24,5 +24,14 @@ infra/terraform/*.tfstate.*
 infra/terraform/*.tfvars
 infra/terraform/crash.log
 infra/terraform/tfplan*
+infra/terraform/*.tfplan
 infra/terraform/override.tf
 infra/terraform/override.tf.json
+
+# Scratch operational artifacts (task-def JSON snapshots used for manual
+# ECS register-task-definition patching, apply/wait logs) - one-off
+# debugging output, not IaC, never worth committing. The live task defs
+# and apply state are always re-fetchable from AWS/Terraform directly.
+infra/terraform/*_taskdef*.json
+infra/terraform/*.log
+*.log
