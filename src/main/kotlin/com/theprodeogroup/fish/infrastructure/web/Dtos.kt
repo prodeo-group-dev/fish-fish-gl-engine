@@ -545,6 +545,16 @@ data class CustomerBalanceDto(val customerId: String, val balance: String, val c
 @Serializable
 data class ComputeCustomerBalancesResponseDto(val balances: List<CustomerBalanceDto>)
 
+/** `POST /companies/{companyId}/vendor-balances` (UC-BO13) - the AP mirror of [ComputeCustomerBalancesRequestDto]. */
+@Serializable
+data class ComputeVendorBalancesRequestDto(val creditorIds: List<String>)
+
+@Serializable
+data class VendorBalanceDto(val creditorId: String, val balance: String, val currency: String)
+
+@Serializable
+data class ComputeVendorBalancesResponseDto(val balances: List<VendorBalanceDto>)
+
 @Serializable
 data class MoneyVelocityResponseDto(
     val periodId: String,
