@@ -438,6 +438,11 @@ variable "ea_db_user" {
   default     = "ea_app"
 }
 
+variable "ea_support_notification_email" {
+  description = "The platform operator's own inbox - where backlog item 00's support-thread messages (docs/EA_Development_Backlog.md, SubmitSupportMessageUseCase) get emailed. No default - deliberately not guessed; set via a .tfvars file or -var, never committed as a literal here."
+  type        = string
+}
+
 variable "ea_github_oidc_subject" {
   description = "The OIDC subject claim allowed to assume EA's deploy role - restricts deploys to pushes on master specifically. Provisioned for consistency even though GitHub Actions is disabled account-wide (self-hosted Jenkins is used instead) - dormant, zero cost, same reasoning as every other sibling's own deploy role."
   type        = string

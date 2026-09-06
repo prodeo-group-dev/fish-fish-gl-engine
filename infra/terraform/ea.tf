@@ -117,9 +117,10 @@ resource "aws_iam_role_policy" "ea_ecs_task_execution_secrets" {
   policy = data.aws_iam_policy_document.ea_ecs_task_execution_secrets.json
 }
 
-# EA calls no AWS SDK service directly and (unlike POP/SOP/IM/HR) no
-# other sibling's HTTP API either - this role exists only because ECS
-# requires a task role distinct from the execution role.
+# EA calls no other sibling's HTTP API - this role exists partly
+# because ECS requires a task role distinct from the execution role,
+# and (2026-09-06, backlog item 00's support-thread notification email)
+# now genuinely needs one real AWS SDK permission of its own.
 resource "aws_iam_role" "ea_ecs_task" {
   name = "fish-ea-ecs-task"
 
@@ -131,6 +132,24 @@ resource "aws_iam_role" "ea_ecs_task" {
       Action    = "sts:AssumeRole"
     }]
   })
+}
+
+# Backlog item 00's SubmitSupportMessageUseCase/ReplyToSupportThreadUseCase
+# - same pattern as pop.tf's own pop_ecs_task_ses (SES production access
+# already approved, case 178782151300385). Scoped to the same shared
+# verified sender domain notifications.tf already provisions, not "*".
+data "aws_iam_policy_document" "ea_ecs_task_ses" {
+  statement {
+    effect    = "Allow"
+    actions   = ["ses:SendEmail", "ses:SendRawEmail"]
+    resources = ["arn:aws:ses:${var.aws_region}:*:identity/${aws_ses_domain_identity.this.domain}"]
+  }
+}
+
+resource "aws_iam_role_policy" "ea_ecs_task_ses" {
+  name   = "fish-ea-send-support-notification-email"
+  role   = aws_iam_role.ea_ecs_task.id
+  policy = data.aws_iam_policy_document.ea_ecs_task_ses.json
 }
 
 # --- IAM: OIDC deploy role for EA's own GitHub repo ------------------------
@@ -235,6 +254,44 @@ resource "aws_secretsmanager_secret" "ea_db_password" {
 resource "aws_secretsmanager_secret_version" "ea_db_password" {
   secret_id     = aws_secretsmanager_secret.ea_db_password.id
   secret_string = random_password.ea_db.result
+}
+
+# --- Secrets Manager (backlog item 00's interim operator bearer token) -----
+#
+# A real secret, not a plain task-definition env var - anyone holding it
+# can read/reply across every Tenant's support thread (authorizeOperator()'s
+# own KDoc explains why this interim mechanism exists at all rather than a
+# full cross-tenant Cognito identity). Generated, not chosen - the platform
+# operator retrieves the actual value from Secrets Manager directly, never
+# typed or committed anywhere.
+
+resource "random_password" "ea_operator_token" {
+  length  = 48
+  special = false
+}
+
+resource "aws_secretsmanager_secret" "ea_operator_token" {
+  name        = "fish-enterprise-administration/production/operator-token"
+  description = "EA_OPERATOR_TOKEN"
+}
+
+resource "aws_secretsmanager_secret_version" "ea_operator_token" {
+  secret_id     = aws_secretsmanager_secret.ea_operator_token.id
+  secret_string = random_password.ea_operator_token.result
+}
+
+data "aws_iam_policy_document" "ea_ecs_task_execution_operator_token" {
+  statement {
+    effect    = "Allow"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_secretsmanager_secret.ea_operator_token.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "ea_ecs_task_execution_operator_token" {
+  name   = "fish-ea-read-operator-token-secret"
+  role   = aws_iam_role.ea_ecs_task_execution.id
+  policy = data.aws_iam_policy_document.ea_ecs_task_execution_operator_token.json
 }
 
 # --- CloudWatch -------------------------------------------------------------
@@ -365,11 +422,20 @@ resource "aws_ecs_task_definition" "ea" {
         { name = "EA_JWT_SERVICE_AUDIENCE_SOP", value = aws_cognito_user_pool_client.sop_service.id },
         { name = "EA_JWT_SERVICE_AUDIENCE_IM", value = aws_cognito_user_pool_client.im_service.id },
         { name = "EA_JWT_SERVICE_AUDIENCE_HR", value = aws_cognito_user_pool_client.hr_service.id },
-        { name = "EA_JWT_SERVICE_AUDIENCE_POP", value = aws_cognito_user_pool_client.pop_gl_service.id }
+        { name = "EA_JWT_SERVICE_AUDIENCE_POP", value = aws_cognito_user_pool_client.pop_gl_service.id },
+        # Backlog item 00's support thread (docs/EA_Development_Backlog.md) -
+        # same verified sender domain as POP's own eOrder email
+        # (notifications.tf's aws_ses_domain_identity), a distinct local
+        # part. EA_SUPPORT_NOTIFICATION_EMAIL (the operator's own inbox) is
+        # a required variable with no default - not guessed here, see
+        # var.ea_support_notification_email's own description.
+        { name = "EA_NOTIFICATION_FROM_EMAIL", value = "support@${aws_ses_domain_identity.this.domain}" },
+        { name = "EA_SUPPORT_NOTIFICATION_EMAIL", value = var.ea_support_notification_email }
       ]
 
       secrets = [
-        { name = "EA_DB_PASSWORD", valueFrom = aws_secretsmanager_secret.ea_db_password.arn }
+        { name = "EA_DB_PASSWORD", valueFrom = aws_secretsmanager_secret.ea_db_password.arn },
+        { name = "EA_OPERATOR_TOKEN", valueFrom = aws_secretsmanager_secret.ea_operator_token.arn }
       ]
 
       logConfiguration = {
