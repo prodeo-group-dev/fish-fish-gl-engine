@@ -74,8 +74,9 @@ data "aws_iam_policy_document" "jenkins_deploy" {
     # aws_ecr_repository.ea added 2026-09-06 - EA rolled onto this same
     # Jenkins controller as a second Multibranch job, per
     # project_self_hosted_jenkins_gl's own "deliberate, separate
-    # follow-on" note.
-    resources = [aws_ecr_repository.this.arn, aws_ecr_repository.ea.arn]
+    # follow-on" note. aws_ecr_repository.hr added the same day - HR's
+    # turn, same note.
+    resources = [aws_ecr_repository.this.arn, aws_ecr_repository.ea.arn, aws_ecr_repository.hr.arn]
   }
 
   statement {
@@ -98,11 +99,16 @@ data "aws_iam_policy_document" "jenkins_deploy" {
     # missed when PushToThisRepoOnly above was extended for EA; the
     # ECR fix alone wasn't enough, register-task-definition also needs
     # PassRole on both roles the task definition itself references.
+    # aws_iam_role.hr_ecs_task_execution/hr_ecs_task added the same day -
+    # HR's turn, same reasoning, added up front this time instead of
+    # discovered after a failed build.
     resources = [
       aws_iam_role.ecs_task_execution.arn,
       aws_iam_role.ecs_task.arn,
       aws_iam_role.ea_ecs_task_execution.arn,
-      aws_iam_role.ea_ecs_task.arn
+      aws_iam_role.ea_ecs_task.arn,
+      aws_iam_role.hr_ecs_task_execution.arn,
+      aws_iam_role.hr_ecs_task.arn
     ]
   }
 }
