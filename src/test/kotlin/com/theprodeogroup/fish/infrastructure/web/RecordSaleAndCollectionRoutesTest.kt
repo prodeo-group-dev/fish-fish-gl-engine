@@ -13,18 +13,13 @@ import com.theprodeogroup.fish.application.FakePeriodRepository
 import com.theprodeogroup.fish.application.FakeSalesInvoiceRecordRepository
 import com.theprodeogroup.fish.application.FakeEaMembershipGateway
 import com.theprodeogroup.fish.application.FakeUserRepository
-import com.theprodeogroup.fish.application.FakeTenantRepository
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.FakeTaxRuleRepository
 import com.theprodeogroup.fish.application.FakeTaxComputationRepository
-import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
-import com.theprodeogroup.fish.application.FakeStaffInviteNotificationGateway
-import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.application.CreateAccountUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.RecordOpeningBalanceUseCase
-import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
@@ -38,7 +33,6 @@ import com.theprodeogroup.fish.application.CreateFixedAssetUseCase
 import com.theprodeogroup.fish.application.DisposeFixedAssetUseCase
 import com.theprodeogroup.fish.application.FakeFixedAssetRepository
 import com.theprodeogroup.fish.application.RecordFixedAssetDepreciationUseCase
-import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordSalesReturnUseCase
@@ -57,10 +51,10 @@ import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountType
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.tenancy.Company
-import com.theprodeogroup.fish.domain.tenancy.Membership
+import com.theprodeogroup.fish.application.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantId
-import com.theprodeogroup.fish.domain.tenancy.User
+import com.theprodeogroup.fish.application.User
 import io.kotest.matchers.shouldBe
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -119,13 +113,10 @@ class RecordSaleAndCollectionRoutesTest {
         val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
         val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
-        val tenantRepository = FakeTenantRepository()
-        val onboardTenantUseCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository)
         val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository)
         val taxRuleRepository = FakeTaxRuleRepository()
         val taxComputationRepository = FakeTaxComputationRepository()
         val computeTaxUseCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
-        val inviteStaffMemberUseCase = InviteStaffMemberUseCase(tenantRepository, userRepository, membershipRepository, FakeStaffInviteNotificationGateway())
         val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
         val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
 
@@ -140,10 +131,6 @@ class RecordSaleAndCollectionRoutesTest {
         val arControlAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1100", "Accounts Receivable").also { accountRepository.save(it) }
         val revenueAccount = Account.create(company.id, AccountType.REVENUE, null, "4000", "Sales Revenue").also { accountRepository.save(it) }
         val cashAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1000", "Cash").also { accountRepository.save(it) }
-
-        val adminPhoneVerificationChecker = FakeAdminPhoneVerificationChecker()
-
-        val recordAdminPhoneNumberUseCase = RecordAdminPhoneNumberUseCase(tenantRepository, adminPhoneVerificationChecker)
 
 
         val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
@@ -164,9 +151,7 @@ class RecordSaleAndCollectionRoutesTest {
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
-                eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository, tenantRepository),
-                userRepository = userRepository,
-                membershipRepository = membershipRepository,
+                eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository),
                 companyRepository = companyRepository,
                 periodRepository = periodRepository,
                 accountRepository = accountRepository,
@@ -190,7 +175,6 @@ class RecordSaleAndCollectionRoutesTest {
                 recordPayRunUseCase = recordPayRunUseCase,
                 getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
                 idempotencyKeyRepository = idempotencyKeyRepository,
-                recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
                 computeMoneyVelocityUseCase = computeMoneyVelocityUseCase,
                 computeExpenseVelocityUseCase = computeExpenseVelocityUseCase,
                 computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase,
@@ -203,10 +187,7 @@ class RecordSaleAndCollectionRoutesTest {
                 assessFixedAssetImpairmentUseCase = assessFixedAssetImpairmentUseCase,
                 disposeFixedAssetUseCase = disposeFixedAssetUseCase,
                 computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase,
-                tenantRepository = tenantRepository,
-                onboardTenantUseCase = onboardTenantUseCase,
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
-                inviteStaffMemberUseCase = inviteStaffMemberUseCase,
                 computeTaxUseCase = computeTaxUseCase,
                 taxRuleRepository = taxRuleRepository,
                 taxComputationRepository = taxComputationRepository

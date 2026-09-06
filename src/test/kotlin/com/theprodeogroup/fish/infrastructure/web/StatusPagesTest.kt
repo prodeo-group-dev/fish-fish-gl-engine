@@ -6,7 +6,6 @@ import com.theprodeogroup.fish.application.FakeCreditorRepository
 import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.FakeCustomerRepository
-import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
@@ -20,7 +19,6 @@ import com.theprodeogroup.fish.application.CreateFixedAssetUseCase
 import com.theprodeogroup.fish.application.DisposeFixedAssetUseCase
 import com.theprodeogroup.fish.application.FakeFixedAssetRepository
 import com.theprodeogroup.fish.application.RecordFixedAssetDepreciationUseCase
-import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.FakeJournalEntryRepository
 import com.theprodeogroup.fish.application.FakeLeaveAccrualRepository
 import com.theprodeogroup.fish.application.FakeMembershipRepository
@@ -28,14 +26,10 @@ import com.theprodeogroup.fish.application.FakePeriodRepository
 import com.theprodeogroup.fish.application.FakeSalesInvoiceRecordRepository
 import com.theprodeogroup.fish.application.FakeEaMembershipGateway
 import com.theprodeogroup.fish.application.FakeUserRepository
-import com.theprodeogroup.fish.application.FakeTenantRepository
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.FakeTaxRuleRepository
 import com.theprodeogroup.fish.application.FakeTaxComputationRepository
-import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
-import com.theprodeogroup.fish.application.FakeStaffInviteNotificationGateway
-import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.CreateAccountUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
@@ -98,21 +92,14 @@ class StatusPagesTest {
         val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
         val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
         val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
-        val tenantRepository = FakeTenantRepository()
-        val onboardTenantUseCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository)
         val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository)
         val taxRuleRepository = FakeTaxRuleRepository()
         val taxComputationRepository = FakeTaxComputationRepository()
         val computeTaxUseCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
-        val inviteStaffMemberUseCase = InviteStaffMemberUseCase(tenantRepository, userRepository, membershipRepository, FakeStaffInviteNotificationGateway())
         val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
-
-        val adminPhoneVerificationChecker = FakeAdminPhoneVerificationChecker()
-
-        val recordAdminPhoneNumberUseCase = RecordAdminPhoneNumberUseCase(tenantRepository, adminPhoneVerificationChecker)
 
 
         val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
@@ -133,9 +120,7 @@ class StatusPagesTest {
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
-                eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository, tenantRepository),
-                userRepository = userRepository,
-                membershipRepository = membershipRepository,
+                eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository),
                 companyRepository = companyRepository,
                 periodRepository = periodRepository,
                 accountRepository = accountRepository,
@@ -155,7 +140,6 @@ class StatusPagesTest {
                 recordPayRunUseCase = recordPayRunUseCase,
                 getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
                 idempotencyKeyRepository = idempotencyKeyRepository,
-                recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
                 computeMoneyVelocityUseCase = computeMoneyVelocityUseCase,
                 computeExpenseVelocityUseCase = computeExpenseVelocityUseCase,
                 computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase,
@@ -168,10 +152,7 @@ class StatusPagesTest {
                 assessFixedAssetImpairmentUseCase = assessFixedAssetImpairmentUseCase,
                 disposeFixedAssetUseCase = disposeFixedAssetUseCase,
                 computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase,
-                tenantRepository = tenantRepository,
-                onboardTenantUseCase = onboardTenantUseCase,
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
-                inviteStaffMemberUseCase = inviteStaffMemberUseCase,
                 computeTaxUseCase = computeTaxUseCase,
                 taxRuleRepository = taxRuleRepository,
                 taxComputationRepository = taxComputationRepository,

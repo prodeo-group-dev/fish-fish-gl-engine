@@ -11,8 +11,7 @@ import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.payroll.EmployeeId
 import com.theprodeogroup.fish.domain.payroll.LeaveAccrual
 import com.theprodeogroup.fish.domain.tenancy.Company
-import com.theprodeogroup.fish.domain.tenancy.Tenant
-import com.theprodeogroup.fish.domain.tenancy.TenantSegment
+import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.infrastructure.persistence.DatabaseConfig
 import com.theprodeogroup.fish.infrastructure.persistence.DatabaseMigrator
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedAccountRepository
@@ -20,7 +19,6 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedCompanyReposito
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedJournalEntryRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedLeaveAccrualRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedPeriodRepository
-import com.theprodeogroup.fish.infrastructure.persistence.ExposedTenantRepository
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.junit.jupiter.api.Assumptions.assumeTrue
@@ -45,7 +43,6 @@ class UtilizeLeaveAccrualUseCaseIntegrationTest {
     private val periodRepository = ExposedPeriodRepository()
     private val accountRepository = ExposedAccountRepository()
     private val journalEntryRepository = ExposedJournalEntryRepository()
-    private val tenantRepository = ExposedTenantRepository()
     private val companyRepository = ExposedCompanyRepository()
     private val remeasureUseCase = RemeasureLeaveAccrualUseCase(
         leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository
@@ -70,9 +67,8 @@ class UtilizeLeaveAccrualUseCaseIntegrationTest {
         // A real, persisted Company - same construction as
         // RemeasureLeaveAccrualUseCaseIntegrationTest, avoiding the
         // fabricated-CompanyId bug class already caught repeatedly.
-        val tenant = Tenant.onboard("Utilize LeaveAccrual Test Tenant ${java.util.UUID.randomUUID()}", TenantSegment.INTERNAL_VENTURE, GBP)
-        tenantRepository.save(tenant)
-        val company = Company.create(tenant.id, "Utilize LeaveAccrual Test Co", ClientType.NON_PROFIT, "GB", GBP)
+        val tenant = TenantId.generate()
+        val company = Company.create(tenant, "Utilize LeaveAccrual Test Co", ClientType.NON_PROFIT, "GB", GBP)
         companyRepository.save(company)
         val companyId = company.id
         val period = Period.create(companyId, PeriodType.MONTH, TODAY, TODAY.plusDays(30))

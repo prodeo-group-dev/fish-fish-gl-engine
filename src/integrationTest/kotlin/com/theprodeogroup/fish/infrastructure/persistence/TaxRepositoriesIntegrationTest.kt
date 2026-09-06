@@ -16,8 +16,7 @@ import com.theprodeogroup.fish.domain.tax.TaxRule
 import com.theprodeogroup.fish.domain.tax.TaxType
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
-import com.theprodeogroup.fish.domain.tenancy.Tenant
-import com.theprodeogroup.fish.domain.tenancy.TenantSegment
+import com.theprodeogroup.fish.domain.tenancy.TenantId
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Assumptions.assumeTrue
@@ -55,7 +54,6 @@ class TaxRepositoriesIntegrationTest {
 
     private val taxRuleRepository = ExposedTaxRuleRepository()
     private val taxComputationRepository = ExposedTaxComputationRepository()
-    private val tenantRepository = ExposedTenantRepository()
     private val companyRepository = ExposedCompanyRepository()
     private val periodRepository = ExposedPeriodRepository()
 
@@ -142,9 +140,8 @@ class TaxRepositoriesIntegrationTest {
 
     /** A real Tenant + Company + Period, needed since `tax_computations` carries real FKs to `companies`/`periods`/`tax_rules`. */
     private fun realCompanyAndPeriod(): Pair<CompanyId, PeriodId> {
-        val tenant = Tenant.onboard("Tax Test Tenant ${UUID.randomUUID()}", TenantSegment.INTERNAL_VENTURE, GBP)
-        tenantRepository.save(tenant)
-        val company = Company.create(tenant.id, "Tax Test Co", ClientType.NON_PROFIT, "GB", GBP)
+        val tenant = TenantId.generate()
+        val company = Company.create(tenant, "Tax Test Co", ClientType.NON_PROFIT, "GB", GBP)
         companyRepository.save(company)
         val period = Period.create(company.id, PeriodType.MONTH, TODAY, TODAY.plusDays(30))
         periodRepository.save(period)

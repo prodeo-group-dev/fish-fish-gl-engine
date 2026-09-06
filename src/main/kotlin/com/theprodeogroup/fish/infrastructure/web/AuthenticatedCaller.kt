@@ -18,11 +18,3 @@ import io.ktor.server.auth.Principal
  * full `User` object here.
  */
 data class AuthenticatedCaller(val email: String) : Principal
-
-/**
- * The onboarding-only counterpart to [AuthenticatedCaller] - a [Principal]
- * carrying nothing but a verified JWT's `email` claim, resolved by
- * [installFishJwtAuth]'s [FISH_JWT_ONBOARDING_AUTH_NAME] config. No `User`
- * exists to resolve to yet; that's exactly what onboarding creates.
- */
-data class VerifiedIdentity(val email: String) : Principal

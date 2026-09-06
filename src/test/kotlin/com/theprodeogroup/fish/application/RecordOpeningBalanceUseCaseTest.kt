@@ -10,8 +10,7 @@ import com.theprodeogroup.fish.domain.ledger.ChartOfAccountsTemplate
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
-import com.theprodeogroup.fish.domain.tenancy.Tenant
-import com.theprodeogroup.fish.domain.tenancy.TenantSegment
+import com.theprodeogroup.fish.domain.tenancy.TenantId
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.junit.jupiter.api.Test
@@ -37,8 +36,7 @@ class RecordOpeningBalanceUseCaseTest {
         val journalEntryRepository = FakeJournalEntryRepository()
         val useCase = RecordOpeningBalanceUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
 
-        val tenant = Tenant.onboard("Acme", TenantSegment.EXTERNAL_B2B, GBP)
-        val company = Company.create(tenant.id, "Acme Ltd", ClientType.COMPANY_LIMITED, "GB", GBP).also { companyRepository.save(it) }
+        val company = Company.create(TenantId.generate(), "Acme Ltd", ClientType.COMPANY_LIMITED, "GB", GBP).also { companyRepository.save(it) }
 
         val fixedAssetAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.NON_CURRENT, "1250", "Company Vehicles")
             .also { accountRepository.save(it) }

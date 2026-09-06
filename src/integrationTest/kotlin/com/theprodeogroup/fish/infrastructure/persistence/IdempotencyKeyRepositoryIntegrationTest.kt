@@ -1,8 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.persistence
 
-import com.theprodeogroup.fish.domain.tenancy.Tenant
 import com.theprodeogroup.fish.domain.tenancy.TenantId
-import com.theprodeogroup.fish.domain.tenancy.TenantSegment
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
@@ -25,8 +23,7 @@ private val GBP: Currency = Currency.getInstance("GBP")
 class IdempotencyKeyRepositoryIntegrationTest {
 
     private val idempotencyKeyRepository = ExposedIdempotencyKeyRepository()
-    private val tenantRepository = ExposedTenantRepository()
-
+    private 
     @BeforeEach
     fun setUp() {
         assumeTrue(
@@ -39,9 +36,8 @@ class IdempotencyKeyRepositoryIntegrationTest {
     }
 
     private fun realTenantId(): TenantId {
-        val tenant = Tenant.onboard("Idempotency Test Tenant ${UUID.randomUUID()}", TenantSegment.INTERNAL_VENTURE, GBP)
-        tenantRepository.save(tenant)
-        return tenant.id
+        val tenant = TenantId.generate()
+        return tenant
     }
 
     @Test

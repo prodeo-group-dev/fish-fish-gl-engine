@@ -21,10 +21,6 @@ import com.theprodeogroup.fish.application.ComputeSalesPostingContextUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
-import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
-import com.theprodeogroup.fish.application.KybGracePeriodSweep
-import com.theprodeogroup.fish.application.OnboardTenantUseCase
-import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.CreateAccountUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.RecordOpeningBalanceUseCase
@@ -48,9 +44,6 @@ import com.theprodeogroup.fish.domain.sales.CustomerRepository
 import com.theprodeogroup.fish.domain.tax.TaxComputationRepository
 import com.theprodeogroup.fish.domain.tax.TaxRuleRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
-import com.theprodeogroup.fish.domain.tenancy.MembershipRepository
-import com.theprodeogroup.fish.domain.tenancy.TenantRepository
-import com.theprodeogroup.fish.domain.tenancy.UserRepository
 import com.theprodeogroup.fish.infrastructure.ea.EaMembershipGateway
 import com.theprodeogroup.fish.infrastructure.ea.KtorEaMembershipGateway
 import com.theprodeogroup.fish.infrastructure.persistence.DatabaseConfig
@@ -64,16 +57,10 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedSalesInvoiceRec
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedIdempotencyKeyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedJournalEntryRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedLeaveAccrualRepository
-import com.theprodeogroup.fish.infrastructure.persistence.ExposedMembershipRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedPeriodRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTaxComputationRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTaxRuleRepository
-import com.theprodeogroup.fish.infrastructure.persistence.ExposedTenantRepository
-import com.theprodeogroup.fish.infrastructure.persistence.ExposedUserRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
-import com.theprodeogroup.fish.infrastructure.identity.CognitoAdminPhoneVerificationChecker
-import com.theprodeogroup.fish.infrastructure.notification.SesStaffInviteNotificationGateway
-import com.theprodeogroup.fish.infrastructure.notification.UnconfiguredStaffInviteNotificationGateway
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -99,11 +86,7 @@ import io.ktor.server.request.path
 import io.ktor.server.response.respond
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import org.slf4j.event.Level
-import java.time.Duration
 
 /**
  * The GL Engine's HTTP entry point (docs/DDD_Design.md Section 10.19/10.20) -
@@ -143,26 +126,14 @@ fun Application.productionModule() {
     val periodRepository = ExposedPeriodRepository()
     val journalEntryRepository = ExposedJournalEntryRepository()
     val companyRepository = ExposedCompanyRepository()
-    val userRepository = ExposedUserRepository()
-    val membershipRepository = ExposedMembershipRepository()
     val creditorRepository = ExposedCreditorRepository()
     val leaveAccrualRepository = ExposedLeaveAccrualRepository()
     val customerRepository = ExposedCustomerRepository()
     val idempotencyKeyRepository = ExposedIdempotencyKeyRepository()
-    val tenantRepository = ExposedTenantRepository()
     val fixedAssetRepository = ExposedFixedAssetRepository()
 
-    val onboardTenantUseCase = OnboardTenantUseCase(
-        tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository
-    )
     val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(
         companyRepository, accountRepository, periodRepository, journalEntryRepository
-    )
-    val staffInviteNotificationGateway = System.getenv("GL_STAFF_INVITE_FROM_EMAIL")
-        ?.let { SesStaffInviteNotificationGateway(it) }
-        ?: UnconfiguredStaffInviteNotificationGateway()
-    val inviteStaffMemberUseCase = InviteStaffMemberUseCase(
-        tenantRepository, userRepository, membershipRepository, staffInviteNotificationGateway
     )
     val taxRuleRepository = ExposedTaxRuleRepository()
     val taxComputationRepository = ExposedTaxComputationRepository()
@@ -187,11 +158,6 @@ fun Application.productionModule() {
     val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
     val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
 
-    val cognitoUserPoolId = System.getenv("FISH_COGNITO_USER_POOL_ID")
-        ?: error("FISH_COGNITO_USER_POOL_ID environment variable is required - no default for a security-relevant value")
-    val recordAdminPhoneNumberUseCase = RecordAdminPhoneNumberUseCase(
-        tenantRepository, CognitoAdminPhoneVerificationChecker(cognitoUserPoolId)
-    )
     val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
     val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
     val computeSalesToExpenseRatioUseCase = ComputeSalesToExpenseRatioUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
@@ -203,30 +169,6 @@ fun Application.productionModule() {
     val assessFixedAssetImpairmentUseCase = AssessFixedAssetImpairmentUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
     val disposeFixedAssetUseCase = DisposeFixedAssetUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
     val computeFixedAssetRegisterUseCase = ComputeFixedAssetRegisterUseCase(companyRepository, fixedAssetRepository)
-
-    // In-process scheduler for KybGracePeriodSweep (docs/DDD_Design.md
-    // Section 9.4, extended 2026-08-27 to also cover the admin phone
-    // number's 14-day sub-deadline) - safe as a simple background loop
-    // tied to this Application's own coroutine scope specifically
-    // because desired_count = 1 (ecs.tf) means there is only ever one
-    // running instance; a second concurrent instance would double-run
-    // this on every tick, which a real scheduled-task/EventBridge
-    // approach wouldn't. Revisit if desired_count ever grows past 1.
-    val kybGracePeriodSweep = KybGracePeriodSweep(tenantRepository)
-    launch {
-        delay(Duration.ofMinutes(1).toMillis()) // let the app finish starting up first
-        while (isActive) {
-            try {
-                val result = kybGracePeriodSweep.run()
-                if (result.suspended.isNotEmpty()) {
-                    log.info("KybGracePeriodSweep suspended ${result.suspended.size} tenant(s) for expired KYB/phone verification")
-                }
-            } catch (e: Throwable) {
-                log.error("KybGracePeriodSweep run failed", e)
-            }
-            delay(Duration.ofHours(24).toMillis())
-        }
-    }
 
     // EA (Enterprise Administration) - the human-facing half of
     // docs/Tenancy_Administration_Extraction_DDD_Design.md's rewiring.
@@ -246,13 +188,8 @@ fun Application.productionModule() {
         hrServiceVerifier = buildJwksServiceVerifierForHr(),
         popServiceVerifier = buildJwksServiceVerifierForPop(),
         eaMembershipGateway = eaMembershipGateway,
-        userRepository = userRepository,
-        membershipRepository = membershipRepository,
         companyRepository = companyRepository,
-        tenantRepository = tenantRepository,
-        onboardTenantUseCase = onboardTenantUseCase,
         addCompanyToTenantUseCase = addCompanyToTenantUseCase,
-        inviteStaffMemberUseCase = inviteStaffMemberUseCase,
         computeTaxUseCase = computeTaxUseCase,
         taxRuleRepository = taxRuleRepository,
         taxComputationRepository = taxComputationRepository,
@@ -278,7 +215,6 @@ fun Application.productionModule() {
         recordPayRunUseCase = recordPayRunUseCase,
         getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
         idempotencyKeyRepository = idempotencyKeyRepository,
-        recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
         computeMoneyVelocityUseCase = computeMoneyVelocityUseCase,
         computeExpenseVelocityUseCase = computeExpenseVelocityUseCase,
         computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase,
@@ -293,6 +229,7 @@ fun Application.productionModule() {
         computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase
     )
 }
+
 
 /**
  * The testable module wiring - everything that varies between
@@ -310,13 +247,8 @@ fun Application.fishModule(
     hrServiceVerifier: JWTVerifier? = null,
     popServiceVerifier: JWTVerifier? = null,
     eaMembershipGateway: EaMembershipGateway,
-    userRepository: UserRepository,
-    membershipRepository: MembershipRepository,
     companyRepository: CompanyRepository,
-    tenantRepository: TenantRepository,
-    onboardTenantUseCase: OnboardTenantUseCase,
     addCompanyToTenantUseCase: AddCompanyToTenantUseCase,
-    inviteStaffMemberUseCase: InviteStaffMemberUseCase,
     computeTaxUseCase: ComputeTaxUseCase,
     taxRuleRepository: TaxRuleRepository,
     taxComputationRepository: TaxComputationRepository,
@@ -342,7 +274,6 @@ fun Application.fishModule(
     recordPayRunUseCase: RecordPayRunUseCase,
     getOrCreateLeaveAccrualUseCase: GetOrCreateLeaveAccrualUseCase,
     idempotencyKeyRepository: IdempotencyKeyRepository,
-    recordAdminPhoneNumberUseCase: RecordAdminPhoneNumberUseCase,
     computeMoneyVelocityUseCase: ComputeMoneyVelocityUseCase,
     computeExpenseVelocityUseCase: ComputeExpenseVelocityUseCase,
     computeSalesToExpenseRatioUseCase: ComputeSalesToExpenseRatioUseCase,
@@ -442,12 +373,8 @@ fun Application.fishModule(
         // here and everything else to S3, so this prefix is load-bearing
         // infrastructure, not cosmetic.
         route("/api") {
-            fishOnboarding {
-                tenantRoutesOnboarding(onboardTenantUseCase)
-            }
             fishAuthenticated {
-                tenantRoutesAuthenticated(addCompanyToTenantUseCase, inviteStaffMemberUseCase, tenantRepository, userRepository, membershipRepository)
-                adminPhoneRoutes(recordAdminPhoneNumberUseCase)
+                tenantRoutesAuthenticated(addCompanyToTenantUseCase)
                 journalEntryRoutes(
                     postJournalEntryUseCase, createAccountUseCase, recordOpeningBalanceUseCase,
                     periodRepository, accountRepository, journalEntryRepository, companyRepository, idempotencyKeyRepository

@@ -444,56 +444,16 @@ data class GetOrCreateLeaveAccrualRequestDto(
 )
 
 /**
- * Section 9.2's onboarding wire shapes. Deliberately no `adminEmail`
- * field on the request - the admin's identity comes from the verified
- * JWT's `email` claim ([VerifiedIdentity]), never from caller-supplied
- * request data, matching [FISH_JWT_ONBOARDING_AUTH_NAME]'s whole point.
+ * `POST /tenants/{tenantId}/companies`'s wire shape (docs/DDD_Design.md
+ * Section 9.1) - `Tenant` onboarding itself moved to EA (see
+ * `TenantRoutes.kt`'s own KDoc); this is the one Tenancy request shape
+ * still live in GL.
  *
  * `openingCashBalance` is optional and nullable, not required - most
  * users onboarding are expected to have incomplete records, not a full
  * opening trial balance, so this shouldn't be a mandatory field forcing
- * a value nobody has yet (see `OnboardTenantUseCase`'s own KDoc).
+ * a value nobody has yet.
  */
-/**
- * "Will you manage this yourself, or will someone else?" per
- * ManagedModule (docs/DDD_Design.md-adjacent, 2026-08-29) - see
- * ModuleManagementPreference's own KDoc. [delegateName]/[delegateEmail]
- * are required together when [selfManaged] is false; the route validates
- * that pairing before it ever reaches the domain factory.
- */
-@Serializable
-data class ModuleManagementPreferenceDto(
-    val module: String,
-    val selfManaged: Boolean,
-    val delegateName: String? = null,
-    val delegateEmail: String? = null
-)
-
-@Serializable
-data class OnboardTenantRequestDto(
-    val tenantName: String,
-    val tenantSegment: String,
-    val tenantBaseCurrency: String,
-    val companyName: String,
-    val clientType: String,
-    val jurisdiction: String,
-    val companyBaseCurrency: String,
-    /** 1 (January) through 12 (December) - "the fiscal year has to be set during Tenant onboarding" (2026-09-02), required, no default. */
-    val fiscalYearStartMonth: Int,
-    val adminName: String,
-    val openingCashBalance: String? = null,
-    val moduleManagementPreferences: List<ModuleManagementPreferenceDto> = emptyList()
-)
-
-@Serializable
-data class OnboardTenantResponseDto(
-    val tenantId: String,
-    val companyId: String,
-    val adminUserId: String,
-    val adminMembershipId: String,
-    val openingBalanceJournalEntryId: String? = null
-)
-
 @Serializable
 data class AddCompanyToTenantRequestDto(
     val companyName: String,
@@ -510,15 +470,6 @@ data class AddCompanyToTenantResponseDto(
     val tenantId: String,
     val companyId: String,
     val openingBalanceJournalEntryId: String? = null
-)
-
-@Serializable
-data class RecordAdminPhoneNumberRequestDto(val phoneNumber: String)
-
-@Serializable
-data class RecordAdminPhoneNumberResponseDto(
-    val tenantId: String,
-    val adminPhoneVerificationStatus: String
 )
 
 @Serializable
@@ -548,35 +499,6 @@ data class MyProfileResponseDto(
     val email: String,
     val name: String,
     val tenants: List<MyTenantDto>
-)
-
-@Serializable
-data class InviteStaffMemberRequestDto(
-    val email: String,
-    val name: String,
-    val role: String,
-    val modules: List<String>
-)
-
-@Serializable
-data class InviteStaffMemberResponseDto(
-    val userId: String,
-    val membershipId: String,
-    val role: String,
-    val alreadyMember: Boolean,
-    val notificationSent: Boolean,
-    val grantedModules: List<String>
-)
-
-@Serializable
-data class MembershipDto(
-    val membershipId: String,
-    val userId: String,
-    val name: String,
-    val email: String,
-    val role: String,
-    val status: String,
-    val grantedModules: List<String>
 )
 
 @Serializable

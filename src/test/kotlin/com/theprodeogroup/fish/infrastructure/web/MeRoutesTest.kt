@@ -4,8 +4,6 @@ import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.FakeTaxRuleRepository
 import com.theprodeogroup.fish.application.FakeTaxComputationRepository
-import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
-import com.theprodeogroup.fish.application.FakeStaffInviteNotificationGateway
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
@@ -19,7 +17,6 @@ import com.theprodeogroup.fish.application.DisposeFixedAssetUseCase
 import com.theprodeogroup.fish.application.FakeFixedAssetRepository
 import com.theprodeogroup.fish.application.RecordFixedAssetDepreciationUseCase
 import com.theprodeogroup.fish.application.FakeAccountRepository
-import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeCompanyRepository
 import com.theprodeogroup.fish.application.FakeCreditorRepository
 import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
@@ -31,15 +28,12 @@ import com.theprodeogroup.fish.application.FakeLeaveAccrualRepository
 import com.theprodeogroup.fish.application.FakeMembershipRepository
 import com.theprodeogroup.fish.application.FakePeriodRepository
 import com.theprodeogroup.fish.application.FakeSalesInvoiceRecordRepository
-import com.theprodeogroup.fish.application.FakeTenantRepository
 import com.theprodeogroup.fish.application.FakeEaMembershipGateway
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
-import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.application.CreateAccountUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.RecordOpeningBalanceUseCase
-import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordSalesReturnUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
@@ -53,12 +47,10 @@ import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import com.theprodeogroup.fish.domain.tenancy.Company
-import com.theprodeogroup.fish.domain.tenancy.Membership
+import com.theprodeogroup.fish.application.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
-import com.theprodeogroup.fish.domain.tenancy.Tenant
-import com.theprodeogroup.fish.domain.tenancy.TenantSegment
-import com.theprodeogroup.fish.domain.tenancy.User
-import com.theprodeogroup.fish.domain.tenancy.VerificationStatus
+import com.theprodeogroup.fish.domain.tenancy.TenantId
+import com.theprodeogroup.fish.application.User
 import io.kotest.matchers.shouldBe
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -82,17 +74,14 @@ class MeRoutesTest {
         val userRepository = FakeUserRepository()
         val membershipRepository = FakeMembershipRepository()
         val companyRepository = FakeCompanyRepository()
-        val tenantRepository = FakeTenantRepository()
         val periodRepository = FakePeriodRepository()
         val accountRepository = FakeAccountRepository()
         val journalEntryRepository = FakeJournalEntryRepository()
         val creditorRepository = FakeCreditorRepository()
-        val onboardTenantUseCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository)
         val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository)
         val taxRuleRepository = FakeTaxRuleRepository()
         val taxComputationRepository = FakeTaxComputationRepository()
         val computeTaxUseCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
-        val inviteStaffMemberUseCase = InviteStaffMemberUseCase(tenantRepository, userRepository, membershipRepository, FakeStaffInviteNotificationGateway())
         val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
         val createAccountUseCase = CreateAccountUseCase(companyRepository, accountRepository)
         val recordOpeningBalanceUseCase = RecordOpeningBalanceUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
@@ -115,8 +104,6 @@ class MeRoutesTest {
         val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
         val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
         val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
-        val adminPhoneVerificationChecker = FakeAdminPhoneVerificationChecker()
-        val recordAdminPhoneNumberUseCase = RecordAdminPhoneNumberUseCase(tenantRepository, adminPhoneVerificationChecker)
         val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeSalesToExpenseRatioUseCase = ComputeSalesToExpenseRatioUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
@@ -130,30 +117,23 @@ class MeRoutesTest {
         val disposeFixedAssetUseCase = DisposeFixedAssetUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeFixedAssetRegisterUseCase = ComputeFixedAssetRegisterUseCase(companyRepository, fixedAssetRepository)
 
-        val tenant = Tenant.onboard("Purse", TenantSegment.INTERNAL_VENTURE, GBP)
+        val eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository)
+        val tenantId = TenantId.generate()
         val adminUser = User.create(ADMIN_EMAIL, "Founding Admin").also { userRepository.save(it) }
+        val company = Company.create(tenantId, "Purse UK", ClientType.NON_PROFIT, "GB", GBP)
         val adminSetup = run {
-            val company = Company.create(tenant.id, "Purse UK", ClientType.NON_PROFIT, "GB", GBP)
             companyRepository.save(company)
-            val membership = Membership.grant(adminUser.id, tenant.id, Role.OWNER_ADMIN)
+            val membership = Membership.grant(adminUser.id, tenantId, Role.OWNER_ADMIN)
             membershipRepository.save(membership)
-            tenant.addCompany(company.id)
-            tenant.addAdminMembership(membership.id)
-            tenant.activate()
-            tenantRepository.save(tenant)
+            eaMembershipGateway.describeTenant(tenantId, name = "Purse", status = "ACTIVE")
         }
 
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
-                eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository, tenantRepository),
-                userRepository = userRepository,
-                membershipRepository = membershipRepository,
+                eaMembershipGateway = eaMembershipGateway,
                 companyRepository = companyRepository,
-                tenantRepository = tenantRepository,
-                onboardTenantUseCase = onboardTenantUseCase,
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
-                inviteStaffMemberUseCase = inviteStaffMemberUseCase,
                 computeTaxUseCase = computeTaxUseCase,
                 taxRuleRepository = taxRuleRepository,
                 taxComputationRepository = taxComputationRepository,
@@ -179,7 +159,6 @@ class MeRoutesTest {
                 recordPayRunUseCase = recordPayRunUseCase,
                 getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
                 idempotencyKeyRepository = idempotencyKeyRepository,
-                recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
                 computeMoneyVelocityUseCase = computeMoneyVelocityUseCase,
                 computeExpenseVelocityUseCase = computeExpenseVelocityUseCase,
                 computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase,
@@ -211,14 +190,14 @@ class MeRoutesTest {
         body.email shouldBe ADMIN_EMAIL
         body.tenants.size shouldBe 1
         val tenantDto = body.tenants.single()
-        tenantDto.tenantId shouldBe fixture.tenant.id.value.toString()
+        tenantDto.tenantId shouldBe fixture.tenantId.value.toString()
         tenantDto.tenantName shouldBe "Purse"
         tenantDto.role shouldBe Role.OWNER_ADMIN.name
         tenantDto.accessLevel shouldBe AccessLevel.ADMIN.name
         tenantDto.tenantStatus shouldBe "ACTIVE"
-        tenantDto.adminPhoneVerificationStatus shouldBe VerificationStatus.PENDING.name
-        tenantDto.phoneVerificationDeadline shouldBe fixture.tenant.phoneVerificationDeadline.toString()
-        tenantDto.companies shouldBe listOf(CompanySummaryDto(fixture.tenant.companyIds.single().value.toString(), "Purse UK"))
+        tenantDto.adminPhoneVerificationStatus shouldBe "PENDING"
+        tenantDto.phoneVerificationDeadline shouldBe null
+        tenantDto.companies shouldBe listOf(CompanySummaryDto(fixture.company.id.value.toString(), "Purse UK"))
     }
 
     @Test

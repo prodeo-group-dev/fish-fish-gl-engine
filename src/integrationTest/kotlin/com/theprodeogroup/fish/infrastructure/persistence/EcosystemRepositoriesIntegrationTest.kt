@@ -15,8 +15,7 @@ import com.theprodeogroup.fish.domain.purchasing.Creditor
 import com.theprodeogroup.fish.domain.sales.AccountsReceivableAging
 import com.theprodeogroup.fish.domain.sales.Customer
 import com.theprodeogroup.fish.domain.tenancy.Company
-import com.theprodeogroup.fish.domain.tenancy.Tenant
-import com.theprodeogroup.fish.domain.tenancy.TenantSegment
+import com.theprodeogroup.fish.domain.tenancy.TenantId
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
@@ -47,7 +46,6 @@ private val TODAY = LocalDate.of(2026, 8, 19)
 class EcosystemRepositoriesIntegrationTest {
 
     private val companyRepository = ExposedCompanyRepository()
-    private val tenantRepository = ExposedTenantRepository()
     private val accountRepository = ExposedAccountRepository()
     private val creditorRepository = ExposedCreditorRepository()
     private val customerRepository = ExposedCustomerRepository()
@@ -65,9 +63,8 @@ class EcosystemRepositoriesIntegrationTest {
 
     /** Every ecosystem table's `company_id` is a real FK - a saved Company is required before anything else in this suite. */
     private fun newCompany(): com.theprodeogroup.fish.domain.tenancy.CompanyId {
-        val tenant = Tenant.onboard("Ecosystem Test Co", TenantSegment.EXTERNAL_B2B, GBP)
-        tenantRepository.save(tenant)
-        val company = Company.create(tenant.id, "Ecosystem Test Co", ClientType.COMPANY_LIMITED, "GB", GBP)
+        val tenant = TenantId.generate()
+        val company = Company.create(tenant, "Ecosystem Test Co", ClientType.COMPANY_LIMITED, "GB", GBP)
         companyRepository.save(company)
         return company.id
     }

@@ -1,0 +1,19 @@
+-- Drops companies.tenant_id's FK to GL's own tenants(id) table.
+--
+-- Real, active correctness bug surfaced by the domain.tenancy deletion
+-- (docs/Tenancy_Administration_Extraction_DDD_Design.md, 2026-09-06):
+-- since the WEB->EA onboarding handoff (2026-09-05), a brand-new Tenant
+-- is created only in EA's own separate `ea_production` database, never
+-- in GL's local `tenants` table. Any Company subsequently created here
+-- under such a Tenant (POST /tenants/{tenantId}/companies) would violate
+-- this constraint - a cross-database foreign key was never really
+-- enforceable once Tenant moved to EA, this just hadn't been hit yet
+-- because every Company created so far happened to reference a Tenant
+-- GL still had a local row for.
+--
+-- GL's own `tenants`/`tenant_companies`/`tenant_admin_memberships`/
+-- `users`/`memberships`/`membership_module_grants` tables are left in
+-- place, unreferenced by any Kotlin code now (see
+-- tenancy_tables.kt's own comment) - this migration only drops the
+-- constraint that would otherwise reject legitimate new data.
+ALTER TABLE companies DROP CONSTRAINT companies_tenant_id_fkey;

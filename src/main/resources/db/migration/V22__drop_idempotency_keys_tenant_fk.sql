@@ -1,0 +1,12 @@
+-- Same latent bug as V21's companies fix, caught by
+-- IdempotencyKeyRepositoryIntegrationTest against a real database: a
+-- brand-new Tenant now exists only in EA's separate `ea_production`
+-- database, so idempotency_keys.tenant_id's FK to GL's own local
+-- `tenants` table would reject a legitimate first-time idempotency-key
+-- insert under such a Tenant. Worse here than for `companies`: the
+-- broad `catch (e: ExposedSQLException)` in
+-- `ExposedIdempotencyKeyRepository.insertIfAbsent` silently mapped this
+-- FK violation onto the same `false` result as "another request already
+-- won the race" - a real caller would have gotten a wrong, misleading
+-- answer, not a loud failure.
+ALTER TABLE idempotency_keys DROP CONSTRAINT idempotency_keys_tenant_id_fkey;

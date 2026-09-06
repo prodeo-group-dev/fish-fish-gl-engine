@@ -17,7 +17,6 @@ import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
 import com.theprodeogroup.fish.application.FakeAccountRepository
-import com.theprodeogroup.fish.application.FakeAdminPhoneVerificationChecker
 import com.theprodeogroup.fish.application.FakeCompanyRepository
 import com.theprodeogroup.fish.application.FakeCreditorRepository
 import com.theprodeogroup.fish.application.FakeCustomerRepository
@@ -27,20 +26,15 @@ import com.theprodeogroup.fish.application.FakeLeaveAccrualRepository
 import com.theprodeogroup.fish.application.FakeMembershipRepository
 import com.theprodeogroup.fish.application.FakePeriodRepository
 import com.theprodeogroup.fish.application.FakeSalesInvoiceRecordRepository
-import com.theprodeogroup.fish.application.FakeStaffInviteNotificationGateway
 import com.theprodeogroup.fish.application.FakeTaxComputationRepository
 import com.theprodeogroup.fish.application.FakeTaxRuleRepository
-import com.theprodeogroup.fish.application.FakeTenantRepository
 import com.theprodeogroup.fish.application.FakeEaMembershipGateway
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
-import com.theprodeogroup.fish.application.InviteStaffMemberUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
-import com.theprodeogroup.fish.application.OnboardTenantUseCase
 import com.theprodeogroup.fish.application.CreateAccountUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.RecordOpeningBalanceUseCase
-import com.theprodeogroup.fish.application.RecordAdminPhoneNumberUseCase
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordSalesReturnUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
@@ -65,11 +59,10 @@ import com.theprodeogroup.fish.domain.tax.TaxRule
 import com.theprodeogroup.fish.domain.tax.TaxType
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.ManagedModule
-import com.theprodeogroup.fish.domain.tenancy.Membership
+import com.theprodeogroup.fish.application.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
-import com.theprodeogroup.fish.domain.tenancy.Tenant
-import com.theprodeogroup.fish.domain.tenancy.TenantSegment
-import com.theprodeogroup.fish.domain.tenancy.User
+import com.theprodeogroup.fish.domain.tenancy.TenantId
+import com.theprodeogroup.fish.application.User
 import io.kotest.matchers.shouldBe
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -108,17 +101,14 @@ class TaxRoutesTest {
         val userRepository = FakeUserRepository()
         val membershipRepository = FakeMembershipRepository()
         val companyRepository = FakeCompanyRepository()
-        val tenantRepository = FakeTenantRepository()
         val periodRepository = FakePeriodRepository()
         val accountRepository = FakeAccountRepository()
         val journalEntryRepository = FakeJournalEntryRepository()
         val creditorRepository = FakeCreditorRepository()
-        val onboardTenantUseCase = OnboardTenantUseCase(tenantRepository, companyRepository, userRepository, membershipRepository, accountRepository, periodRepository, journalEntryRepository)
         val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository)
         val taxRuleRepository = FakeTaxRuleRepository()
         val taxComputationRepository = FakeTaxComputationRepository()
         val computeTaxUseCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
-        val inviteStaffMemberUseCase = InviteStaffMemberUseCase(tenantRepository, userRepository, membershipRepository, FakeStaffInviteNotificationGateway())
         val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
         val createAccountUseCase = CreateAccountUseCase(companyRepository, accountRepository)
         val recordOpeningBalanceUseCase = RecordOpeningBalanceUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
@@ -141,8 +131,6 @@ class TaxRoutesTest {
         val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
         val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
         val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
-        val adminPhoneVerificationChecker = FakeAdminPhoneVerificationChecker()
-        val recordAdminPhoneNumberUseCase = RecordAdminPhoneNumberUseCase(tenantRepository, adminPhoneVerificationChecker)
         val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeSalesToExpenseRatioUseCase = ComputeSalesToExpenseRatioUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
@@ -156,21 +144,17 @@ class TaxRoutesTest {
         val disposeFixedAssetUseCase = DisposeFixedAssetUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeFixedAssetRegisterUseCase = ComputeFixedAssetRegisterUseCase(companyRepository, fixedAssetRepository)
 
-        val tenant = Tenant.onboard("Purse", TenantSegment.INTERNAL_VENTURE, GBP)
-        val company = Company.create(tenant.id, "Purse UK", ClientType.NON_PROFIT, "GB", GBP)
+        val tenant = TenantId.generate()
+        val company = Company.create(tenant, "Purse UK", ClientType.NON_PROFIT, "GB", GBP)
         val adminUser = User.create(ADMIN_EMAIL, "Tax Admin").also { userRepository.save(it) }
-        val adminMembership = Membership.grant(adminUser.id, tenant.id, Role.OWNER_ADMIN)
+        val adminMembership = Membership.grant(adminUser.id, tenant, Role.OWNER_ADMIN)
         val restrictedUser = User.create(RESTRICTED_EMAIL, "HR-only Staff").also { userRepository.save(it) }
-        val restrictedMembership = Membership.grant(restrictedUser.id, tenant.id, Role.ACCOUNTANT, grantedModules = setOf(ManagedModule.HR))
+        val restrictedMembership = Membership.grant(restrictedUser.id, tenant, Role.ACCOUNTANT, grantedModules = setOf(ManagedModule.HR))
 
         val setup = run {
             companyRepository.save(company)
             membershipRepository.save(adminMembership)
             membershipRepository.save(restrictedMembership)
-            tenant.addCompany(company.id)
-            tenant.addAdminMembership(adminMembership.id)
-            tenant.activate()
-            tenantRepository.save(tenant)
         }
 
         val period = Period.create(company.id, PeriodType.MONTH, TODAY.minusDays(5), TODAY.plusDays(25)).also {
@@ -202,14 +186,9 @@ class TaxRoutesTest {
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
-                eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository, tenantRepository),
-                userRepository = userRepository,
-                membershipRepository = membershipRepository,
+                eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository),
                 companyRepository = companyRepository,
-                tenantRepository = tenantRepository,
-                onboardTenantUseCase = onboardTenantUseCase,
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
-                inviteStaffMemberUseCase = inviteStaffMemberUseCase,
                 computeTaxUseCase = computeTaxUseCase,
                 taxRuleRepository = taxRuleRepository,
                 taxComputationRepository = taxComputationRepository,
@@ -235,7 +214,6 @@ class TaxRoutesTest {
                 recordPayRunUseCase = recordPayRunUseCase,
                 getOrCreateLeaveAccrualUseCase = getOrCreateLeaveAccrualUseCase,
                 idempotencyKeyRepository = idempotencyKeyRepository,
-                recordAdminPhoneNumberUseCase = recordAdminPhoneNumberUseCase,
                 computeMoneyVelocityUseCase = computeMoneyVelocityUseCase,
                 computeExpenseVelocityUseCase = computeExpenseVelocityUseCase,
                 computeSalesToExpenseRatioUseCase = computeSalesToExpenseRatioUseCase,
@@ -262,7 +240,7 @@ class TaxRoutesTest {
 
         val response = client.post("/api/companies/${fixture.company.id.value}/tax") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenant.id.value.toString())
+            header("X-Tenant-Id", fixture.tenant.value.toString())
             contentType(ContentType.Application.Json)
             setBody("""{"periodId": "${fixture.period.id.value}"}""")
         }
@@ -298,7 +276,7 @@ class TaxRoutesTest {
 
         val response = client.post("/api/companies/${fixture.company.id.value}/tax") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(RESTRICTED_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenant.id.value.toString())
+            header("X-Tenant-Id", fixture.tenant.value.toString())
             contentType(ContentType.Application.Json)
             setBody("""{"periodId": "${fixture.period.id.value}"}""")
         }
@@ -316,7 +294,7 @@ class TaxRoutesTest {
 
         val response = client.post("/api/companies/${fixture.company.id.value}/tax") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenant.id.value.toString())
+            header("X-Tenant-Id", fixture.tenant.value.toString())
             contentType(ContentType.Application.Json)
             setBody("""{"periodId": "${fixture.period.id.value}"}""")
         }
@@ -334,14 +312,14 @@ class TaxRoutesTest {
 
         client.post("/api/companies/${fixture.company.id.value}/tax") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenant.id.value.toString())
+            header("X-Tenant-Id", fixture.tenant.value.toString())
             contentType(ContentType.Application.Json)
             setBody("""{"periodId": "${fixture.period.id.value}"}""")
         }
 
         val response = client.get("/api/companies/${fixture.company.id.value}/tax") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
-        header("X-Tenant-Id", fixture.tenant.id.value.toString())
+        header("X-Tenant-Id", fixture.tenant.value.toString())
         }
 
         response.status shouldBe HttpStatusCode.OK
@@ -357,7 +335,7 @@ class TaxRoutesTest {
 
         val response = client.get("/api/companies/${fixture.company.id.value}/tax") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(RESTRICTED_EMAIL)}")
-        header("X-Tenant-Id", fixture.tenant.id.value.toString())
+        header("X-Tenant-Id", fixture.tenant.value.toString())
         }
 
         response.status shouldBe HttpStatusCode.Forbidden

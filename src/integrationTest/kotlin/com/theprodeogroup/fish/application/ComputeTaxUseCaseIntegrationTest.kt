@@ -14,8 +14,7 @@ import com.theprodeogroup.fish.domain.tax.TaxRule
 import com.theprodeogroup.fish.domain.tax.TaxType
 import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.tenancy.Company
-import com.theprodeogroup.fish.domain.tenancy.Tenant
-import com.theprodeogroup.fish.domain.tenancy.TenantSegment
+import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.infrastructure.persistence.DatabaseConfig
 import com.theprodeogroup.fish.infrastructure.persistence.DatabaseMigrator
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedAccountRepository
@@ -24,7 +23,6 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedJournalEntryRep
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedPeriodRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTaxComputationRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTaxRuleRepository
-import com.theprodeogroup.fish.infrastructure.persistence.ExposedTenantRepository
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.junit.jupiter.api.Assumptions.assumeTrue
@@ -51,7 +49,6 @@ class ComputeTaxUseCaseIntegrationTest {
     private val journalEntryRepository = ExposedJournalEntryRepository()
     private val taxComputationRepository = ExposedTaxComputationRepository()
     private val taxRuleRepository = ExposedTaxRuleRepository()
-    private val tenantRepository = ExposedTenantRepository()
     private val companyRepository = ExposedCompanyRepository()
     private val useCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
 
@@ -72,9 +69,8 @@ class ComputeTaxUseCaseIntegrationTest {
         // real FK, so a fabricated CompanyId that was never actually saved (this
         // test's original bug) fails loudly here, exactly what this integration
         // test exists to catch.
-        val tenant = Tenant.onboard("Tax Test Tenant ${UUID.randomUUID()}", TenantSegment.INTERNAL_VENTURE, GBP)
-        tenantRepository.save(tenant)
-        val company = Company.create(tenant.id, "Tax Test Co", ClientType.NON_PROFIT, "GB", GBP)
+        val tenant = TenantId.generate()
+        val company = Company.create(tenant, "Tax Test Co", ClientType.NON_PROFIT, "GB", GBP)
         companyRepository.save(company)
         val companyId = company.id
         val period = Period.create(companyId, PeriodType.MONTH, TODAY, TODAY.plusDays(30))

@@ -5,8 +5,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountType
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
-import com.theprodeogroup.fish.domain.tenancy.Tenant
-import com.theprodeogroup.fish.domain.tenancy.TenantSegment
+import com.theprodeogroup.fish.domain.tenancy.TenantId
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.junit.jupiter.api.Test
@@ -19,8 +18,8 @@ class CreateAccountUseCaseTest {
 
     private fun company(): CompanyId {
         val companyRepository = FakeCompanyRepository()
-        val tenant = Tenant.onboard("Acme", TenantSegment.EXTERNAL_B2B, GBP)
-        val company = Company.create(tenant.id, "Acme Ltd", ClientType.COMPANY_LIMITED, "GB", GBP)
+        val tenantId = TenantId.generate()
+        val company = Company.create(tenantId, "Acme Ltd", ClientType.COMPANY_LIMITED, "GB", GBP)
         companyRepository.save(company)
         return company.id
     }
@@ -31,8 +30,8 @@ class CreateAccountUseCaseTest {
     @Test
     fun `given a valid request, when executed, then it creates and persists the Account`() {
         val companyRepository = FakeCompanyRepository()
-        val tenant = Tenant.onboard("Acme", TenantSegment.EXTERNAL_B2B, GBP)
-        val company = Company.create(tenant.id, "Acme Ltd", ClientType.COMPANY_LIMITED, "GB", GBP)
+        val tenantId = TenantId.generate()
+        val company = Company.create(tenantId, "Acme Ltd", ClientType.COMPANY_LIMITED, "GB", GBP)
         companyRepository.save(company)
         val accountRepository = FakeAccountRepository()
 
@@ -50,8 +49,8 @@ class CreateAccountUseCaseTest {
     @Test
     fun `given a Liability account classified Long term, when executed, then it stores NON_CURRENT`() {
         val companyRepository = FakeCompanyRepository()
-        val tenant = Tenant.onboard("Acme", TenantSegment.EXTERNAL_B2B, GBP)
-        val company = Company.create(tenant.id, "Acme Ltd", ClientType.COMPANY_LIMITED, "GB", GBP)
+        val tenantId = TenantId.generate()
+        val company = Company.create(tenantId, "Acme Ltd", ClientType.COMPANY_LIMITED, "GB", GBP)
         companyRepository.save(company)
         val accountRepository = FakeAccountRepository()
 
@@ -75,8 +74,8 @@ class CreateAccountUseCaseTest {
     @Test
     fun `given a code already in use by this Company, when executed, then it fails`() {
         val companyRepository = FakeCompanyRepository()
-        val tenant = Tenant.onboard("Acme", TenantSegment.EXTERNAL_B2B, GBP)
-        val company = Company.create(tenant.id, "Acme Ltd", ClientType.COMPANY_LIMITED, "GB", GBP)
+        val tenantId = TenantId.generate()
+        val company = Company.create(tenantId, "Acme Ltd", ClientType.COMPANY_LIMITED, "GB", GBP)
         companyRepository.save(company)
         val accountRepository = FakeAccountRepository()
         useCase(companyRepository, accountRepository).execute(
@@ -93,8 +92,8 @@ class CreateAccountUseCaseTest {
     @Test
     fun `given an Asset account with no classification, when executed, then it fails - classification is required for Asset Liability`() {
         val companyRepository = FakeCompanyRepository()
-        val tenant = Tenant.onboard("Acme", TenantSegment.EXTERNAL_B2B, GBP)
-        val company = Company.create(tenant.id, "Acme Ltd", ClientType.COMPANY_LIMITED, "GB", GBP)
+        val tenantId = TenantId.generate()
+        val company = Company.create(tenantId, "Acme Ltd", ClientType.COMPANY_LIMITED, "GB", GBP)
         companyRepository.save(company)
         val accountRepository = FakeAccountRepository()
 
