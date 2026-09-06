@@ -287,6 +287,11 @@ variable "hr_gl_engine_tenant_id" {
   default     = "9fa2198b-2a6f-467d-97ac-6f6fbce6a9fd"
 }
 
+variable "hr_ea_tenant_id" {
+  description = "HR_EA_TENANT_ID - Prodeo Group's real tenant UUID in EA's own system (docs/Tenancy_Administration_Extraction_DDD_Design.md). Deliberately no default, unlike hr_gl_engine_tenant_id: EA's migrations seed no fixed tenant (confirmed absent from EA/src/main/resources/db/migration), so its real production Tenant row was created dynamically through EA's own onboarding flow and this value can't be guessed - supply it at apply time."
+  type        = string
+}
+
 variable "hr_short_name" {
   description = "Short identifier for HR's length-constrained AWS resources (ALB target group name has a 32-char limit) - same reasoning as im_short_name."
   type        = string

@@ -362,6 +362,13 @@ resource "aws_ecs_task_definition" "hr" {
         { name = "HR_GL_ENGINE_BASE_URL", value = "https://${var.domain_name}/api" },
         { name = "HR_GL_ENGINE_TENANT_ID", value = var.hr_gl_engine_tenant_id },
         { name = "HR_CORS_ALLOWED_ORIGIN", value = "https://${var.domain_name}" },
+        # UC-BO17 gateway to EA (KtorEaGateway) - genuinely missing until
+        # 2026-09-06, when HR's first real redeploy since this became a
+        # hard startup requirement finally surfaced the gap (the old
+        # running task just never restarted to hit the check). No /api
+        # suffix - KtorEaGateway appends it itself per-call.
+        { name = "HR_EA_BASE_URL", value = "https://${var.ea_domain_name}" },
+        { name = "HR_EA_TENANT_ID", value = var.hr_ea_tenant_id },
         # HR's own Cognito service-account credentials (hr_service_account.tf) -
         # built from day one, matching IM's own precedent.
         { name = "HR_GL_ENGINE_COGNITO_REGION", value = var.aws_region },
