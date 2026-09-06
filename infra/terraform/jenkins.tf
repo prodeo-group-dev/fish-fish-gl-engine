@@ -94,9 +94,15 @@ data "aws_iam_policy_document" "jenkins_deploy" {
     sid     = "PassTaskRoles"
     effect  = "Allow"
     actions = ["iam:PassRole"]
+    # aws_iam_role.ea_ecs_task_execution/ea_ecs_task added 2026-09-06 -
+    # missed when PushToThisRepoOnly above was extended for EA; the
+    # ECR fix alone wasn't enough, register-task-definition also needs
+    # PassRole on both roles the task definition itself references.
     resources = [
       aws_iam_role.ecs_task_execution.arn,
-      aws_iam_role.ecs_task.arn
+      aws_iam_role.ecs_task.arn,
+      aws_iam_role.ea_ecs_task_execution.arn,
+      aws_iam_role.ea_ecs_task.arn
     ]
   }
 }
