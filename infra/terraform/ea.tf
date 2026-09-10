@@ -411,6 +411,17 @@ resource "aws_ecs_task_definition" "ea" {
         { name = "EA_JWT_AUDIENCE", value = local.fish_jwt_audience },
         { name = "EA_JWT_JWKS_URL", value = local.fish_jwt_jwks_url },
         { name = "EA_CORS_ALLOWED_ORIGIN", value = "https://${var.domain_name}" },
+        # UC-BO01 Dashboard's own outbound gateways (ComputeDashboardUseCase,
+        # 2026-09-06) - required unconditionally by productionModule(), but
+        # never added here, which crash-looped every EA deploy since the
+        # Dashboard feature shipped (found 2026-09-10 while fixing an
+        # unrelated migration issue - the old pre-Dashboard task revision
+        # had been silently serving all real traffic the whole time). /api
+        # suffix required - these gateways construct paths as "$baseUrl/sales"
+        # etc. with no /api of their own, same convention as HR_GL_ENGINE_BASE_URL.
+        { name = "EA_SOP_BASE_URL", value = "https://${var.sop_domain_name}/api" },
+        { name = "EA_IM_BASE_URL", value = "https://${var.im_domain_name}/api" },
+        { name = "EA_GL_BASE_URL", value = "https://${var.domain_name}/api" },
         # Trusts POP/SOP/IM/HR's own service-account tokens when GL
         # forwards them here (the service-account half of GL's EA
         # rewiring - see Auth.kt's authorizeTenant()) - the exact same
