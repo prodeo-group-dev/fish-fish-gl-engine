@@ -120,7 +120,6 @@ class FakeEaMembershipGateway(
         val name: String,
         val status: String,
         val kybStatus: String,
-        val adminKycStatus: String,
         val adminPhoneNumber: String?,
         val adminPhoneVerificationStatus: String,
         val phoneVerificationDeadline: String?
@@ -133,13 +132,12 @@ class FakeEaMembershipGateway(
         name: String = "",
         status: String = "ACTIVE",
         kybStatus: String = "VERIFIED",
-        adminKycStatus: String = "VERIFIED",
         adminPhoneNumber: String? = null,
         adminPhoneVerificationStatus: String = "PENDING",
         phoneVerificationDeadline: String? = null
     ) {
         tenantDescriptions[tenantId] = TenantDescription(
-            name, status, kybStatus, adminKycStatus, adminPhoneNumber, adminPhoneVerificationStatus, phoneVerificationDeadline
+            name, status, kybStatus, adminPhoneNumber, adminPhoneVerificationStatus, phoneVerificationDeadline
         )
     }
 
@@ -160,7 +158,6 @@ class FakeEaMembershipGateway(
                 accessLevel = membership.accessLevel,
                 tenantStatus = description?.status ?: "ACTIVE",
                 kybStatus = description?.kybStatus ?: "VERIFIED",
-                adminKycStatus = description?.adminKycStatus ?: "VERIFIED",
                 adminPhoneNumber = description?.adminPhoneNumber,
                 adminPhoneVerificationStatus = description?.adminPhoneVerificationStatus ?: "PENDING",
                 phoneVerificationDeadline = description?.phoneVerificationDeadline,

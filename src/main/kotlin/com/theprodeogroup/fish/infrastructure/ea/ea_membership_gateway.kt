@@ -25,7 +25,6 @@ data class CallerMembership(
     val accessLevel: AccessLevel,
     val tenantStatus: String,
     val kybStatus: String,
-    val adminKycStatus: String,
     val adminPhoneNumber: String?,
     val adminPhoneVerificationStatus: String,
     val phoneVerificationDeadline: String?,

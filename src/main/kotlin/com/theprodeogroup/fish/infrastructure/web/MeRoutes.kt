@@ -79,7 +79,6 @@ fun Route.meRoutes(companyRepository: CompanyRepository) {
                         accessLevel = membership.accessLevel.name,
                         tenantStatus = membership.tenantStatus,
                         kybStatus = membership.kybStatus,
-                        adminKycStatus = membership.adminKycStatus,
                         adminPhoneNumber = membership.adminPhoneNumber,
                         adminPhoneVerificationStatus = membership.adminPhoneVerificationStatus,
                         phoneVerificationDeadline = membership.phoneVerificationDeadline,

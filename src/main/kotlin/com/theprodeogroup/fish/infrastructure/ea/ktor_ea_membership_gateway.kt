@@ -59,7 +59,6 @@ class KtorEaMembershipGateway(
         accessLevel = AccessLevel.valueOf(accessLevel),
         tenantStatus = tenantStatus,
         kybStatus = kybStatus,
-        adminKycStatus = adminKycStatus,
         adminPhoneNumber = adminPhoneNumber,
         adminPhoneVerificationStatus = adminPhoneVerificationStatus,
         phoneVerificationDeadline = phoneVerificationDeadline,
