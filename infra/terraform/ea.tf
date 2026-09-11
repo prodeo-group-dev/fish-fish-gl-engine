@@ -411,6 +411,15 @@ resource "aws_ecs_task_definition" "ea" {
         { name = "EA_JWT_AUDIENCE", value = local.fish_jwt_audience },
         { name = "EA_JWT_JWKS_URL", value = local.fish_jwt_jwks_url },
         { name = "EA_CORS_ALLOWED_ORIGIN", value = "https://${var.domain_name}" },
+        # Staff invite accept/decline links (2026-09-11, "Why is Charles
+        # Soyinka listed as part of the team when he has not responded
+        # to the invite") - InviteStaffMemberUseCase builds the emailed
+        # accept URL as "$EA_WEB_APP_BASE_URL/fish?staffInvite=<secret>".
+        # Bare origin, no /api suffix - this is a browser-facing link,
+        # not a backend-to-backend call like EA_GL_BASE_URL's own /api
+        # suffix. var.domain_name confirmed as WEB's real origin via
+        # EA_CORS_ALLOWED_ORIGIN's own use of it, just above.
+        { name = "EA_WEB_APP_BASE_URL", value = "https://${var.domain_name}" },
         # UC-BO01 Dashboard's own outbound gateways (ComputeDashboardUseCase,
         # 2026-09-06) - required unconditionally by productionModule(), but
         # never added here, which crash-looped every EA deploy since the
