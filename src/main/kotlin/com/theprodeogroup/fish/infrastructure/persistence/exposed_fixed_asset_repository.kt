@@ -51,6 +51,7 @@ class ExposedFixedAssetRepository : FixedAssetRepository {
         statement[FixedAssetsTable.currency] = fixedAsset.cost.currency.currencyCode
         statement[FixedAssetsTable.acquisitionDate] = fixedAsset.acquisitionDate
         statement[FixedAssetsTable.usefulLifeYears] = fixedAsset.usefulLifeYears
+        statement[FixedAssetsTable.identifier] = fixedAsset.identifier
         statement[FixedAssetsTable.accumulatedDepreciationAmount] = fixedAsset.accumulatedDepreciation.amount
         statement[FixedAssetsTable.accumulatedImpairmentAmount] = fixedAsset.accumulatedImpairmentLoss.amount
         statement[FixedAssetsTable.isDisposed] = fixedAsset.isDisposed
@@ -66,6 +67,7 @@ class ExposedFixedAssetRepository : FixedAssetRepository {
             cost = Money(this[FixedAssetsTable.costAmount], currency),
             acquisitionDate = this[FixedAssetsTable.acquisitionDate],
             usefulLifeYears = this[FixedAssetsTable.usefulLifeYears],
+            identifier = this[FixedAssetsTable.identifier],
             accumulatedDepreciation = Money(this[FixedAssetsTable.accumulatedDepreciationAmount], currency),
             accumulatedImpairmentLoss = Money(this[FixedAssetsTable.accumulatedImpairmentAmount], currency),
             isDisposed = this[FixedAssetsTable.isDisposed]

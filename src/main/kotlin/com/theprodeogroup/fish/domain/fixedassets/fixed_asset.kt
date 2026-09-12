@@ -58,7 +58,9 @@ class FixedAsset private constructor(
     val category: AssetCategory,
     val cost: Money,
     val acquisitionDate: LocalDate,
-    val usefulLifeYears: Int?
+    val usefulLifeYears: Int?,
+    /** A serial number, vehicle registration, deed reference, or similar unique identifier (2026-09-12) - nullable, since some assets genuinely have none (e.g. Land). */
+    val identifier: String?
 ) {
     var accumulatedDepreciation: Money = Money(BigDecimal.ZERO, cost.currency)
         private set
@@ -282,6 +284,7 @@ class FixedAsset private constructor(
             cost: Money,
             acquisitionDate: LocalDate,
             usefulLifeYears: Int? = null,
+            identifier: String? = null,
             id: FixedAssetId = FixedAssetId.generate()
         ): FixedAsset {
             require(cost.amount.signum() > 0) { "Cost must be positive" }
@@ -291,7 +294,7 @@ class FixedAsset private constructor(
             require(category != AssetCategory.LAND || usefulLifeYears == null) {
                 "Land is not depreciated and cannot have a useful life"
             }
-            return FixedAsset(id, companyId, name, category, cost, acquisitionDate, usefulLifeYears)
+            return FixedAsset(id, companyId, name, category, cost, acquisitionDate, usefulLifeYears, identifier?.trim()?.ifBlank { null })
         }
 
         /** Rebuilds a [FixedAsset] from persisted state, bypassing [create]'s validation - same "reconstitute" precedent as `Creditor`/`Customer`. */
@@ -303,11 +306,12 @@ class FixedAsset private constructor(
             cost: Money,
             acquisitionDate: LocalDate,
             usefulLifeYears: Int?,
+            identifier: String?,
             accumulatedDepreciation: Money,
             accumulatedImpairmentLoss: Money,
             isDisposed: Boolean
         ): FixedAsset {
-            val asset = FixedAsset(id, companyId, name, category, cost, acquisitionDate, usefulLifeYears)
+            val asset = FixedAsset(id, companyId, name, category, cost, acquisitionDate, usefulLifeYears, identifier)
             asset.accumulatedDepreciation = accumulatedDepreciation
             asset.accumulatedImpairmentLoss = accumulatedImpairmentLoss
             asset.isDisposed = isDisposed

@@ -13,6 +13,7 @@ data class FixedAssetRegisterLine(
     val cost: Money,
     val acquisitionDate: LocalDate,
     val usefulLifeYears: Int?,
+    val identifier: String?,
     val accumulatedDepreciation: Money,
     val accumulatedImpairmentLoss: Money,
     val netBookValue: Money,
@@ -48,7 +49,7 @@ data class FixedAssetRegister(
                 .sortedBy { it.acquisitionDate }
                 .map {
                     FixedAssetRegisterLine(
-                        it.id, it.name, it.category, it.cost, it.acquisitionDate, it.usefulLifeYears,
+                        it.id, it.name, it.category, it.cost, it.acquisitionDate, it.usefulLifeYears, it.identifier,
                         it.accumulatedDepreciation, it.accumulatedImpairmentLoss, it.netBookValue, it.carryingAmount, it.isDisposed
                     )
                 }

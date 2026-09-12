@@ -638,6 +638,13 @@ data class CashFlowResponseDto(
     val uncategorizedAmount: String
 )
 
+/**
+ * [periodId]/[fixedAssetAccountId]/[fundingMethod] added 2026-09-12 -
+ * acquiring a Fixed Asset now posts to the Ledger in the same call, see
+ * `CreateFixedAssetUseCase`'s own KDoc. [fundingMethod] is `"CASH"`
+ * (requires [cashAccountId]) or `"ON_ACCOUNT"` (requires
+ * [apControlAccountId] and [vendorReference]).
+ */
 @Serializable
 data class CreateFixedAssetRequestDto(
     val companyId: String,
@@ -646,7 +653,14 @@ data class CreateFixedAssetRequestDto(
     val cost: String,
     val currency: String,
     val acquisitionDate: String,
-    val usefulLifeYears: Int? = null
+    val usefulLifeYears: Int? = null,
+    val identifier: String? = null,
+    val periodId: String,
+    val fixedAssetAccountId: String,
+    val fundingMethod: String,
+    val cashAccountId: String? = null,
+    val apControlAccountId: String? = null,
+    val vendorReference: String? = null
 )
 
 /** Shared shape for a single Fixed Asset - a `POST /fixed-assets` response and one [FixedAssetRegisterResponseDto] line alike. */
@@ -660,6 +674,7 @@ data class FixedAssetSummaryDto(
     val currency: String,
     val acquisitionDate: String,
     val usefulLifeYears: Int?,
+    val identifier: String?,
     val accumulatedDepreciation: String,
     val accumulatedImpairmentLoss: String,
     val netBookValue: String,

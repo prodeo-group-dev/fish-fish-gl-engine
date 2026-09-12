@@ -6,6 +6,7 @@ import com.theprodeogroup.fish.application.ComputeFixedAssetRegisterUseCase
 import com.theprodeogroup.fish.application.CreateFixedAssetUseCase
 import com.theprodeogroup.fish.application.DisposeFixedAssetResult
 import com.theprodeogroup.fish.application.DisposeFixedAssetUseCase
+import com.theprodeogroup.fish.application.FixedAssetFundingMethod
 import com.theprodeogroup.fish.application.RecordFixedAssetDepreciationResult
 import com.theprodeogroup.fish.application.RecordFixedAssetDepreciationUseCase
 import com.theprodeogroup.fish.domain.fixedassets.AssetCategory
@@ -99,6 +100,7 @@ fun Route.fixedAssetRoutes(
                                 currency = it.cost.currency.currencyCode,
                                 acquisitionDate = it.acquisitionDate.toString(),
                                 usefulLifeYears = it.usefulLifeYears,
+                                identifier = it.identifier,
                                 accumulatedDepreciation = it.accumulatedDepreciation.amount.toPlainString(),
                                 accumulatedImpairmentLoss = it.accumulatedImpairmentLoss.amount.toPlainString(),
                                 netBookValue = it.netBookValue.amount.toPlainString(),
@@ -137,19 +139,59 @@ fun Route.fixedAssetRoutes(
         }
         val cost = call.parseMoney(request.cost, request.currency) ?: return@post
         val acquisitionDate = call.parseLocalDate(request.acquisitionDate) ?: return@post
+        val periodUuid = call.parseUuid(request.periodId) ?: return@post
+        val fixedAssetAccountId = call.parseUuid(request.fixedAssetAccountId) ?: return@post
+
+        val funding = when (request.fundingMethod.uppercase()) {
+            "CASH" -> {
+                val cashAccountIdRaw = request.cashAccountId
+                if (cashAccountIdRaw == null) {
+                    call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "cashAccountId is required when fundingMethod is CASH"))
+                    return@post
+                }
+                val cashAccountId = call.parseUuid(cashAccountIdRaw) ?: return@post
+                FixedAssetFundingMethod.Cash(AccountId(cashAccountId))
+            }
+            "ON_ACCOUNT" -> {
+                val apControlAccountIdRaw = request.apControlAccountId
+                val vendorReference = request.vendorReference
+                if (apControlAccountIdRaw == null || vendorReference.isNullOrBlank()) {
+                    call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "apControlAccountId and vendorReference are required when fundingMethod is ON_ACCOUNT"))
+                    return@post
+                }
+                val apControlAccountId = call.parseUuid(apControlAccountIdRaw) ?: return@post
+                FixedAssetFundingMethod.OnAccount(AccountId(apControlAccountId), vendorReference)
+            }
+            else -> {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "fundingMethod must be CASH or ON_ACCOUNT"))
+                return@post
+            }
+        }
 
         call.respondIdempotently(
             idempotencyKeyRepository, tenantId, "create-fixed-asset",
             Json.encodeToString(CreateFixedAssetRequestDto.serializer(), request)
         ) {
             val result = createFixedAssetUseCase.execute(
-                CreateFixedAssetUseCase.Request(companyId, request.name, category, cost, acquisitionDate, request.usefulLifeYears)
+                CreateFixedAssetUseCase.Request(
+                    companyId, request.name, category, cost, acquisitionDate, request.usefulLifeYears, request.identifier,
+                    PeriodId(periodUuid), AccountId(fixedAssetAccountId), funding
+                )
             )
             when (result) {
                 is CreateFixedAssetUseCase.Result.Success ->
-                    HttpStatusCode.OK to Json.encodeToString(FixedAssetSummaryDto.serializer(), result.fixedAsset.toDto())
+                    HttpStatusCode.OK to Json.encodeToString(
+                        FixedAssetPostingResponseDto.serializer(),
+                        FixedAssetPostingResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name, result.fixedAsset.toDto())
+                    )
                 is CreateFixedAssetUseCase.Result.CompanyNotFound -> HttpStatusCode.NotFound to errorResponseJson("company_not_found")
                 is CreateFixedAssetUseCase.Result.InvalidFixedAsset -> HttpStatusCode.BadRequest to errorResponseJson("invalid_fixed_asset", result.message)
+                is CreateFixedAssetUseCase.Result.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
+                is CreateFixedAssetUseCase.Result.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
+                is CreateFixedAssetUseCase.Result.AccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("account_not_found", result.accountId.value.toString())
+                is CreateFixedAssetUseCase.Result.InvalidPosting ->
+                    HttpStatusCode.BadRequest to errorResponseJson("invalid_posting", result.errors.joinToString())
             }
         }
     }
@@ -312,6 +354,7 @@ private fun FixedAsset.toDto() = FixedAssetSummaryDto(
     currency = cost.currency.currencyCode,
     acquisitionDate = acquisitionDate.toString(),
     usefulLifeYears = usefulLifeYears,
+    identifier = identifier,
     accumulatedDepreciation = accumulatedDepreciation.amount.toPlainString(),
     accumulatedImpairmentLoss = accumulatedImpairmentLoss.amount.toPlainString(),
     netBookValue = netBookValue.amount.toPlainString(),

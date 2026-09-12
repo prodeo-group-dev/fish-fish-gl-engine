@@ -16,6 +16,7 @@ object FixedAssetsTable : Table("fixed_assets") {
     val currency = varchar("currency", 3)
     val acquisitionDate = date("acquisition_date")
     val usefulLifeYears = integer("useful_life_years").nullable()
+    val identifier = varchar("identifier", 255).nullable()
     val accumulatedDepreciationAmount = decimal("accumulated_depreciation_amount", 19, 4)
     val accumulatedImpairmentAmount = decimal("accumulated_impairment_amount", 19, 4)
     val isDisposed = bool("is_disposed")

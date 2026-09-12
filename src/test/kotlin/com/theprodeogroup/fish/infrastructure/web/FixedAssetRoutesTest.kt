@@ -140,7 +140,7 @@ class FixedAssetRoutesTest {
         val computeProfitAndLossUseCase = ComputeProfitAndLossUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeCashFlowUseCase = ComputeCashFlowUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val fixedAssetRepository = FakeFixedAssetRepository()
-        val createFixedAssetUseCase = CreateFixedAssetUseCase(companyRepository, fixedAssetRepository)
+        val createFixedAssetUseCase = CreateFixedAssetUseCase(companyRepository, fixedAssetRepository, postJournalEntryUseCase)
         val recordFixedAssetDepreciationUseCase = RecordFixedAssetDepreciationUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
         val assessFixedAssetImpairmentUseCase = AssessFixedAssetImpairmentUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
         val disposeFixedAssetUseCase = DisposeFixedAssetUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
@@ -194,7 +194,7 @@ class FixedAssetRoutesTest {
     }
 
     @Test
-    fun `given a valid request, when POST fixed-assets is called, then it creates a register entry and it appears in the register report`() = testApplication {
+    fun `given a cash-funded request, when POST fixed-assets is called, then it posts to the Ledger and appears in the register report`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
@@ -205,12 +205,18 @@ class FixedAssetRoutesTest {
             contentType(ContentType.Application.Json)
             setBody(
                 """{"companyId": "${fixture.company.id.value}", "name": "Delivery Van", "category": "VEHICLES",
-                    |"cost": "15000.00", "currency": "GBP", "acquisitionDate": "$TODAY", "usefulLifeYears": 5}""".trimMargin()
+                    |"cost": "15000.00", "currency": "GBP", "acquisitionDate": "$TODAY", "usefulLifeYears": 5,
+                    |"identifier": "REG-XY26 ABC", "periodId": "${fixture.period.id.value}",
+                    |"fixedAssetAccountId": "${fixture.fixedAssetAccount.id.value}",
+                    |"fundingMethod": "CASH", "cashAccountId": "${fixture.cashAccount.id.value}"}""".trimMargin()
             )
         }
         createResponse.status shouldBe HttpStatusCode.OK
-        val created: FixedAssetSummaryDto = createResponse.body()
+        val posting: FixedAssetPostingResponseDto = createResponse.body()
+        posting.journalEntryStatus shouldBe "POSTED"
+        val created = posting.fixedAsset
         created.name shouldBe "Delivery Van"
+        created.identifier shouldBe "REG-XY26 ABC"
         created.netBookValue shouldBe "15000.00"
 
         val registerResponse = client.get("/api/companies/${fixture.company.id.value}/reports/fixed-asset-register") {
@@ -225,6 +231,33 @@ class FixedAssetRoutesTest {
     }
 
     @Test
+    fun `given an on-account request, when POST fixed-assets is called, then it credits the AP control account tagged with the vendor reference`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val apControlAccount = Account.create(fixture.company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2100", "Accounts Payable")
+            .also { fixture.accountRepository.save(it) }
+
+        val createResponse = client.post("/api/fixed-assets") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "name": "Warehouse Racking", "category": "EQUIPMENT",
+                    |"cost": "8000.00", "currency": "GBP", "acquisitionDate": "$TODAY", "usefulLifeYears": 8,
+                    |"periodId": "${fixture.period.id.value}", "fixedAssetAccountId": "${fixture.fixedAssetAccount.id.value}",
+                    |"fundingMethod": "ON_ACCOUNT", "apControlAccountId": "${apControlAccount.id.value}",
+                    |"vendorReference": "Acme Racking Ltd - Invoice 4471"}""".trimMargin()
+            )
+        }
+
+        createResponse.status shouldBe HttpStatusCode.OK
+        val posting: FixedAssetPostingResponseDto = createResponse.body()
+        posting.journalEntryStatus shouldBe "POSTED"
+        posting.fixedAsset.netBookValue shouldBe "8000.00"
+    }
+
+    @Test
     fun `given a created FixedAsset, when record-depreciation is posted, then it reduces the net book value`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
@@ -236,10 +269,12 @@ class FixedAssetRoutesTest {
             contentType(ContentType.Application.Json)
             setBody(
                 """{"companyId": "${fixture.company.id.value}", "name": "Delivery Van", "category": "VEHICLES",
-                    |"cost": "10000.00", "currency": "GBP", "acquisitionDate": "$TODAY", "usefulLifeYears": 5}""".trimMargin()
+                    |"cost": "10000.00", "currency": "GBP", "acquisitionDate": "$TODAY", "usefulLifeYears": 5,
+                    |"periodId": "${fixture.period.id.value}", "fixedAssetAccountId": "${fixture.fixedAssetAccount.id.value}",
+                    |"fundingMethod": "CASH", "cashAccountId": "${fixture.cashAccount.id.value}"}""".trimMargin()
             )
         }
-        val created: FixedAssetSummaryDto = createResponse.body()
+        val created: FixedAssetSummaryDto = createResponse.body<FixedAssetPostingResponseDto>().fixedAsset
 
         val depreciationResponse = client.post("/api/fixed-assets/${created.id}/record-depreciation") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
@@ -270,10 +305,12 @@ class FixedAssetRoutesTest {
             contentType(ContentType.Application.Json)
             setBody(
                 """{"companyId": "${fixture.company.id.value}", "name": "Delivery Van", "category": "VEHICLES",
-                    |"cost": "10000.00", "currency": "GBP", "acquisitionDate": "$TODAY", "usefulLifeYears": 5}""".trimMargin()
+                    |"cost": "10000.00", "currency": "GBP", "acquisitionDate": "$TODAY", "usefulLifeYears": 5,
+                    |"periodId": "${fixture.period.id.value}", "fixedAssetAccountId": "${fixture.fixedAssetAccount.id.value}",
+                    |"fundingMethod": "CASH", "cashAccountId": "${fixture.cashAccount.id.value}"}""".trimMargin()
             )
         }
-        val created: FixedAssetSummaryDto = createResponse.body()
+        val created: FixedAssetSummaryDto = createResponse.body<FixedAssetPostingResponseDto>().fixedAsset
 
         val disposeResponse = client.post("/api/fixed-assets/${created.id}/dispose") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
