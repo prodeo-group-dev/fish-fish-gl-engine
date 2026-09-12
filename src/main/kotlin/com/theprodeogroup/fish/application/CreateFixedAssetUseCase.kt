@@ -32,6 +32,18 @@ sealed class FixedAssetFundingMethod {
      * moves until the obligation is later settled.
      */
     data class OnAccount(val apControlAccountId: AccountId, val vendorReference: String) : FixedAssetFundingMethod()
+
+    /**
+     * For an asset the Company already owned before this register entry
+     * was created - not a new transaction, so no cash moves and no
+     * vendor is involved. Credits [suspenseAccountId] with no dimension
+     * tag (2026-09-12, "This ... should be posted against a suspense
+     * account which can be journalled out at end of year") - the same
+     * catch-up treatment as [RecordOpeningBalanceUseCase], applied here
+     * so a Fixed Asset discovered after the fact still can't exist
+     * without a Ledger entry.
+     */
+    data class AlreadyOwned(val suspenseAccountId: AccountId) : FixedAssetFundingMethod()
 }
 
 /**
@@ -113,6 +125,9 @@ class CreateFixedAssetUseCase(
             is FixedAssetFundingMethod.OnAccount -> JournalLine(
                 funding.apControlAccountId, request.cost, TransactionSide.CREDIT,
                 mapOf(DimensionType.VENDOR to funding.vendorReference)
+            )
+            is FixedAssetFundingMethod.AlreadyOwned -> JournalLine(
+                funding.suspenseAccountId, request.cost, TransactionSide.CREDIT
             )
         }
         val lines = listOf(

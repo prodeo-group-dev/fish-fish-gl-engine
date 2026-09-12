@@ -17,27 +17,43 @@ import java.math.BigDecimal
 import java.time.LocalDate
 
 /**
- * Posts (or adjusts) one Account's opening balance against Opening
- * Balance Equity - a standing, always-available action, not the
- * one-shot field [OnboardTenantUseCase]/[AddCompanyToTenantUseCase]
- * offer only at onboarding time (2026-09-03, "Most users are expected
- * to set up from incomplete records, that is why the opening figures
- * for the first fiscal year should be available throughout the
- * year"). Onboarding's own `openingCashBalance` still exists
- * unchanged (Cash is the one figure almost every onboarding flow
- * already asks for) - this is the general mechanism for every *other*
- * account a business discovers it needs an opening figure for as it
- * gets its books organized: a newly set-up Fixed Asset account, a
- * Long-term Liability, anything.
+ * Posts (or adjusts) one Account's opening balance against a
+ * caller-supplied contra-account - a standing, always-available
+ * action, not the one-shot field [OnboardTenantUseCase]/
+ * [AddCompanyToTenantUseCase] offer only at onboarding time
+ * (2026-09-03, "Most users are expected to set up from incomplete
+ * records, that is why the opening figures for the first fiscal year
+ * should be available throughout the year"). Onboarding's own
+ * `openingCashBalance` still exists unchanged (Cash is the one figure
+ * almost every onboarding flow already asks for, and it resolves its
+ * own contra-account locally rather than calling this use case at
+ * all) - this is the general mechanism for every *other* account a
+ * business discovers it needs a catch-up figure for: a newly set-up
+ * Fixed Asset account, a Long-term Liability, anything.
+ *
+ * **[contraAccountId] is caller-supplied, not resolved by an implicit
+ * code lookup (2026-09-12)** - this used to always resolve
+ * [ChartOfAccountsTemplate.OPENING_BALANCE_EQUITY_CODE] internally,
+ * the one place in this codebase that didn't follow the otherwise-
+ * universal "caller supplies every `AccountId` explicitly" convention
+ * (`RecordVendorObligationUseCase`, `PostJournalEntryUseCase`,
+ * `RecordInventoryReceiptUseCase` all do). Generalizing it is what
+ * lets this same, already-tested mechanism serve both a genuine
+ * opening balance (contra = Opening Balance Equity) and a not-yet-
+ * classified correction like a Fixed Asset discovered after the fact
+ * (contra = the newer, deliberately separate Suspense Account,
+ * [ChartOfAccountsTemplate.SUSPENSE_ACCOUNT_CODE]) - "journalled out
+ * to its true classification later" is exactly the Suspense Account's
+ * own purpose, not Opening Balance Equity's.
  *
  * **[amount] is always entered as a positive, plain-language figure -
  * the caller never picks debit/credit.** [AccountType.normalBalance]
  * decides which side the account itself takes (DEBIT for Asset/
  * Expense, CREDIT for Liability/Equity/Revenue) so "this account's
  * opening balance is 5,000" means the same intuitive thing regardless
- * of which side of the accounting equation the account sits on -
- * Opening Balance Equity always takes the opposite side, keeping the
- * entry balanced.
+ * of which side of the accounting equation the account sits on - the
+ * contra-account always takes the opposite side, keeping the entry
+ * balanced.
  *
  * **No "only before real activity" or "only in the first fiscal year"
  * gate** - deliberately not invented here. The only real constraint is
@@ -55,6 +71,7 @@ class RecordOpeningBalanceUseCase(
     data class Request(
         val companyId: CompanyId,
         val accountId: AccountId,
+        val contraAccountId: AccountId,
         val amount: BigDecimal,
         val date: LocalDate
     )
@@ -63,7 +80,7 @@ class RecordOpeningBalanceUseCase(
         data class Success(val journalEntry: JournalEntry) : Result()
         data object CompanyNotFound : Result()
         data object AccountNotFound : Result()
-        data object OpeningBalanceEquityAccountNotConfigured : Result()
+        data object ContraAccountNotFound : Result()
         data object NoOpenPeriod : Result()
         data class InvalidAmount(val message: String) : Result()
     }
@@ -79,9 +96,9 @@ class RecordOpeningBalanceUseCase(
             ?.takeIf { it.companyId == request.companyId }
             ?: return Result.AccountNotFound
 
-        val openingBalanceEquityAccount = accountRepository.findAllByCompany(request.companyId)
-            .firstOrNull { it.code == ChartOfAccountsTemplate.OPENING_BALANCE_EQUITY_CODE }
-            ?: return Result.OpeningBalanceEquityAccountNotConfigured
+        val contraAccount = accountRepository.findById(request.contraAccountId)
+            ?.takeIf { it.companyId == request.companyId }
+            ?: return Result.ContraAccountNotFound
 
         val period = periodRepository.findAllByCompany(request.companyId)
             .filter { it.allowsPosting() }
@@ -90,14 +107,14 @@ class RecordOpeningBalanceUseCase(
 
         val amount = Money(request.amount, company.baseCurrency)
         val accountSide = account.type.normalBalance()
-        val equitySide = if (accountSide == TransactionSide.DEBIT) TransactionSide.CREDIT else TransactionSide.DEBIT
+        val contraSide = if (accountSide == TransactionSide.DEBIT) TransactionSide.CREDIT else TransactionSide.DEBIT
 
         val entry = JournalEntry.create(
             period.id,
             request.date,
             listOf(
                 JournalLine(account.id, amount, accountSide),
-                JournalLine(openingBalanceEquityAccount.id, amount, equitySide)
+                JournalLine(contraAccount.id, amount, contraSide)
             ),
             JournalSource.MANUAL,
             "Opening balance - ${account.name}"
@@ -108,9 +125,9 @@ class RecordOpeningBalanceUseCase(
         }
 
         account.recordActivity()
-        openingBalanceEquityAccount.recordActivity()
+        contraAccount.recordActivity()
         accountRepository.save(account)
-        accountRepository.save(openingBalanceEquityAccount)
+        accountRepository.save(contraAccount)
         journalEntryRepository.save(entry)
 
         return Result.Success(entry)

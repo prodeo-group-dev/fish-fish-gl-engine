@@ -34,7 +34,7 @@ class ChartOfAccountsTemplateTest {
         val accounts = ChartOfAccountsTemplate.accountsFor(ClientType.INDIVIDUAL, CompanyId.generate())
 
         accounts.map { it.name } shouldContainExactlyInAnyOrder listOf(
-            "Cash", "Investments", "Loans", "Credit Cards", "Personal Equity", "Opening Balance Equity",
+            "Cash", "Investments", "Loans", "Credit Cards", "Personal Equity", "Opening Balance Equity", "Suspense Account",
             "Salary Income", "Investment Income", "Living Expenses", "Entertainment"
         )
     }
@@ -44,7 +44,7 @@ class ChartOfAccountsTemplateTest {
         val accounts = ChartOfAccountsTemplate.accountsFor(ClientType.COMPANY_LIMITED, CompanyId.generate())
 
         accounts.filter { it.type == AccountType.EQUITY }.map { it.name } shouldContainExactlyInAnyOrder
-            listOf("Share Capital", "Retained Earnings", "Dividends", "Opening Balance Equity")
+            listOf("Share Capital", "Retained Earnings", "Dividends", "Opening Balance Equity", "Suspense Account")
     }
 
     @Test
@@ -52,7 +52,7 @@ class ChartOfAccountsTemplateTest {
         val accounts = ChartOfAccountsTemplate.accountsFor(ClientType.SOLE_TRADER, CompanyId.generate())
 
         accounts.filter { it.type == AccountType.EQUITY }.map { it.name } shouldContainExactlyInAnyOrder
-            listOf("Owner's Capital", "Owner's Drawings", "Opening Balance Equity")
+            listOf("Owner's Capital", "Owner's Drawings", "Opening Balance Equity", "Suspense Account")
     }
 
     @Test
@@ -60,7 +60,7 @@ class ChartOfAccountsTemplateTest {
         val accounts = ChartOfAccountsTemplate.accountsFor(ClientType.NON_PROFIT, CompanyId.generate())
 
         accounts.filter { it.type == AccountType.EQUITY }.map { it.name } shouldContainExactlyInAnyOrder
-            listOf("Unrestricted Net Assets", "Restricted Net Assets", "Opening Balance Equity")
+            listOf("Unrestricted Net Assets", "Restricted Net Assets", "Opening Balance Equity", "Suspense Account")
         accounts.filter { it.type == AccountType.REVENUE }.map { it.name } shouldContainExactlyInAnyOrder
             listOf("Donations Income", "Grants Income")
     }
@@ -78,7 +78,7 @@ class ChartOfAccountsTemplateTest {
     }
 
     @Test
-    fun `given every ClientType, when a template is requested, then it includes a Cash account and an Opening Balance Equity account at the documented codes`() {
+    fun `given every ClientType, when a template is requested, then it includes a Cash account, an Opening Balance Equity account, and a Suspense Account at the documented codes`() {
         for (clientType in ClientType.entries) {
             val accounts = ChartOfAccountsTemplate.accountsFor(clientType, CompanyId.generate())
 
@@ -89,6 +89,10 @@ class ChartOfAccountsTemplateTest {
             val openingBalanceEquity = accounts.single { it.code == ChartOfAccountsTemplate.OPENING_BALANCE_EQUITY_CODE }
             openingBalanceEquity.name shouldBe "Opening Balance Equity"
             openingBalanceEquity.type shouldBe AccountType.EQUITY
+
+            val suspenseAccount = accounts.single { it.code == ChartOfAccountsTemplate.SUSPENSE_ACCOUNT_CODE }
+            suspenseAccount.name shouldBe "Suspense Account"
+            suspenseAccount.type shouldBe AccountType.EQUITY
         }
     }
 

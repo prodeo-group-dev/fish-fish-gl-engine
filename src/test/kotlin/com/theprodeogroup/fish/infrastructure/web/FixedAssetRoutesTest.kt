@@ -132,6 +132,7 @@ class FixedAssetRoutesTest {
         val accumulatedDepreciationAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.NON_CURRENT, "1210", "Accumulated Depreciation").also { accountRepository.save(it) }
         val depreciationExpenseAccount = Account.create(company.id, AccountType.EXPENSE, null, "6100", "Depreciation Expense").also { accountRepository.save(it) }
         val saleOfFixedAssetAccount = Account.create(company.id, AccountType.REVENUE, null, "4900", "Sale of Fixed Asset").also { accountRepository.save(it) }
+        val suspenseAccount = Account.create(company.id, AccountType.EQUITY, null, "3910", "Suspense Account").also { accountRepository.save(it) }
 
         val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
@@ -255,6 +256,31 @@ class FixedAssetRoutesTest {
         val posting: FixedAssetPostingResponseDto = createResponse.body()
         posting.journalEntryStatus shouldBe "POSTED"
         posting.fixedAsset.netBookValue shouldBe "8000.00"
+    }
+
+    @Test
+    fun `given an already-owned request, when POST fixed-assets is called, then it credits the Suspense Account with no dimension tag`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val createResponse = client.post("/api/fixed-assets") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "name": "Car", "category": "VEHICLES",
+                    |"cost": "5000.00", "currency": "GBP", "acquisitionDate": "$TODAY", "usefulLifeYears": 5,
+                    |"identifier": "REG-CAR01", "periodId": "${fixture.period.id.value}",
+                    |"fixedAssetAccountId": "${fixture.fixedAssetAccount.id.value}",
+                    |"fundingMethod": "ALREADY_OWNED", "suspenseAccountId": "${fixture.suspenseAccount.id.value}"}""".trimMargin()
+            )
+        }
+
+        createResponse.status shouldBe HttpStatusCode.OK
+        val posting: FixedAssetPostingResponseDto = createResponse.body()
+        posting.journalEntryStatus shouldBe "POSTED"
+        posting.fixedAsset.netBookValue shouldBe "5000.00"
     }
 
     @Test

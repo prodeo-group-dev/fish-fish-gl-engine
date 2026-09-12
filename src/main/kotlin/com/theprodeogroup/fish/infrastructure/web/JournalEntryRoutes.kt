@@ -188,6 +188,7 @@ fun Route.journalEntryRoutes(
         call.authorizeTenantForWrite(tenantId) ?: return@post
 
         val request = call.receive<RecordOpeningBalanceRequestDto>()
+        val contraAccountUuid = call.parseUuid(request.contraAccountId) ?: return@post
         val amount = request.amount.toBigDecimalOrNull()
         if (amount == null) {
             call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "amount is not a valid decimal"))
@@ -202,7 +203,7 @@ fun Route.journalEntryRoutes(
 
         when (
             val result = recordOpeningBalanceUseCase.execute(
-                RecordOpeningBalanceUseCase.Request(companyId, AccountId(accountUuid), amount, date)
+                RecordOpeningBalanceUseCase.Request(companyId, AccountId(accountUuid), AccountId(contraAccountUuid), amount, date)
             )
         ) {
             is RecordOpeningBalanceUseCase.Result.Success -> call.respond(
@@ -213,8 +214,8 @@ fun Route.journalEntryRoutes(
                 call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
             RecordOpeningBalanceUseCase.Result.AccountNotFound ->
                 call.respond(HttpStatusCode.NotFound, ErrorResponseDto("account_not_found", "Account not found"))
-            RecordOpeningBalanceUseCase.Result.OpeningBalanceEquityAccountNotConfigured ->
-                call.respond(HttpStatusCode.Conflict, ErrorResponseDto("opening_balance_equity_account_not_configured", "This Company's Chart of Accounts has no Opening Balance Equity account"))
+            RecordOpeningBalanceUseCase.Result.ContraAccountNotFound ->
+                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("contra_account_not_found", "The contra account was not found"))
             RecordOpeningBalanceUseCase.Result.NoOpenPeriod ->
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("no_open_period", "No open Period covers this date"))
             is RecordOpeningBalanceUseCase.Result.InvalidAmount ->

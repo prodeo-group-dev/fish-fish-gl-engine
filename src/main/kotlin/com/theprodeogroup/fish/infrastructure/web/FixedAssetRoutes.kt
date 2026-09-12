@@ -162,8 +162,17 @@ fun Route.fixedAssetRoutes(
                 val apControlAccountId = call.parseUuid(apControlAccountIdRaw) ?: return@post
                 FixedAssetFundingMethod.OnAccount(AccountId(apControlAccountId), vendorReference)
             }
+            "ALREADY_OWNED" -> {
+                val suspenseAccountIdRaw = request.suspenseAccountId
+                if (suspenseAccountIdRaw == null) {
+                    call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "suspenseAccountId is required when fundingMethod is ALREADY_OWNED"))
+                    return@post
+                }
+                val suspenseAccountId = call.parseUuid(suspenseAccountIdRaw) ?: return@post
+                FixedAssetFundingMethod.AlreadyOwned(AccountId(suspenseAccountId))
+            }
             else -> {
-                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "fundingMethod must be CASH or ON_ACCOUNT"))
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "fundingMethod must be CASH, ON_ACCOUNT, or ALREADY_OWNED"))
                 return@post
             }
         }

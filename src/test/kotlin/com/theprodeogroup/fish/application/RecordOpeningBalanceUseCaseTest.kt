@@ -29,7 +29,7 @@ private val TODAY: LocalDate = LocalDate.of(2026, 9, 3)
  */
 class RecordOpeningBalanceUseCaseTest {
 
-    private class Fixture(configureOpeningBalanceEquity: Boolean = true, openPeriod: Boolean = true) {
+    private class Fixture(configureContraAccount: Boolean = true, openPeriod: Boolean = true) {
         val companyRepository = FakeCompanyRepository()
         val periodRepository = FakePeriodRepository()
         val accountRepository = FakeAccountRepository()
@@ -43,8 +43,13 @@ class RecordOpeningBalanceUseCaseTest {
         val loanAccount = Account.create(company.id, AccountType.LIABILITY, AccountClassification.NON_CURRENT, "2200", "Bank Loan")
             .also { accountRepository.save(it) }
 
-        val openingBalanceEquityAccount = if (configureOpeningBalanceEquity) {
+        val openingBalanceEquityAccount = if (configureContraAccount) {
             Account.create(company.id, AccountType.EQUITY, null, ChartOfAccountsTemplate.OPENING_BALANCE_EQUITY_CODE, "Opening Balance Equity")
+                .also { accountRepository.save(it) }
+        } else null
+
+        val suspenseAccount = if (configureContraAccount) {
+            Account.create(company.id, AccountType.EQUITY, null, ChartOfAccountsTemplate.SUSPENSE_ACCOUNT_CODE, "Suspense Account")
                 .also { accountRepository.save(it) }
         } else null
 
@@ -57,11 +62,11 @@ class RecordOpeningBalanceUseCaseTest {
     }
 
     @Test
-    fun `given an Asset account, when its opening balance is recorded, then the account is debited and Opening Balance Equity is credited`() {
+    fun `given an Asset account, when its opening balance is recorded, then the account is debited and the contra account is credited`() {
         val fixture = Fixture()
 
         val result = fixture.useCase.execute(
-            RecordOpeningBalanceUseCase.Request(fixture.company.id, fixture.fixedAssetAccount.id, BigDecimal("18000.00"), TODAY)
+            RecordOpeningBalanceUseCase.Request(fixture.company.id, fixture.fixedAssetAccount.id, fixture.openingBalanceEquityAccount!!.id, BigDecimal("18000.00"), TODAY)
         )
 
         val success = result.shouldBeInstanceOf<RecordOpeningBalanceUseCase.Result.Success>()
@@ -72,11 +77,11 @@ class RecordOpeningBalanceUseCaseTest {
     }
 
     @Test
-    fun `given a Liability account, when its opening balance is recorded, then the account is credited and Opening Balance Equity is debited - normal balance flips the sides`() {
+    fun `given a Liability account, when its opening balance is recorded, then the account is credited and the contra account is debited - normal balance flips the sides`() {
         val fixture = Fixture()
 
         val result = fixture.useCase.execute(
-            RecordOpeningBalanceUseCase.Request(fixture.company.id, fixture.loanAccount.id, BigDecimal("5000.00"), TODAY)
+            RecordOpeningBalanceUseCase.Request(fixture.company.id, fixture.loanAccount.id, fixture.openingBalanceEquityAccount!!.id, BigDecimal("5000.00"), TODAY)
         )
 
         val success = result.shouldBeInstanceOf<RecordOpeningBalanceUseCase.Result.Success>()
@@ -87,11 +92,26 @@ class RecordOpeningBalanceUseCaseTest {
     }
 
     @Test
+    fun `given a different contra account (Suspense, not Opening Balance Equity), when executed, then it posts against that account instead - proving the contra account is no longer hardcoded`() {
+        val fixture = Fixture()
+
+        val result = fixture.useCase.execute(
+            RecordOpeningBalanceUseCase.Request(fixture.company.id, fixture.fixedAssetAccount.id, fixture.suspenseAccount!!.id, BigDecimal("5000.00"), TODAY)
+        )
+
+        val success = result.shouldBeInstanceOf<RecordOpeningBalanceUseCase.Result.Success>()
+        val assetLine = success.journalEntry.lines.single { it.accountId == fixture.fixedAssetAccount.id }
+        val suspenseLine = success.journalEntry.lines.single { it.accountId == fixture.suspenseAccount!!.id }
+        assetLine.side shouldBe TransactionSide.DEBIT
+        suspenseLine.side shouldBe TransactionSide.CREDIT
+    }
+
+    @Test
     fun `given a nonexistent Account, when executed, then it reports not found`() {
         val fixture = Fixture()
 
         val result = fixture.useCase.execute(
-            RecordOpeningBalanceUseCase.Request(fixture.company.id, com.theprodeogroup.fish.domain.ledger.AccountId.generate(), BigDecimal("100.00"), TODAY)
+            RecordOpeningBalanceUseCase.Request(fixture.company.id, com.theprodeogroup.fish.domain.ledger.AccountId.generate(), fixture.openingBalanceEquityAccount!!.id, BigDecimal("100.00"), TODAY)
         )
 
         result shouldBe RecordOpeningBalanceUseCase.Result.AccountNotFound
@@ -102,21 +122,21 @@ class RecordOpeningBalanceUseCaseTest {
         val fixture = Fixture(openPeriod = false)
 
         val result = fixture.useCase.execute(
-            RecordOpeningBalanceUseCase.Request(fixture.company.id, fixture.fixedAssetAccount.id, BigDecimal("100.00"), TODAY)
+            RecordOpeningBalanceUseCase.Request(fixture.company.id, fixture.fixedAssetAccount.id, fixture.openingBalanceEquityAccount!!.id, BigDecimal("100.00"), TODAY)
         )
 
         result shouldBe RecordOpeningBalanceUseCase.Result.NoOpenPeriod
     }
 
     @Test
-    fun `given no Opening Balance Equity account configured, when executed, then it fails`() {
-        val fixture = Fixture(configureOpeningBalanceEquity = false)
+    fun `given no contra account configured, when executed, then it fails`() {
+        val fixture = Fixture(configureContraAccount = false)
 
         val result = fixture.useCase.execute(
-            RecordOpeningBalanceUseCase.Request(fixture.company.id, fixture.fixedAssetAccount.id, BigDecimal("100.00"), TODAY)
+            RecordOpeningBalanceUseCase.Request(fixture.company.id, fixture.fixedAssetAccount.id, com.theprodeogroup.fish.domain.ledger.AccountId.generate(), BigDecimal("100.00"), TODAY)
         )
 
-        result shouldBe RecordOpeningBalanceUseCase.Result.OpeningBalanceEquityAccountNotConfigured
+        result shouldBe RecordOpeningBalanceUseCase.Result.ContraAccountNotFound
     }
 
     @Test
@@ -124,7 +144,7 @@ class RecordOpeningBalanceUseCaseTest {
         val fixture = Fixture()
 
         val result = fixture.useCase.execute(
-            RecordOpeningBalanceUseCase.Request(fixture.company.id, fixture.fixedAssetAccount.id, BigDecimal.ZERO, TODAY)
+            RecordOpeningBalanceUseCase.Request(fixture.company.id, fixture.fixedAssetAccount.id, fixture.openingBalanceEquityAccount!!.id, BigDecimal.ZERO, TODAY)
         )
 
         result.shouldBeInstanceOf<RecordOpeningBalanceUseCase.Result.InvalidAmount>()
@@ -134,11 +154,11 @@ class RecordOpeningBalanceUseCaseTest {
     fun `given a later delivery entered mid-year for the same account, when executed again, then it posts a second, independent opening-balance entry`() {
         val fixture = Fixture()
         fixture.useCase.execute(
-            RecordOpeningBalanceUseCase.Request(fixture.company.id, fixture.fixedAssetAccount.id, BigDecimal("10000.00"), TODAY)
+            RecordOpeningBalanceUseCase.Request(fixture.company.id, fixture.fixedAssetAccount.id, fixture.openingBalanceEquityAccount!!.id, BigDecimal("10000.00"), TODAY)
         )
 
         val result = fixture.useCase.execute(
-            RecordOpeningBalanceUseCase.Request(fixture.company.id, fixture.fixedAssetAccount.id, BigDecimal("8000.00"), TODAY.plusDays(5))
+            RecordOpeningBalanceUseCase.Request(fixture.company.id, fixture.fixedAssetAccount.id, fixture.openingBalanceEquityAccount!!.id, BigDecimal("8000.00"), TODAY.plusDays(5))
         )
 
         result.shouldBeInstanceOf<RecordOpeningBalanceUseCase.Result.Success>()

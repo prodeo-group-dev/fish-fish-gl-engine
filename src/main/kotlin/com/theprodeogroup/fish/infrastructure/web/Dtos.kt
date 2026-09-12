@@ -235,9 +235,10 @@ data class CreateAccountRequestDto(
     val parentId: String? = null
 )
 
-/** `POST /companies/{companyId}/accounts/{accountId}/opening-balance` - [amount] is always positive; the account's own normal balance decides debit vs. credit. */
+/** `POST /companies/{companyId}/accounts/{accountId}/opening-balance` - [amount] is always positive; the account's own normal balance decides debit vs. credit. [contraAccountId] is caller-supplied (2026-09-12) - typically the Opening Balance Equity account, but a not-yet-classified correction supplies the Suspense Account instead. */
 @Serializable
 data class RecordOpeningBalanceRequestDto(
+    val contraAccountId: String,
     val amount: String,
     val date: String
 )
@@ -642,8 +643,12 @@ data class CashFlowResponseDto(
  * [periodId]/[fixedAssetAccountId]/[fundingMethod] added 2026-09-12 -
  * acquiring a Fixed Asset now posts to the Ledger in the same call, see
  * `CreateFixedAssetUseCase`'s own KDoc. [fundingMethod] is `"CASH"`
- * (requires [cashAccountId]) or `"ON_ACCOUNT"` (requires
- * [apControlAccountId] and [vendorReference]).
+ * (requires [cashAccountId]), `"ON_ACCOUNT"` (requires
+ * [apControlAccountId] and [vendorReference]), or `"ALREADY_OWNED"`
+ * (requires [suspenseAccountId]) - the last for an asset the Company
+ * already owned before this register entry was created, e.g. a
+ * historical asset entered as a catch-up correction rather than a new
+ * transaction.
  */
 @Serializable
 data class CreateFixedAssetRequestDto(
@@ -660,7 +665,8 @@ data class CreateFixedAssetRequestDto(
     val fundingMethod: String,
     val cashAccountId: String? = null,
     val apControlAccountId: String? = null,
-    val vendorReference: String? = null
+    val vendorReference: String? = null,
+    val suspenseAccountId: String? = null
 )
 
 /** Shared shape for a single Fixed Asset - a `POST /fixed-assets` response and one [FixedAssetRegisterResponseDto] line alike. */

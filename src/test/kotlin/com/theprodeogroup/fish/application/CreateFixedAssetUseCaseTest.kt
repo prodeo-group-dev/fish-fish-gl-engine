@@ -117,6 +117,46 @@ class CreateFixedAssetUseCaseTest {
     }
 
     @Test
+    fun `given an already-owned acquisition, when executed, then it posts Dr Fixed Asset Cr Suspense Account with no dimension tag`() {
+        val company = company()
+        val period = openPeriod(company.id)
+        val fixedAssetAccount = account(company.id, "1200", AccountType.ASSET)
+        val suspenseAccount = account(company.id, "3910", AccountType.EQUITY)
+
+        val result = useCase.execute(
+            CreateFixedAssetUseCase.Request(
+                company.id, "Car", AssetCategory.VEHICLES, Money(BigDecimal("5000.00"), GBP), TODAY, 5, "REG-CAR01",
+                period.id, fixedAssetAccount.id, FixedAssetFundingMethod.AlreadyOwned(suspenseAccount.id)
+            )
+        )
+
+        val success = result.shouldBeInstanceOf<CreateFixedAssetUseCase.Result.Success>()
+        val debitLine = success.journalEntry.lines.single { it.accountId == fixedAssetAccount.id }
+        val creditLine = success.journalEntry.lines.single { it.accountId == suspenseAccount.id }
+        debitLine.amount shouldBe Money(BigDecimal("5000.00"), GBP)
+        creditLine.amount shouldBe Money(BigDecimal("5000.00"), GBP)
+        creditLine.dimensions shouldBe emptyMap()
+    }
+
+    @Test
+    fun `given an already-owned acquisition with a missing Suspense Account, when executed, then it returns AccountNotFound and saves no FixedAsset`() {
+        val company = company()
+        val period = openPeriod(company.id)
+        val fixedAssetAccount = account(company.id, "1200", AccountType.ASSET)
+
+        val result = useCase.execute(
+            CreateFixedAssetUseCase.Request(
+                company.id, "Car", AssetCategory.VEHICLES, Money(BigDecimal("5000.00"), GBP), TODAY, 5, "REG-CAR01",
+                period.id, fixedAssetAccount.id, FixedAssetFundingMethod.AlreadyOwned(AccountId.generate())
+            )
+        )
+
+        result.shouldBeInstanceOf<CreateFixedAssetUseCase.Result.AccountNotFound>()
+        fixedAssetRepository.saveCalls shouldBe emptyList()
+        journalEntryRepository.saveCalls shouldBe emptyList()
+    }
+
+    @Test
     fun `given a nonexistent Company, when executed, then it returns CompanyNotFound`() {
         val result = useCase.execute(
             CreateFixedAssetUseCase.Request(

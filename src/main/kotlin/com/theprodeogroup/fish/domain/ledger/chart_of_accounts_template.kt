@@ -49,10 +49,23 @@ import com.theprodeogroup.fish.domain.tenancy.CompanyId
  * directly - standard practice (matches how QuickBooks and similar
  * systems isolate this), so a rough opening figure never gets silently
  * blended into an account meant to track something more precise.
+ *
+ * **[SUSPENSE_ACCOUNT_CODE] added 2026-09-12** - a second, deliberately
+ * separate contra-account for the general "we're entering a value we
+ * already have, not making a new transaction" case (a Fixed Asset
+ * discovered and registered after the fact, an inventory count
+ * correction, anything whose true classification needs sorting out
+ * later - "journalled out at year end" was the user's own framing) -
+ * distinct from [OPENING_BALANCE_EQUITY_CODE], which stays scoped to
+ * genuine opening-balance entries. Same equity/no-classification shape
+ * as that account; the two exist side by side precisely so a
+ * not-yet-classified correction is never silently blended into either
+ * a "real" equity account or the opening-balance figure it isn't.
  */
 object ChartOfAccountsTemplate {
     const val CASH_CODE = "1000"
     const val OPENING_BALANCE_EQUITY_CODE = "3900"
+    const val SUSPENSE_ACCOUNT_CODE = "3910"
 
     /**
      * Payroll accounts (added 2026-09-02, UC-HR15/[ComputePayrollPostingContextUseCase]) -
@@ -100,6 +113,7 @@ object ChartOfAccountsTemplate {
         liability(companyId, "2100", "Credit Cards", AccountClassification.CURRENT),
         equity(companyId, "3000", "Personal Equity"),
         openingBalanceEquity(companyId),
+        suspenseAccount(companyId),
         revenue(companyId, "4000", "Salary Income"),
         revenue(companyId, "4100", "Investment Income"),
         expense(companyId, "5000", "Living Expenses"),
@@ -116,6 +130,7 @@ object ChartOfAccountsTemplate {
             equity(companyId, "3000", "Owner's Capital"),
             equity(companyId, "3100", "Owner's Drawings"),
             openingBalanceEquity(companyId),
+            suspenseAccount(companyId),
             revenue(companyId, "4000", "Sales Revenue"),
             expense(companyId, "5000", "Operating Expenses"),
         ),
@@ -133,6 +148,7 @@ object ChartOfAccountsTemplate {
             equity(companyId, "3000", "Partners' Capital"),
             equity(companyId, "3100", "Partners' Drawings"),
             openingBalanceEquity(companyId),
+            suspenseAccount(companyId),
             revenue(companyId, "4000", "Sales Revenue"),
             expense(companyId, "5000", "Operating Expenses"),
         ),
@@ -151,6 +167,7 @@ object ChartOfAccountsTemplate {
             equity(companyId, "3100", "Retained Earnings"),
             equity(companyId, "3200", "Dividends"),
             openingBalanceEquity(companyId),
+            suspenseAccount(companyId),
             revenue(companyId, "4000", "Sales Revenue"),
             expense(companyId, "5000", "Operating Expenses"),
         ),
@@ -167,6 +184,7 @@ object ChartOfAccountsTemplate {
             equity(companyId, "3000", "Unrestricted Net Assets"),
             equity(companyId, "3100", "Restricted Net Assets"),
             openingBalanceEquity(companyId),
+            suspenseAccount(companyId),
             revenue(companyId, "4000", "Donations Income"),
             revenue(companyId, "4100", "Grants Income"),
             expense(companyId, "5000", "Program Expenses"),
@@ -198,6 +216,9 @@ object ChartOfAccountsTemplate {
 
     private fun openingBalanceEquity(companyId: CompanyId) =
         equity(companyId, OPENING_BALANCE_EQUITY_CODE, "Opening Balance Equity")
+
+    private fun suspenseAccount(companyId: CompanyId) =
+        equity(companyId, SUSPENSE_ACCOUNT_CODE, "Suspense Account")
 
     private fun revenue(companyId: CompanyId, code: String, name: String) =
         Account.create(companyId, AccountType.REVENUE, null, code, name)
