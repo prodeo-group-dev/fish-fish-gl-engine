@@ -292,6 +292,11 @@ variable "hr_ea_tenant_id" {
   type        = string
 }
 
+variable "im_ea_tenant_id" {
+  description = "IM_EA_TENANT_ID - Prodeo Group's real tenant UUID in EA's own system (2026-09-14, code review §2.4 - the EA-membership-check pilot). Same value as hr_ea_tenant_id (all these services call the same EA as the same Tenant). Deliberately no default, same reasoning as hr_ea_tenant_id - supply it at apply time."
+  type        = string
+}
+
 variable "hr_short_name" {
   description = "Short identifier for HR's length-constrained AWS resources (ALB target group name has a 32-char limit) - same reasoning as im_short_name."
   type        = string

@@ -359,6 +359,11 @@ resource "aws_ecs_task_definition" "im" {
         { name = "IM_GL_ENGINE_BASE_URL", value = "https://${var.domain_name}/api" },
         { name = "IM_GL_ENGINE_TENANT_ID", value = var.im_gl_engine_tenant_id },
         { name = "IM_GL_ENGINE_COMPANY_ID", value = var.im_gl_engine_company_id },
+        # EA membership check (2026-09-14, code review §2.4 pilot) - same
+        # ea_domain_name/*_ea_tenant_id shape as hr.tf's own HR_EA_BASE_URL/
+        # HR_EA_TENANT_ID.
+        { name = "IM_EA_BASE_URL", value = "https://${var.ea_domain_name}" },
+        { name = "IM_EA_TENANT_ID", value = var.im_ea_tenant_id },
         { name = "IM_CORS_ALLOWED_ORIGIN", value = "https://${var.domain_name}" },
         # IM's own Cognito service-account credentials (im_service_account.tf) -
         # built from day one, unlike POP's still-deferred equivalent.
