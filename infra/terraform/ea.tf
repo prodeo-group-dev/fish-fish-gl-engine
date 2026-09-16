@@ -264,20 +264,35 @@ resource "aws_secretsmanager_secret_version" "ea_db_password" {
 # full cross-tenant Cognito identity). Generated, not chosen - the platform
 # operator retrieves the actual value from Secrets Manager directly, never
 # typed or committed anywhere.
+#
+# **Named tokens, not one shared secret (2026-09-16, code review: "shared
+# EA_OPERATOR_TOKEN, no per-operator identity")** - the secret's own value
+# is now a JSON object of operator name -> token
+# (`{"operator-1": "..."}` today), matching `authorizeOperator()`'s own
+# `EA_OPERATOR_TOKENS` shape. One `random_password` per named operator -
+# adding a second real operator later means adding one more
+# `random_password` resource and one more entry in the `jsonencode(...)`
+# map below, not touching the existing one's value. `var.ea_operator_names`
+# has no default naming any real person - deliberately generic
+# ("operator-1") until named operators are actually decided, per this
+# project's own "park, don't guess" convention.
 
 resource "random_password" "ea_operator_token" {
-  length  = 48
-  special = false
+  for_each = toset(var.ea_operator_names)
+  length   = 48
+  special  = false
 }
 
 resource "aws_secretsmanager_secret" "ea_operator_token" {
-  name        = "fish-enterprise-administration/production/operator-token"
-  description = "EA_OPERATOR_TOKEN"
+  name        = "fish-enterprise-administration/production/operator-tokens"
+  description = "EA_OPERATOR_TOKENS"
 }
 
 resource "aws_secretsmanager_secret_version" "ea_operator_token" {
-  secret_id     = aws_secretsmanager_secret.ea_operator_token.id
-  secret_string = random_password.ea_operator_token.result
+  secret_id = aws_secretsmanager_secret.ea_operator_token.id
+  secret_string = jsonencode({
+    for name in var.ea_operator_names : name => random_password.ea_operator_token[name].result
+  })
 }
 
 data "aws_iam_policy_document" "ea_ecs_task_execution_operator_token" {
@@ -455,7 +470,7 @@ resource "aws_ecs_task_definition" "ea" {
 
       secrets = [
         { name = "EA_DB_PASSWORD", valueFrom = aws_secretsmanager_secret.ea_db_password.arn },
-        { name = "EA_OPERATOR_TOKEN", valueFrom = aws_secretsmanager_secret.ea_operator_token.arn }
+        { name = "EA_OPERATOR_TOKENS", valueFrom = aws_secretsmanager_secret.ea_operator_token.arn }
       ]
 
       logConfiguration = {

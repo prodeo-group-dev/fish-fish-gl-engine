@@ -307,6 +307,12 @@ variable "sop_ea_tenant_id" {
   type        = string
 }
 
+variable "ea_operator_names" {
+  description = "Names of the platform operators who get their own EA_OPERATOR_TOKENS entry (2026-09-16, code review: \"shared EA_OPERATOR_TOKEN, no per-operator identity\") - one random_password + one JSON map entry per name, in ea.tf. Deliberately generic, no real person's name defaulted here - rename/add entries once actual operators are decided, per this project's own \"park, don't guess\" convention."
+  type        = list(string)
+  default     = ["operator-1"]
+}
+
 variable "hr_short_name" {
   description = "Short identifier for HR's length-constrained AWS resources (ALB target group name has a 32-char limit) - same reasoning as im_short_name."
   type        = string
