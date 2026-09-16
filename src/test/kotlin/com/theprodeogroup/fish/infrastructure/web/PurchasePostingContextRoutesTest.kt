@@ -156,6 +156,7 @@ class PurchasePostingContextRoutesTest {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
                 eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository),
+                popServiceVerifier = TestJwtSupport.popServiceVerifier(),
                 companyRepository = companyRepository,
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
                 computeTaxUseCase = computeTaxUseCase,
@@ -289,5 +290,46 @@ class PurchasePostingContextRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.Conflict
+    }
+
+    // -- Option B: service callers bypass EA entirely (2026-09-16, design note §9.2 / cutover scope §4.1) --
+
+    @Test
+    fun `given a POP service-account token with no EA Membership at all, when GET purchase-posting-context is called, then it still succeeds`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        // pop-gl-service@theprodeogroup.com has no User/Membership anywhere in
+        // this Fixture's FakeEaMembershipGateway - proving this succeeds anyway
+        // is the whole point: a service caller is never even asked EA the
+        // question, unlike a human, who would get 403 for the exact same gap.
+        val response = client.get("/api/companies/${fixture.company.id.value}/purchase-posting-context") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signPopServiceToken("pop-gl-service@theprodeogroup.com")}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+    }
+
+    @Test
+    fun `given a human caller with a Membership in a different Tenant, when GET purchase-posting-context is called, then it returns 403 - the bypass does not leak to humans`() = testApplication {
+        val fixture = Fixture()
+        // A real EA-known user (needed for FakeEaMembershipGateway to return
+        // Success rather than Unauthorized) whose only Membership is in a
+        // different Tenant entirely - the genuine "wrong tenant" 403 case,
+        // proving the human path still resolves through EA as before.
+        val otherUser = User.create("outsider@example.com", "Outsider").also { fixture.userRepository.save(it) }
+        val otherTenant = TenantId.generate()
+        fixture.membershipRepository.save(Membership.grant(otherUser.id, otherTenant, Role.OWNER_ADMIN))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/purchase-posting-context") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken("outsider@example.com")}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.Forbidden
     }
 }

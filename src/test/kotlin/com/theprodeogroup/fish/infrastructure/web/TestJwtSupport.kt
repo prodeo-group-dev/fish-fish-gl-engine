@@ -24,10 +24,29 @@ object TestJwtSupport {
     const val ISSUER = "https://test-issuer.example.com/"
     const val AUDIENCE = "fish-gl-engine-test"
 
+    /**
+     * A genuinely distinct audience from [AUDIENCE] (2026-09-16, Option B
+     * service-account bypass tests) - `authenticate(vararg)` tries every
+     * named provider's own verifier in order, so a token that would
+     * validate against *both* [verifier] and [popServiceVerifier] always
+     * matches the first-listed (human) provider, never actually
+     * exercising the service path a test means to prove. A same-key,
+     * different-audience verifier/token pair is enough to force that
+     * distinction without a second keypair.
+     */
+    const val POP_SERVICE_AUDIENCE = "fish-gl-engine-test-service-pop"
+
     fun verifier(): JWTVerifier =
         JWT.require(Algorithm.RSA256(publicKey, null))
             .withIssuer(ISSUER)
             .withAudience(AUDIENCE)
+            .build()
+
+    /** [verifier]'s counterpart for [POP_SERVICE_AUDIENCE] - see that constant's own KDoc. */
+    fun popServiceVerifier(): JWTVerifier =
+        JWT.require(Algorithm.RSA256(publicKey, null))
+            .withIssuer(ISSUER)
+            .withAudience(POP_SERVICE_AUDIENCE)
             .build()
 
     /** Signs a test JWT for [email], valid for one hour - the only claim any route in this codebase reads. */
@@ -35,6 +54,15 @@ object TestJwtSupport {
         JWT.create()
             .withIssuer(ISSUER)
             .withAudience(AUDIENCE)
+            .withClaim("email", email)
+            .withExpiresAt(Date(System.currentTimeMillis() + 3_600_000))
+            .sign(Algorithm.RSA256(publicKey, privateKey))
+
+    /** [signToken]'s counterpart for [POP_SERVICE_AUDIENCE] - see that constant's own KDoc. */
+    fun signPopServiceToken(email: String): String =
+        JWT.create()
+            .withIssuer(ISSUER)
+            .withAudience(POP_SERVICE_AUDIENCE)
             .withClaim("email", email)
             .withExpiresAt(Date(System.currentTimeMillis() + 3_600_000))
             .sign(Algorithm.RSA256(publicKey, privateKey))
