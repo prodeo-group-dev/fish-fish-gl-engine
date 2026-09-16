@@ -265,34 +265,19 @@ resource "aws_secretsmanager_secret_version" "ea_db_password" {
 # operator retrieves the actual value from Secrets Manager directly, never
 # typed or committed anywhere.
 #
-# **Named tokens, not one shared secret (2026-09-16, code review: "shared
-# EA_OPERATOR_TOKEN, no per-operator identity")** - the secret's own value
-# is now a JSON object of operator name -> token
-# (`{"operator-1": "..."}` today), matching `authorizeOperator()`'s own
-# `EA_OPERATOR_TOKENS` shape. One `random_password` per named operator -
-# adding a second real operator later means adding one more
-# `random_password` resource and one more entry in the `jsonencode(...)`
-# map below, not touching the existing one's value. `var.ea_operator_names`
-# has no default naming any real person - deliberately generic
-# ("operator-1") until named operators are actually decided, per this
-# project's own "park, don't guess" convention.
-
 resource "random_password" "ea_operator_token" {
-  for_each = toset(var.ea_operator_names)
-  length   = 48
-  special  = false
+  length  = 48
+  special = false
 }
 
 resource "aws_secretsmanager_secret" "ea_operator_token" {
-  name        = "fish-enterprise-administration/production/operator-tokens"
-  description = "EA_OPERATOR_TOKENS"
+  name        = "fish-enterprise-administration/production/operator-token"
+  description = "EA_OPERATOR_TOKEN"
 }
 
 resource "aws_secretsmanager_secret_version" "ea_operator_token" {
-  secret_id = aws_secretsmanager_secret.ea_operator_token.id
-  secret_string = jsonencode({
-    for name in var.ea_operator_names : name => random_password.ea_operator_token[name].result
-  })
+  secret_id     = aws_secretsmanager_secret.ea_operator_token.id
+  secret_string = random_password.ea_operator_token.result
 }
 
 data "aws_iam_policy_document" "ea_ecs_task_execution_operator_token" {
@@ -307,6 +292,69 @@ resource "aws_iam_role_policy" "ea_ecs_task_execution_operator_token" {
   name   = "fish-ea-read-operator-token-secret"
   role   = aws_iam_role.ea_ecs_task_execution.id
   policy = data.aws_iam_policy_document.ea_ecs_task_execution_operator_token.json
+}
+
+# **Named tokens, not one shared secret (2026-09-16, code review: "shared
+# EA_OPERATOR_TOKEN, no per-operator identity")** - fish-enterprise-
+# administration@6324048 replaces the single shared token with a JSON
+# object of operator name -> token (`{"operator-1": "..."}` today),
+# matching `authorizeOperator()`'s own `EA_OPERATOR_TOKENS` shape. One
+# `random_password` per named operator - adding a second real operator
+# later means adding one more entry to `var.ea_operator_names`, not
+# touching an existing operator's own secret value.
+#
+# Deliberately a **new, separate** secret/resource address rather than
+# renaming the one above in place: the old secret above is still what the
+# currently-deployed task definition resolves `EA_OPERATOR_TOKEN` from at
+# every container launch (`ignore_changes` on the task definition/service
+# below means `terraform apply` never pushes a new container definition to
+# the running service - only a manual task-definition push does that, per
+# the same pattern as the HR_EA_TENANT_ID incident). Renaming the old
+# resource's `name` in place makes Terraform destroy-then-recreate it in
+# one apply, which would schedule deletion of the secret the *live* task
+# still depends on - if ECS ever needs to launch a fresh instance of that
+# task afterward (a failed health check, a host replacement, anything),
+# the launch fails with an unresolvable secret and EA goes down entirely,
+# not just the operator routes. Keeping both secrets alive side by side
+# lets the new image + a manually-pushed task definition (reading
+# EA_OPERATOR_TOKENS from the secret below) roll out safely; the old
+# secret/random_password/IAM grant above should only be deleted in a
+# later, separate change once that new task definition is confirmed
+# stable - not in the same apply that creates this one.
+# `var.ea_operator_names` has no default naming any real person -
+# deliberately generic ("operator-1") until named operators are actually
+# decided, per this project's own "park, don't guess" convention.
+
+resource "random_password" "ea_operator_tokens" {
+  for_each = toset(var.ea_operator_names)
+  length   = 48
+  special  = false
+}
+
+resource "aws_secretsmanager_secret" "ea_operator_tokens" {
+  name        = "fish-enterprise-administration/production/operator-tokens"
+  description = "EA_OPERATOR_TOKENS"
+}
+
+resource "aws_secretsmanager_secret_version" "ea_operator_tokens" {
+  secret_id = aws_secretsmanager_secret.ea_operator_tokens.id
+  secret_string = jsonencode({
+    for name in var.ea_operator_names : name => random_password.ea_operator_tokens[name].result
+  })
+}
+
+data "aws_iam_policy_document" "ea_ecs_task_execution_operator_tokens" {
+  statement {
+    effect    = "Allow"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_secretsmanager_secret.ea_operator_tokens.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "ea_ecs_task_execution_operator_tokens" {
+  name   = "fish-ea-read-operator-tokens-secret"
+  role   = aws_iam_role.ea_ecs_task_execution.id
+  policy = data.aws_iam_policy_document.ea_ecs_task_execution_operator_tokens.json
 }
 
 # --- CloudWatch -------------------------------------------------------------
@@ -470,7 +518,12 @@ resource "aws_ecs_task_definition" "ea" {
 
       secrets = [
         { name = "EA_DB_PASSWORD", valueFrom = aws_secretsmanager_secret.ea_db_password.arn },
-        { name = "EA_OPERATOR_TOKENS", valueFrom = aws_secretsmanager_secret.ea_operator_token.arn }
+        # EA_OPERATOR_TOKENS (plural) is what the currently-deployed code
+        # actually reads - this container_definitions block only takes
+        # effect the next time a task definition is manually registered
+        # and pushed (see this resource's own ignore_changes below), not
+        # via `terraform apply` against the live service.
+        { name = "EA_OPERATOR_TOKENS", valueFrom = aws_secretsmanager_secret.ea_operator_tokens.arn }
       ]
 
       logConfiguration = {
