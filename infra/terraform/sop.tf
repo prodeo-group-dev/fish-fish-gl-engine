@@ -381,6 +381,12 @@ resource "aws_ecs_task_definition" "sop" {
         # route("/api"), same precedent as POP's own base URL.
         { name = "SOP_GL_ENGINE_BASE_URL", value = "https://${var.domain_name}/api" },
         { name = "SOP_GL_ENGINE_TENANT_ID", value = var.sop_gl_engine_tenant_id },
+        # EA membership check (2026-09-16, code review §2.4, third
+        # service after IM and POP) - same ea_domain_name/*_ea_tenant_id
+        # shape as hr.tf's/im.tf's/pop.tf's own {SVC}_EA_BASE_URL/
+        # {SVC}_EA_TENANT_ID.
+        { name = "SOP_EA_BASE_URL", value = "https://${var.ea_domain_name}" },
+        { name = "SOP_EA_TENANT_ID", value = var.sop_ea_tenant_id },
         { name = "SOP_CORS_ALLOWED_ORIGIN", value = "https://${var.domain_name}" },
         # SOP_GL_ENGINE_BEARER_TOKEN itself is no longer a static value -
         # resolved 2026-09-01 (sop_service_account.tf): SOP logs into
