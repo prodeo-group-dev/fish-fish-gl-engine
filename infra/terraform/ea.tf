@@ -265,35 +265,6 @@ resource "aws_secretsmanager_secret_version" "ea_db_password" {
 # operator retrieves the actual value from Secrets Manager directly, never
 # typed or committed anywhere.
 #
-resource "random_password" "ea_operator_token" {
-  length  = 48
-  special = false
-}
-
-resource "aws_secretsmanager_secret" "ea_operator_token" {
-  name        = "fish-enterprise-administration/production/operator-token"
-  description = "EA_OPERATOR_TOKEN"
-}
-
-resource "aws_secretsmanager_secret_version" "ea_operator_token" {
-  secret_id     = aws_secretsmanager_secret.ea_operator_token.id
-  secret_string = random_password.ea_operator_token.result
-}
-
-data "aws_iam_policy_document" "ea_ecs_task_execution_operator_token" {
-  statement {
-    effect    = "Allow"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = [aws_secretsmanager_secret.ea_operator_token.arn]
-  }
-}
-
-resource "aws_iam_role_policy" "ea_ecs_task_execution_operator_token" {
-  name   = "fish-ea-read-operator-token-secret"
-  role   = aws_iam_role.ea_ecs_task_execution.id
-  policy = data.aws_iam_policy_document.ea_ecs_task_execution_operator_token.json
-}
-
 # **Named tokens, not one shared secret (2026-09-16, code review: "shared
 # EA_OPERATOR_TOKEN, no per-operator identity")** - fish-enterprise-
 # administration@6324048 replaces the single shared token with a JSON
@@ -303,24 +274,15 @@ resource "aws_iam_role_policy" "ea_ecs_task_execution_operator_token" {
 # later means adding one more entry to `var.ea_operator_names`, not
 # touching an existing operator's own secret value.
 #
-# Deliberately a **new, separate** secret/resource address rather than
-# renaming the one above in place: the old secret above is still what the
-# currently-deployed task definition resolves `EA_OPERATOR_TOKEN` from at
-# every container launch (`ignore_changes` on the task definition/service
-# below means `terraform apply` never pushes a new container definition to
-# the running service - only a manual task-definition push does that, per
-# the same pattern as the HR_EA_TENANT_ID incident). Renaming the old
-# resource's `name` in place makes Terraform destroy-then-recreate it in
-# one apply, which would schedule deletion of the secret the *live* task
-# still depends on - if ECS ever needs to launch a fresh instance of that
-# task afterward (a failed health check, a host replacement, anything),
-# the launch fails with an unresolvable secret and EA goes down entirely,
-# not just the operator routes. Keeping both secrets alive side by side
-# lets the new image + a manually-pushed task definition (reading
-# EA_OPERATOR_TOKENS from the secret below) roll out safely; the old
-# secret/random_password/IAM grant above should only be deleted in a
-# later, separate change once that new task definition is confirmed
-# stable - not in the same apply that creates this one.
+# The original singular `EA_OPERATOR_TOKEN` secret/random_password/IAM
+# grant briefly existed as a separate resource address alongside this one
+# (see git history) while the cutover was in flight - Jenkins deploys only
+# patch `.image` on whatever task definition is already live rather than
+# reading `container_definitions` from this file, so a manually-pushed
+# task definition was needed to actually point the running container at
+# this secret (same pattern as the HR_EA_TENANT_ID incident). Confirmed
+# stable (task definition revision 33, operator route returning 401 rather
+# than 503) before removing the old resources here.
 # `var.ea_operator_names` has no default naming any real person -
 # deliberately generic ("operator-1") until named operators are actually
 # decided, per this project's own "park, don't guess" convention.
