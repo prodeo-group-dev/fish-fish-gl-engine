@@ -1,9 +1,20 @@
 # GL — AWS Agent Guidance
 
-Scoped to this repo specifically, not `fish`'s top-level `CLAUDE.md` — `GL/` is the
-only repo in this project that does AWS work (`infra/terraform/`, `.github/workflows/pipeline.yml`'s
-`deploy` job). The top-level `CLAUDE.md` stays this project's own narrated
-multi-repo history; this file is generic AWS-agent operational guidance, kept
+Scoped to this repo specifically, not `fish`'s top-level `CLAUDE.md`. **Not
+exclusive to GL any more** — this guidance applies equally to `EA`/`POP`/
+`SOP`/`IM`/`HR`, each of which now does its own real AWS work (`aws ecr`/
+`aws ecs` calls) from its own `Jenkinsfile`, mirroring the pattern first
+built here. What's still unique to this repo: `infra/terraform/` is the
+single, shared Terraform project provisioning every sibling's
+infrastructure (`ea.tf`, `pop.tf`, `sop.tf`, `im.tf`, `hr.tf` alongside
+`GL`'s own resources) — there is no per-sibling `infra/terraform/`. The
+self-hosted Jenkins pipeline (`Jenkinsfile`, one per repo) is each
+service's actual, working CI/CD path today, not
+`.github/workflows/pipeline.yml` — that GitHub Actions workflow's own
+header documents push/pull_request events getting stuck and not
+triggering runs, which is why Jenkins was built in the first place. The
+top-level `CLAUDE.md` stays this project's own narrated multi-repo
+history; this file is generic AWS-agent operational guidance, kept
 separate so the two don't blend.
 
 **Source**: fetched 2026-08-26 from `https://raw.githubusercontent.com/aws/agent-toolkit-for-aws/refs/heads/main/rules/aws-agent-rules.md`
