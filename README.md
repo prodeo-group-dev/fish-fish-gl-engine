@@ -1,11 +1,11 @@
 # GL — the FiSH GL Engine
 
-The core General Ledger ("GLaaS") platform underlying Purse, Scrip, Osusu,
-and BuzzMe, and offered standalone as a B2B ledger product — see the
-top-level `FiSH/CLAUDE.md` for the full business context. This repo is the
-system of record for every financial posting on the platform; POP, SOP, IM,
-HR, and EA are all separate repos that call into it (or, for EA, that it
-calls out to) rather than posting directly.
+The core General Ledger as a Service (GLaaS) platform underlying Purse,
+Scrip, Osusu, and BuzzMe, and offered standalone as a B2B ledger product —
+see the top-level `FiSH/CLAUDE.md` for the full business context. This repo
+is the system of record for every financial posting on the platform; POP,
+SOP, IM, HR, and EA are all separate repos that call into it (or, for EA,
+that it calls out to) rather than posting directly.
 
 **Status: live in production**, deployed at `capital.theprodeogroup.com`.
 Kotlin/Gradle/Ktor (Kotlin 2.2, Gradle 8.10, JDK 21), PostgreSQL via Exposed
