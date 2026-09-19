@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.application
 
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.tax.TaxComputation
 import com.theprodeogroup.fish.domain.tax.TaxComputationId
 import com.theprodeogroup.fish.domain.tax.TaxComputationRepository
@@ -17,7 +18,7 @@ class FakeTaxRuleRepository : TaxRuleRepository {
     private val store = mutableMapOf<TaxRuleId, TaxRule>()
     override fun save(taxRule: TaxRule) { store[taxRule.id] = taxRule }
     override fun findById(id: TaxRuleId): TaxRule? = store[id]
-    override fun findByJurisdictionAndTaxType(jurisdiction: String, taxType: TaxType): TaxRule? =
+    override fun findByJurisdictionAndTaxType(jurisdiction: Jurisdiction, taxType: TaxType): TaxRule? =
         store.values.find { it.jurisdiction == jurisdiction && it.taxType == taxType }
 }
 

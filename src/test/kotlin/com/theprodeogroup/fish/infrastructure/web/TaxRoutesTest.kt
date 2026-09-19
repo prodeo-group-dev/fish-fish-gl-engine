@@ -47,6 +47,7 @@ import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.common.JournalSource
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.common.PeriodType
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.Account
@@ -145,7 +146,7 @@ class TaxRoutesTest {
         val computeFixedAssetRegisterUseCase = ComputeFixedAssetRegisterUseCase(companyRepository, fixedAssetRepository)
 
         val tenant = TenantId.generate()
-        val company = Company.create(tenant, "Purse UK", ClientType.NON_PROFIT, "GB", GBP)
+        val company = Company.create(tenant, "Purse UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
         val adminUser = User.create(ADMIN_EMAIL, "Tax Admin").also { userRepository.save(it) }
         val adminMembership = Membership.grant(adminUser.id, tenant, Role.OWNER_ADMIN)
         val restrictedUser = User.create(RESTRICTED_EMAIL, "HR-only Staff").also { userRepository.save(it) }
@@ -180,7 +181,7 @@ class TaxRoutesTest {
         }
 
         fun saveGbFlatRateTaxRule(rate: BigDecimal = BigDecimal("0.30")) {
-            taxRuleRepository.save(TaxRule.create("GB", TaxType.CORPORATE_INCOME_TAX, rate))
+            taxRuleRepository.save(TaxRule.create(Jurisdiction.UK, TaxType.CORPORATE_INCOME_TAX, rate))
         }
 
         fun installInto(app: Application) {

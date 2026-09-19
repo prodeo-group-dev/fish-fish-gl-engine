@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.fish.domain.common.JournalSource
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.common.PeriodType
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.Account
@@ -11,6 +12,7 @@ import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.tax.TaxRule
+import com.theprodeogroup.fish.domain.tax.TaxRuleId
 import com.theprodeogroup.fish.domain.tax.TaxType
 import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.tenancy.Company
@@ -31,7 +33,6 @@ import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.Currency
-import java.util.UUID
 
 private val GBP: Currency = Currency.getInstance("GBP")
 private val TODAY = LocalDate.of(2026, 8, 20)
@@ -70,7 +71,7 @@ class ComputeTaxUseCaseIntegrationTest {
         // test's original bug) fails loudly here, exactly what this integration
         // test exists to catch.
         val tenant = TenantId.generate()
-        val company = Company.create(tenant, "Tax Test Co", ClientType.NON_PROFIT, "GB", GBP)
+        val company = Company.create(tenant, "Tax Test Co", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
         companyRepository.save(company)
         val companyId = company.id
         val period = Period.create(companyId, PeriodType.MONTH, TODAY, TODAY.plusDays(30))
@@ -104,10 +105,13 @@ class ComputeTaxUseCaseIntegrationTest {
         journalEntryRepository.save(overhead)
 
         // A real, non-ephemeral database - jurisdiction+taxType has a UNIQUE
-        // constraint, so a fixed literal would collide with a previous run's
-        // leftover row. Same fix as TenancyRepositoriesIntegrationTest's
-        // uniqueEmail() helper.
-        val taxRule = TaxRule.create("Sierra Leone ${UUID.randomUUID()}", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
+        // constraint (V5__tax_tables.sql). jurisdiction is now a closed
+        // seven-value enum (2026-09-19), so a fresh random jurisdiction per
+        // run is no longer possible - reuse whatever row already exists for
+        // (SL, CORPORATE_INCOME_TAX) instead, same fix as
+        // TaxRepositoriesIntegrationTest's upsertFlatRate() helper.
+        val existingId = taxRuleRepository.findByJurisdictionAndTaxType(Jurisdiction.SL, TaxType.CORPORATE_INCOME_TAX)?.id
+        val taxRule = TaxRule.create(Jurisdiction.SL, TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"), id = existingId ?: TaxRuleId.generate())
         taxRuleRepository.save(taxRule)
         val result = useCase.execute(ComputeTaxUseCase.Request(companyId, period.id, taxRule, GBP))
 

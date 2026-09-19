@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.common.PeriodType
 import com.theprodeogroup.fish.domain.common.PostingStatus
 import com.theprodeogroup.fish.domain.ledger.Account
@@ -68,7 +69,7 @@ class UtilizeLeaveAccrualUseCaseIntegrationTest {
         // RemeasureLeaveAccrualUseCaseIntegrationTest, avoiding the
         // fabricated-CompanyId bug class already caught repeatedly.
         val tenant = TenantId.generate()
-        val company = Company.create(tenant, "Utilize LeaveAccrual Test Co", ClientType.NON_PROFIT, "GB", GBP)
+        val company = Company.create(tenant, "Utilize LeaveAccrual Test Co", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
         companyRepository.save(company)
         val companyId = company.id
         val period = Period.create(companyId, PeriodType.MONTH, TODAY, TODAY.plusDays(30))

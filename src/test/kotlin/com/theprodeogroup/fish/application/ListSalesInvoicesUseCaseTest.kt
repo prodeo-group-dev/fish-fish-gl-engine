@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.sales.CustomerId
 import com.theprodeogroup.fish.domain.sales.SaleMethod
@@ -26,7 +27,7 @@ class ListSalesInvoicesUseCaseTest {
     private val salesInvoiceRecordRepository = FakeSalesInvoiceRecordRepository()
     private val useCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
 
-    private val company = Company.create(TenantId.generate(), "Test Co", ClientType.SOLE_TRADER, "GB", GBP)
+    private val company = Company.create(TenantId.generate(), "Test Co", ClientType.SOLE_TRADER, Jurisdiction.UK, GBP)
         .also { companyRepository.save(it) }
 
     private fun record(invoiceNumber: String, recordedAt: Instant) = SalesInvoiceRecord.create(

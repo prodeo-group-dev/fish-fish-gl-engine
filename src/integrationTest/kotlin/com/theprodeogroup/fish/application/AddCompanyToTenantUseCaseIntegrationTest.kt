@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.infrastructure.persistence.DatabaseConfig
 import com.theprodeogroup.fish.infrastructure.persistence.DatabaseMigrator
@@ -59,7 +60,7 @@ class AddCompanyToTenantUseCaseIntegrationTest {
         val result = useCase.execute(
             AddCompanyToTenantUseCase.Request(
                 tenantId = tenantId, companyName = "Sierra Leone Entity",
-                clientType = ClientType.NON_PROFIT, jurisdiction = "SL", companyBaseCurrency = Currency.getInstance("SLE"),
+                clientType = ClientType.NON_PROFIT, jurisdiction = Jurisdiction.SL, companyBaseCurrency = Currency.getInstance("SLE"),
                 fiscalYearStartMonth = 4,
                 openingCashBalance = BigDecimal("750.00")
             )
@@ -67,7 +68,7 @@ class AddCompanyToTenantUseCaseIntegrationTest {
 
         val reloadedCompany = requireNotNull(companyRepository.findById(result.company.id))
         reloadedCompany.tenantId shouldBe tenantId
-        reloadedCompany.jurisdiction shouldBe "SL"
+        reloadedCompany.jurisdiction shouldBe Jurisdiction.SL
 
         val reloadedAccounts = accountRepository.findAllByCompany(result.company.id)
         reloadedAccounts.size shouldBe result.chartOfAccounts.size

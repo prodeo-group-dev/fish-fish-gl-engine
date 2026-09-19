@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.domain.tenancy
 
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import java.util.Currency
@@ -16,7 +17,7 @@ class CompanyTest {
             tenantId = TenantId.generate(),
             name = "Acme Trading Ltd",
             clientType = ClientType.COMPANY_LIMITED,
-            jurisdiction = "UK",
+            jurisdiction = Jurisdiction.UK,
             baseCurrency = GBP
         )
 
@@ -29,13 +30,13 @@ class CompanyTest {
             tenantId = TenantId.generate(),
             name = "Purse Sierra Leone",
             clientType = ClientType.NON_PROFIT,
-            jurisdiction = "Sierra Leone",
+            jurisdiction = Jurisdiction.SL,
             baseCurrency = SLE
         )
 
         company.clientType shouldBe ClientType.NON_PROFIT
         company.baseCurrency shouldBe SLE
-        company.jurisdiction shouldBe "Sierra Leone"
+        company.jurisdiction shouldBe Jurisdiction.SL
     }
 
     @Test
@@ -77,7 +78,7 @@ class CompanyTest {
             tenantId = TenantId.generate(),
             name = "Acme Trading Ltd",
             clientType = ClientType.COMPANY_LIMITED,
-            jurisdiction = "UK",
+            jurisdiction = Jurisdiction.UK,
             baseCurrency = GBP,
             moduleManagementPreferences = preferences
         )
@@ -91,7 +92,7 @@ class CompanyTest {
             tenantId = TenantId.generate(),
             name = "Acme Trading Ltd",
             clientType = ClientType.COMPANY_LIMITED,
-            jurisdiction = "UK",
+            jurisdiction = Jurisdiction.UK,
             baseCurrency = GBP
         )
 
@@ -104,7 +105,7 @@ class CompanyTest {
             tenantId = TenantId.generate(),
             name = "Acme Trading Ltd",
             clientType = ClientType.COMPANY_LIMITED,
-            jurisdiction = "UK",
+            jurisdiction = Jurisdiction.UK,
             baseCurrency = GBP,
             fiscalYearStartMonth = 4
         )
@@ -119,7 +120,7 @@ class CompanyTest {
                 tenantId = TenantId.generate(),
                 name = "Acme Trading Ltd",
                 clientType = ClientType.COMPANY_LIMITED,
-                jurisdiction = "UK",
+                jurisdiction = Jurisdiction.UK,
                 baseCurrency = GBP,
                 fiscalYearStartMonth = 0
             )
@@ -133,7 +134,7 @@ class CompanyTest {
                 tenantId = TenantId.generate(),
                 name = "Acme Trading Ltd",
                 clientType = ClientType.COMPANY_LIMITED,
-                jurisdiction = "UK",
+                jurisdiction = Jurisdiction.UK,
                 baseCurrency = GBP,
                 fiscalYearStartMonth = 13
             )
@@ -144,7 +145,7 @@ class CompanyTest {
         tenantId = TenantId.generate(),
         name = "Acme Trading Ltd",
         clientType = ClientType.COMPANY_LIMITED,
-        jurisdiction = "UK",
+        jurisdiction = Jurisdiction.UK,
         baseCurrency = GBP
     )
 }

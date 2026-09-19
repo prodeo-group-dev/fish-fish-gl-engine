@@ -45,6 +45,7 @@ import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.application.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
@@ -116,7 +117,7 @@ class TenantRoutesTest {
         val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
 
         val existingTenantId = TenantId.generate()
-        val existingCompany = Company.create(existingTenantId, "Existing Co UK", ClientType.NON_PROFIT, "GB", GBP).also { companyRepository.save(it) }
+        val existingCompany = Company.create(existingTenantId, "Existing Co UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP).also { companyRepository.save(it) }
         val existingUser = User.create(EXISTING_ADMIN_EMAIL, "Existing Admin").also { userRepository.save(it) }
         val existingMembership = Membership.grant(existingUser.id, existingTenantId, Role.OWNER_ADMIN).also { membershipRepository.save(it) }
 

@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.domain.tax
 
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 
 /**
@@ -22,7 +23,7 @@ interface TaxRuleRepository {
      * callers should expect the implementation to surface that as an
      * error rather than silently picking one.
      */
-    fun findByJurisdictionAndTaxType(jurisdiction: String, taxType: TaxType): TaxRule?
+    fun findByJurisdictionAndTaxType(jurisdiction: Jurisdiction, taxType: TaxType): TaxRule?
 }
 
 interface TaxComputationRepository {

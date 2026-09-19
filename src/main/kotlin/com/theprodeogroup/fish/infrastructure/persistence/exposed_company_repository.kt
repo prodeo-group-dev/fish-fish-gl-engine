@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.infrastructure.persistence
 
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
@@ -84,7 +85,7 @@ class ExposedCompanyRepository : CompanyRepository {
         statement[CompaniesTable.tenantId] = company.tenantId.value
         statement[CompaniesTable.name] = company.name
         statement[CompaniesTable.clientType] = company.clientType.name
-        statement[CompaniesTable.jurisdiction] = company.jurisdiction
+        statement[CompaniesTable.jurisdiction] = company.jurisdiction.name
         statement[CompaniesTable.baseCurrency] = company.baseCurrency.currencyCode
         statement[CompaniesTable.goingConcernStatus] = company.goingConcernStatus.name
         statement[CompaniesTable.fiscalYearStartMonth] = company.fiscalYearStartMonth
@@ -95,7 +96,7 @@ class ExposedCompanyRepository : CompanyRepository {
         tenantId = TenantId(this[CompaniesTable.tenantId]),
         name = this[CompaniesTable.name],
         clientType = ClientType.valueOf(this[CompaniesTable.clientType]),
-        jurisdiction = this[CompaniesTable.jurisdiction],
+        jurisdiction = Jurisdiction.valueOf(this[CompaniesTable.jurisdiction]),
         baseCurrency = Currency.getInstance(this[CompaniesTable.baseCurrency]),
         fiscalYearStartMonth = this[CompaniesTable.fiscalYearStartMonth],
         goingConcernStatus = GoingConcernStatus.valueOf(this[CompaniesTable.goingConcernStatus]),

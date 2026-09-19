@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.domain.tax
 
 import com.theprodeogroup.fish.domain.common.JournalSource
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountClassification
@@ -41,7 +42,7 @@ class TaxComputationTest {
                 JournalLine(AccountId.generate(), Money(BigDecimal("400.00"), GBP), TransactionSide.CREDIT)
             )
         )
-        val taxRule = TaxRule.create("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
+        val taxRule = TaxRule.create(Jurisdiction.SL, TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
 
         val computation = TaxComputation.of(taxRule, listOf(revenue, expense), entries, periodId, GBP)
 
@@ -59,7 +60,7 @@ class TaxComputationTest {
             JournalLine(expense.id, Money(BigDecimal("500.00"), GBP), TransactionSide.DEBIT),
             JournalLine(AccountId.generate(), Money(BigDecimal("500.00"), GBP), TransactionSide.CREDIT)
         )
-        val taxRule = TaxRule.create("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
+        val taxRule = TaxRule.create(Jurisdiction.SL, TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
 
         val computation = TaxComputation.of(taxRule, listOf(expense), listOf(entry), periodId, GBP)
 
@@ -77,7 +78,7 @@ class TaxComputationTest {
             JournalLine(AccountId.generate(), Money(BigDecimal("1000.00"), GBP), TransactionSide.DEBIT),
             JournalLine(revenue.id, Money(BigDecimal("1000.00"), GBP), TransactionSide.CREDIT)
         )
-        val taxRule = TaxRule.create("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal.ZERO)
+        val taxRule = TaxRule.create(Jurisdiction.SL, TaxType.CORPORATE_INCOME_TAX, BigDecimal.ZERO)
 
         val computation = TaxComputation.of(taxRule, listOf(revenue), listOf(entry), periodId, GBP)
 
@@ -88,7 +89,7 @@ class TaxComputationTest {
     fun `given Accounts from two different Companies, when computed, then it fails - delegated to ProfitAndLoss's own validation`() {
         val revenueA = account(CompanyId.generate(), AccountType.REVENUE)
         val revenueB = account(CompanyId.generate(), AccountType.REVENUE)
-        val taxRule = TaxRule.create("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
+        val taxRule = TaxRule.create(Jurisdiction.SL, TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
 
         shouldThrow<IllegalArgumentException> {
             TaxComputation.of(taxRule, listOf(revenueA, revenueB), emptyList(), PeriodId.generate(), GBP)
@@ -100,7 +101,7 @@ class TaxComputationTest {
         val companyId = CompanyId.generate()
         val periodId = PeriodId.generate()
         val revenue = account(companyId, AccountType.REVENUE)
-        val taxRule = TaxRule.create("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
+        val taxRule = TaxRule.create(Jurisdiction.SL, TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
 
         val computation = TaxComputation.of(taxRule, listOf(revenue), emptyList(), periodId, GBP)
 
@@ -122,7 +123,7 @@ class TaxComputationTest {
         val irishCorporationTax = RateStructure.CategorySplit(
             mapOf("trading" to BigDecimal("0.125"), "passive" to BigDecimal("0.25"))
         )
-        val taxRule = TaxRule.create("Ireland", TaxType.CORPORATE_INCOME_TAX, irishCorporationTax)
+        val taxRule = TaxRule.create(Jurisdiction.IE, TaxType.CORPORATE_INCOME_TAX, irishCorporationTax)
 
         val computation = TaxComputation.of(
             taxRule, listOf(revenue), listOf(entry), periodId, GBP, TaxComputationInputs(category = "trading")
@@ -145,7 +146,7 @@ class TaxComputationTest {
         val irishCorporationTax = RateStructure.CategorySplit(
             mapOf("trading" to BigDecimal("0.125"), "passive" to BigDecimal("0.25"))
         )
-        val taxRule = TaxRule.create("Ireland", TaxType.CORPORATE_INCOME_TAX, irishCorporationTax)
+        val taxRule = TaxRule.create(Jurisdiction.IE, TaxType.CORPORATE_INCOME_TAX, irishCorporationTax)
 
         shouldThrow<IllegalArgumentException> {
             TaxComputation.of(taxRule, listOf(revenue), listOf(entry), periodId, GBP)

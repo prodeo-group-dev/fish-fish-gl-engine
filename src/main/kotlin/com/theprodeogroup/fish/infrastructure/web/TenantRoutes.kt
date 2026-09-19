@@ -2,6 +2,7 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -42,6 +43,15 @@ fun Route.tenantRoutesAuthenticated(addCompanyToTenantUseCase: AddCompanyToTenan
             call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "'${request.clientType}' is not a valid clientType"))
             return@post
         }
+        val jurisdiction = try {
+            Jurisdiction.valueOf(request.jurisdiction)
+        } catch (e: IllegalArgumentException) {
+            call.respond(
+                HttpStatusCode.BadRequest,
+                ErrorResponseDto("bad_request", "'${request.jurisdiction}' is not a supported jurisdiction (${Jurisdiction.entries.joinToString()})")
+            )
+            return@post
+        }
         val companyBaseCurrency = try {
             Currency.getInstance(request.companyBaseCurrency)
         } catch (e: IllegalArgumentException) {
@@ -64,7 +74,7 @@ fun Route.tenantRoutesAuthenticated(addCompanyToTenantUseCase: AddCompanyToTenan
                 tenantId = tenantId,
                 companyName = request.companyName,
                 clientType = clientType,
-                jurisdiction = request.jurisdiction,
+                jurisdiction = jurisdiction,
                 companyBaseCurrency = companyBaseCurrency,
                 fiscalYearStartMonth = request.fiscalYearStartMonth,
                 openingCashBalance = openingCashBalance

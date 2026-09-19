@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.domain.tax
 
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import java.math.BigDecimal
 
 /**
@@ -36,20 +37,23 @@ import java.math.BigDecimal
  */
 class TaxRule private constructor(
     val id: TaxRuleId,
-    val jurisdiction: String,
+    val jurisdiction: Jurisdiction,
     val taxType: TaxType,
     val rateStructure: RateStructure
 ) {
     companion object {
+        /**
+         * No blank/emptiness check needed any more - [jurisdiction] is a
+         * closed [Jurisdiction] enum (2026-09-19), which can't be blank
+         * by construction. The runtime validation this `create()` used
+         * to do is now a compile-time guarantee instead.
+         */
         fun create(
-            jurisdiction: String,
+            jurisdiction: Jurisdiction,
             taxType: TaxType,
             rateStructure: RateStructure,
             id: TaxRuleId = TaxRuleId.generate()
-        ): TaxRule {
-            require(jurisdiction.isNotBlank()) { "TaxRule jurisdiction must not be blank" }
-            return TaxRule(id, jurisdiction, taxType, rateStructure)
-        }
+        ): TaxRule = TaxRule(id, jurisdiction, taxType, rateStructure)
 
         /**
          * Convenience for the common flat-rate case - wraps [rate] in
@@ -60,7 +64,7 @@ class TaxRule private constructor(
          * [rate] itself now lives in [RateStructure.Flat]'s own `init`.
          */
         fun create(
-            jurisdiction: String,
+            jurisdiction: Jurisdiction,
             taxType: TaxType,
             rate: BigDecimal,
             id: TaxRuleId = TaxRuleId.generate()

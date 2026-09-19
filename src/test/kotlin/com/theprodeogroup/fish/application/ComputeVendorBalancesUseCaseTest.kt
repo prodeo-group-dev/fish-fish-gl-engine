@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.PeriodType
@@ -41,7 +42,7 @@ class ComputeVendorBalancesUseCaseTest {
     private val useCase = ComputeVendorBalancesUseCase(companyRepository, accountRepository, journalEntryRepository)
 
     private fun company(): Company {
-        val company = Company.create(TenantId.generate(), "Test Co", ClientType.NON_PROFIT, "GB", GBP)
+        val company = Company.create(TenantId.generate(), "Test Co", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
         companyRepository.save(company)
         return company
     }

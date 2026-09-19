@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.common.PeriodType
 import com.theprodeogroup.fish.domain.common.PostingStatus
 import com.theprodeogroup.fish.domain.ledger.Account
@@ -65,7 +66,7 @@ class RemeasureLeaveAccrualUseCaseIntegrationTest {
         // real FK (see PostPurchaseOrderUseCaseIntegrationTest's own
         // note - the same class of bug this construction avoids).
         val tenant = TenantId.generate()
-        val company = Company.create(tenant, "LeaveAccrual Test Co", ClientType.NON_PROFIT, "GB", GBP)
+        val company = Company.create(tenant, "LeaveAccrual Test Co", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
         companyRepository.save(company)
         val companyId = company.id
         val period = Period.create(companyId, PeriodType.MONTH, TODAY, TODAY.plusDays(30))

@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.infrastructure.persistence
 
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import io.kotest.matchers.shouldBe
@@ -41,7 +42,7 @@ class TenancyRepositoriesIntegrationTest {
     @Test
     fun `given a Company with a non-default going-concern status, when saved and reloaded, then every field round-trips`() {
         val tenantId = TenantId.generate()
-        val company = Company.create(tenantId, "Purse UK", ClientType.NON_PROFIT, "GB", GBP)
+        val company = Company.create(tenantId, "Purse UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
         company.flagSubstantialDoubt()
 
         companyRepository.save(company)
@@ -51,7 +52,7 @@ class TenancyRepositoriesIntegrationTest {
         reloaded.tenantId shouldBe tenantId
         reloaded.name shouldBe "Purse UK"
         reloaded.clientType shouldBe ClientType.NON_PROFIT
-        reloaded.jurisdiction shouldBe "GB"
+        reloaded.jurisdiction shouldBe Jurisdiction.UK
         reloaded.baseCurrency shouldBe GBP
         reloaded.goingConcernStatus shouldBe company.goingConcernStatus
     }
@@ -59,8 +60,8 @@ class TenancyRepositoriesIntegrationTest {
     @Test
     fun `given two Companies under one Tenant, when found by tenant, then both are returned`() {
         val tenantId = TenantId.generate()
-        val companyA = Company.create(tenantId, "Scrip Treasury", ClientType.NON_PROFIT, "GB", GBP)
-        val companyB = Company.create(tenantId, "Scrip Investments", ClientType.NON_PROFIT, "GB", GBP)
+        val companyA = Company.create(tenantId, "Scrip Treasury", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
+        val companyB = Company.create(tenantId, "Scrip Investments", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
         companyRepository.save(companyA)
         companyRepository.save(companyB)
 

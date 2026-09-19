@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.domain.tenancy
 
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.common.ValidationResult
 import java.util.Currency
 
@@ -11,7 +12,9 @@ import java.util.Currency
  * get their own Company, own COA, own currency, under one Tenant.
  *
  * Scope note (2026-08-11): this is deliberately the core build only -
- * name, ClientType, jurisdiction, currency, going-concern status. Company
+ * name, ClientType, jurisdiction, currency, going-concern status.
+ * [jurisdiction] is a closed [Jurisdiction] choice, not free text
+ * (2026-09-19) - see that enum's own KDoc for why. Company
  * relationships (parent/consolidation) are confirmed design (Section 3.2)
  * but not built here - not load-bearing for this aggregate to work, per
  * the agreed minimal-build scope.
@@ -36,7 +39,7 @@ class Company private constructor(
     val tenantId: TenantId,
     val name: String,
     val clientType: ClientType,
-    val jurisdiction: String,
+    val jurisdiction: Jurisdiction,
     val baseCurrency: Currency,
     val fiscalYearStartMonth: Int,
     val moduleManagementPreferences: List<ModuleManagementPreference> = emptyList()
@@ -67,7 +70,7 @@ class Company private constructor(
             tenantId: TenantId,
             name: String,
             clientType: ClientType,
-            jurisdiction: String,
+            jurisdiction: Jurisdiction,
             baseCurrency: Currency,
             id: CompanyId = CompanyId.generate(),
             fiscalYearStartMonth: Int = 1,
@@ -89,7 +92,7 @@ class Company private constructor(
             tenantId: TenantId,
             name: String,
             clientType: ClientType,
-            jurisdiction: String,
+            jurisdiction: Jurisdiction,
             baseCurrency: Currency,
             fiscalYearStartMonth: Int,
             goingConcernStatus: GoingConcernStatus,

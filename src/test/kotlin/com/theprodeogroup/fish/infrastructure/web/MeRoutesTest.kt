@@ -45,6 +45,7 @@ import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.application.Membership
@@ -120,7 +121,7 @@ class MeRoutesTest {
         val eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository)
         val tenantId = TenantId.generate()
         val adminUser = User.create(ADMIN_EMAIL, "Founding Admin").also { userRepository.save(it) }
-        val company = Company.create(tenantId, "Purse UK", ClientType.NON_PROFIT, "GB", GBP)
+        val company = Company.create(tenantId, "Purse UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
         val adminSetup = run {
             companyRepository.save(company)
             val membership = Membership.grant(adminUser.id, tenantId, Role.OWNER_ADMIN)

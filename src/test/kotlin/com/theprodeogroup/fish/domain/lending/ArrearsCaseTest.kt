@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.domain.lending
 
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.GoingConcernStatus
@@ -177,5 +178,5 @@ class ArrearsCaseTest {
         ArrearsCase.open(BorrowerId.generate(), AccountId.generate(), TODAY, companyId)
 
     private fun businessCompany(tenantId: TenantId): Company =
-        Company.create(tenantId, "Acme Farms Ltd", ClientType.COMPANY_LIMITED, "SL", Currency.getInstance("SLE"))
+        Company.create(tenantId, "Acme Farms Ltd", ClientType.COMPANY_LIMITED, Jurisdiction.SL, Currency.getInstance("SLE"))
 }

@@ -13,6 +13,7 @@ import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.tax.TaxRule
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.tax.TaxType
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import io.kotest.matchers.collections.shouldContain
@@ -36,7 +37,7 @@ class ComputeTaxUseCaseTest {
     private val useCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
 
     private val companyId = CompanyId.generate()
-    private val taxRule = TaxRule.create("Sierra Leone", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
+    private val taxRule = TaxRule.create(Jurisdiction.SL, TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
 
     private fun period(): Period {
         val period = Period.create(companyId, PeriodType.MONTH, TODAY, TODAY.plusDays(30))

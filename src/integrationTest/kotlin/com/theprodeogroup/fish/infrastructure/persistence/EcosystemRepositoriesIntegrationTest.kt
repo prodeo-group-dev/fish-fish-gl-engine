@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.infrastructure.persistence
 
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
@@ -64,7 +65,7 @@ class EcosystemRepositoriesIntegrationTest {
     /** Every ecosystem table's `company_id` is a real FK - a saved Company is required before anything else in this suite. */
     private fun newCompany(): com.theprodeogroup.fish.domain.tenancy.CompanyId {
         val tenant = TenantId.generate()
-        val company = Company.create(tenant, "Ecosystem Test Co", ClientType.COMPANY_LIMITED, "GB", GBP)
+        val company = Company.create(tenant, "Ecosystem Test Co", ClientType.COMPANY_LIMITED, Jurisdiction.UK, GBP)
         companyRepository.save(company)
         return company.id
     }

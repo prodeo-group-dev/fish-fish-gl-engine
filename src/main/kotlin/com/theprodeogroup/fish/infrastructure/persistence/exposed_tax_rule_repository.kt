@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.persistence
 
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.tax.TaxRule
 import com.theprodeogroup.fish.domain.tax.TaxRuleId
 import com.theprodeogroup.fish.domain.tax.TaxRuleRepository
@@ -24,14 +25,14 @@ class ExposedTaxRuleRepository : TaxRuleRepository {
         val exists = TaxRulesTable.selectAll().where { TaxRulesTable.id eq taxRule.id.value }.count() > 0
         if (exists) {
             TaxRulesTable.update({ TaxRulesTable.id eq taxRule.id.value }) { statement ->
-                statement[jurisdiction] = taxRule.jurisdiction
+                statement[jurisdiction] = taxRule.jurisdiction.name
                 statement[taxType] = taxRule.taxType.name
                 statement[rateStructure] = encodeRateStructure(taxRule.rateStructure)
             }
         } else {
             TaxRulesTable.insert { statement ->
                 statement[id] = taxRule.id.value
-                statement[jurisdiction] = taxRule.jurisdiction
+                statement[jurisdiction] = taxRule.jurisdiction.name
                 statement[taxType] = taxRule.taxType.name
                 statement[rateStructure] = encodeRateStructure(taxRule.rateStructure)
             }
@@ -45,15 +46,15 @@ class ExposedTaxRuleRepository : TaxRuleRepository {
             .singleOrNull()
     }
 
-    override fun findByJurisdictionAndTaxType(jurisdiction: String, taxType: TaxType): TaxRule? = transaction {
+    override fun findByJurisdictionAndTaxType(jurisdiction: Jurisdiction, taxType: TaxType): TaxRule? = transaction {
         TaxRulesTable.selectAll()
-            .where { (TaxRulesTable.jurisdiction eq jurisdiction) and (TaxRulesTable.taxType eq taxType.name) }
+            .where { (TaxRulesTable.jurisdiction eq jurisdiction.name) and (TaxRulesTable.taxType eq taxType.name) }
             .map { it.toTaxRule() }
             .singleOrNull()
     }
 
     private fun ResultRow.toTaxRule(): TaxRule = TaxRule.create(
-        jurisdiction = this[TaxRulesTable.jurisdiction],
+        jurisdiction = Jurisdiction.valueOf(this[TaxRulesTable.jurisdiction]),
         taxType = TaxType.valueOf(this[TaxRulesTable.taxType]),
         rateStructure = decodeRateStructure(this[TaxRulesTable.rateStructure]),
         id = TaxRuleId(this[TaxRulesTable.id])

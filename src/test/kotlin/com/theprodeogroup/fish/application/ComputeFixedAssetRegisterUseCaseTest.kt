@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.fixedassets.AssetCategory
 import com.theprodeogroup.fish.domain.fixedassets.FixedAsset
 import com.theprodeogroup.common.Money
@@ -24,7 +25,7 @@ class ComputeFixedAssetRegisterUseCaseTest {
     private val useCase = ComputeFixedAssetRegisterUseCase(companyRepository, fixedAssetRepository)
 
     private fun company(): Company {
-        val company = Company.create(TenantId.generate(), "Purse UK", ClientType.NON_PROFIT, "GB", GBP)
+        val company = Company.create(TenantId.generate(), "Purse UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
         companyRepository.save(company)
         return company
     }

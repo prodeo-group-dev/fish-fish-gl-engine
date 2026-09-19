@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.infrastructure.persistence
 
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.common.PeriodType
 import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountType
@@ -13,6 +14,8 @@ import com.theprodeogroup.fish.domain.tax.TaxComputation
 import com.theprodeogroup.fish.domain.tax.TaxComputationInputs
 import com.theprodeogroup.fish.domain.tax.Tier
 import com.theprodeogroup.fish.domain.tax.TaxRule
+import com.theprodeogroup.fish.domain.tax.TaxRuleId
+import com.theprodeogroup.fish.domain.tax.TaxRuleRepository
 import com.theprodeogroup.fish.domain.tax.TaxType
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
@@ -25,7 +28,6 @@ import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.Currency
-import java.util.UUID
 
 private val GBP: Currency = Currency.getInstance("GBP")
 private val TODAY = LocalDate.of(2026, 8, 20)
@@ -42,6 +44,30 @@ private val TODAY = LocalDate.of(2026, 8, 20)
 private infix fun BigDecimal.shouldEqualNumerically(other: BigDecimal) {
     (this.compareTo(other) == 0) shouldBe true
 }
+
+/**
+ * Builds a flat-rate [TaxRule] for [jurisdiction], reusing whatever row
+ * already exists for (jurisdiction, CORPORATE_INCOME_TAX) rather than
+ * inserting a fresh one - `tax_rules` has a real `UNIQUE(jurisdiction,
+ * tax_type)` constraint (`V5__tax_tables.sql`), and this is a real,
+ * non-ephemeral database, so a second run against a fixed [Jurisdiction]
+ * would otherwise violate it. Previously dodged by randomizing the
+ * jurisdiction *string* per run (`"Liberia ${UUID.randomUUID()}"`) -
+ * that trick stopped being available once jurisdiction became a closed
+ * seven-value enum (2026-09-19, governance decision), so this replaces
+ * it: find the existing row's id (if any) and save with that id instead,
+ * which [ExposedTaxRuleRepository.save]'s own upsert-by-id logic turns
+ * into an UPDATE rather than a colliding INSERT.
+ */
+private fun TaxRuleRepository.upsertRule(jurisdiction: Jurisdiction, rateStructure: RateStructure): TaxRule {
+    val existingId = findByJurisdictionAndTaxType(jurisdiction, TaxType.CORPORATE_INCOME_TAX)?.id
+    val taxRule = TaxRule.create(jurisdiction, TaxType.CORPORATE_INCOME_TAX, rateStructure, id = existingId ?: TaxRuleId.generate())
+    save(taxRule)
+    return taxRule
+}
+
+private fun TaxRuleRepository.upsertFlatRate(jurisdiction: Jurisdiction, rate: BigDecimal): TaxRule =
+    upsertRule(jurisdiction, RateStructure.Flat(rate))
 
 /**
  * Verifies the Tax repositories genuinely round-trip through a real
@@ -70,21 +96,18 @@ class TaxRepositoriesIntegrationTest {
 
     @Test
     fun `given a TaxRule, when saved and reloaded by id, then every field round-trips`() {
-        val jurisdiction = "Liberia ${UUID.randomUUID()}"
-        val taxRule = TaxRule.create(jurisdiction, TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.25"))
+        val taxRule = taxRuleRepository.upsertFlatRate(Jurisdiction.LR, BigDecimal("0.25"))
 
-        taxRuleRepository.save(taxRule)
         val reloaded = requireNotNull(taxRuleRepository.findById(taxRule.id))
 
         reloaded.id shouldBe taxRule.id
-        reloaded.jurisdiction shouldBe jurisdiction
+        reloaded.jurisdiction shouldBe Jurisdiction.LR
         reloaded.taxType shouldBe TaxType.CORPORATE_INCOME_TAX
         (reloaded.rateStructure as RateStructure.Flat).rate shouldEqualNumerically BigDecimal("0.25")
     }
 
     @Test
     fun `given a TaxRule with a non-flat RateStructure, when saved and reloaded, then the structure round-trips through the encoded TEXT column`() {
-        val jurisdiction = "Nigeria ${UUID.randomUUID()}"
         val structure = RateStructure.ThresholdExemption(
             exemptionTest = ExemptionTest(maxTurnover = BigDecimal("100000000"), maxFixedAssets = BigDecimal("250000000")),
             otherwise = RateStructure.Tiered(
@@ -95,9 +118,8 @@ class TaxRepositoriesIntegrationTest {
                 marginalRelief = MarginalRelief(BigDecimal("50000"), BigDecimal("250000"), BigDecimal("0.015"))
             )
         )
-        val taxRule = TaxRule.create(jurisdiction, TaxType.CORPORATE_INCOME_TAX, structure)
+        val taxRule = taxRuleRepository.upsertRule(Jurisdiction.NG, structure)
 
-        taxRuleRepository.save(taxRule)
         val reloaded = requireNotNull(taxRuleRepository.findById(taxRule.id))
 
         val reloadedStructure = reloaded.rateStructure as RateStructure.ThresholdExemption
@@ -122,18 +144,21 @@ class TaxRepositoriesIntegrationTest {
 
     @Test
     fun `given a TaxRule, when found by jurisdiction and tax type, then it is returned`() {
-        val jurisdiction = "Guinea ${UUID.randomUUID()}"
-        val taxRule = TaxRule.create(jurisdiction, TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.35"))
-        taxRuleRepository.save(taxRule)
+        val taxRule = taxRuleRepository.upsertFlatRate(Jurisdiction.GN, BigDecimal("0.35"))
 
-        val found = taxRuleRepository.findByJurisdictionAndTaxType(jurisdiction, TaxType.CORPORATE_INCOME_TAX)
+        val found = taxRuleRepository.findByJurisdictionAndTaxType(Jurisdiction.GN, TaxType.CORPORATE_INCOME_TAX)
 
         found?.id shouldBe taxRule.id
     }
 
     @Test
     fun `given no TaxRule for a jurisdiction, when looked up, then it returns null`() {
-        val found = taxRuleRepository.findByJurisdictionAndTaxType("Nowhere ${UUID.randomUUID()}", TaxType.CORPORATE_INCOME_TAX)
+        // UK is deliberately never given a CORPORATE_INCOME_TAX TaxRule by
+        // any *integrationTest* (a real, non-ephemeral database) - every
+        // other TaxRule-creating test in this class/ComputeTaxUseCaseIntegrationTest
+        // uses LR/NG/GN/CI/SL instead, leaving UK (and IE) free for this
+        // negative case to rely on staying genuinely absent across runs.
+        val found = taxRuleRepository.findByJurisdictionAndTaxType(Jurisdiction.UK, TaxType.CORPORATE_INCOME_TAX)
 
         found shouldBe null
     }
@@ -141,7 +166,7 @@ class TaxRepositoriesIntegrationTest {
     /** A real Tenant + Company + Period, needed since `tax_computations` carries real FKs to `companies`/`periods`/`tax_rules`. */
     private fun realCompanyAndPeriod(): Pair<CompanyId, PeriodId> {
         val tenant = TenantId.generate()
-        val company = Company.create(tenant, "Tax Test Co", ClientType.NON_PROFIT, "GB", GBP)
+        val company = Company.create(tenant, "Tax Test Co", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
         companyRepository.save(company)
         val period = Period.create(company.id, PeriodType.MONTH, TODAY, TODAY.plusDays(30))
         periodRepository.save(period)
@@ -151,8 +176,7 @@ class TaxRepositoriesIntegrationTest {
     @Test
     fun `given a TaxComputation, when saved and reloaded by id, then every field round-trips`() {
         val (companyId, periodId) = realCompanyAndPeriod()
-        val taxRule = TaxRule.create("Cote d'Ivoire ${UUID.randomUUID()}", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.25"))
-        taxRuleRepository.save(taxRule)
+        val taxRule = taxRuleRepository.upsertFlatRate(Jurisdiction.CI, BigDecimal("0.25"))
         val computation = TaxComputation.of(
             taxRule,
             listOf(Account.create(companyId, AccountType.REVENUE, null, "4000", "Sales")),
@@ -175,8 +199,7 @@ class TaxRepositoriesIntegrationTest {
     @Test
     fun `given two TaxComputations for one Company, when found by company, then both are returned`() {
         val (companyId, periodId) = realCompanyAndPeriod()
-        val taxRule = TaxRule.create("Sierra Leone ${UUID.randomUUID()}", TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.30"))
-        taxRuleRepository.save(taxRule)
+        val taxRule = taxRuleRepository.upsertFlatRate(Jurisdiction.SL, BigDecimal("0.30"))
         val revenue = Account.create(companyId, AccountType.REVENUE, null, "4000", "Sales")
 
         val computationA = TaxComputation.of(taxRule, listOf(revenue), emptyList(), periodId, GBP)

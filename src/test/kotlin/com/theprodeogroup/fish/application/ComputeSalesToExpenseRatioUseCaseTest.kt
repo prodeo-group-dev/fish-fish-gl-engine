@@ -13,6 +13,7 @@ import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.TenantId
@@ -35,7 +36,7 @@ class ComputeSalesToExpenseRatioUseCaseTest {
     private val journalEntryRepository = FakeJournalEntryRepository()
     private val useCase = ComputeSalesToExpenseRatioUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
 
-    private val company = Company.create(TenantId.generate(), "Purse UK", ClientType.NON_PROFIT, "GB", GBP)
+    private val company = Company.create(TenantId.generate(), "Purse UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
         .also { companyRepository.save(it) }
 
     private fun openPeriod(startDate: LocalDate = TODAY.minusDays(10)): Period {

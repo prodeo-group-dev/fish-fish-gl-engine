@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.common.PeriodType
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.Account
@@ -36,7 +37,7 @@ class RecordOpeningBalanceUseCaseTest {
         val journalEntryRepository = FakeJournalEntryRepository()
         val useCase = RecordOpeningBalanceUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
 
-        val company = Company.create(TenantId.generate(), "Acme Ltd", ClientType.COMPANY_LIMITED, "GB", GBP).also { companyRepository.save(it) }
+        val company = Company.create(TenantId.generate(), "Acme Ltd", ClientType.COMPANY_LIMITED, Jurisdiction.UK, GBP).also { companyRepository.save(it) }
 
         val fixedAssetAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.NON_CURRENT, "1250", "Company Vehicles")
             .also { accountRepository.save(it) }

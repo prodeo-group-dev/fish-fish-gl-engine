@@ -2,6 +2,7 @@ package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.ChartOfAccountsTemplate
 import com.theprodeogroup.fish.domain.tenancy.TenantId
@@ -40,7 +41,7 @@ class AddCompanyToTenantUseCaseTest {
         tenantId = tenantId,
         companyName = "Purse Sierra Leone",
         clientType = ClientType.NON_PROFIT,
-        jurisdiction = "SL",
+        jurisdiction = Jurisdiction.SL,
         companyBaseCurrency = currency,
         fiscalYearStartMonth = 1
     )
@@ -53,7 +54,7 @@ class AddCompanyToTenantUseCaseTest {
 
         result.company.tenantId shouldBe tenantId
         result.company.name shouldBe "Purse Sierra Leone"
-        result.company.jurisdiction shouldBe "SL"
+        result.company.jurisdiction shouldBe Jurisdiction.SL
         result.company.baseCurrency shouldBe NAIRA
     }
 

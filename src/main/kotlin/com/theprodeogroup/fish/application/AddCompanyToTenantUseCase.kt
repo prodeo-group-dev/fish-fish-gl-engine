@@ -3,6 +3,7 @@ package com.theprodeogroup.fish.application
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.common.JournalSource
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.common.PeriodType
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.Account
@@ -57,7 +58,7 @@ class AddCompanyToTenantUseCase(
         val tenantId: TenantId,
         val companyName: String,
         val clientType: ClientType,
-        val jurisdiction: String,
+        val jurisdiction: Jurisdiction,
         val companyBaseCurrency: Currency,
         val fiscalYearStartMonth: Int,
         val openingCashBalance: BigDecimal? = null
