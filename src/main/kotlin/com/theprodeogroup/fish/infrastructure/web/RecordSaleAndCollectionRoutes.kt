@@ -9,6 +9,7 @@ import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.sales.CustomerId
 import com.theprodeogroup.fish.domain.tax.VatCategory
+import com.theprodeogroup.fish.domain.tax.VatRateSchedule
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
@@ -55,9 +56,22 @@ fun Route.recordSaleAndCollectionRoutes(
     post("/sales/record-sale") {
         val request = call.receive<RecordSaleRequestDto>()
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
-        val tenantId = call.resolveTenantForCompany(CompanyId(companyUuid), companyRepository) ?: return@post
-        if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        val company = companyRepository.findById(CompanyId(companyUuid))
+        if (company == null) {
+            call.respond(HttpStatusCode.NotFound, ErrorResponseDto("not_found", "Company not found"))
+            return@post
+        }
+        if (!call.verifyClaimedTenant(company.tenantId)) return@post
+        call.authorizeTenantForWrite(company.tenantId) ?: return@post
+
+        val vatRateSchedule = VatRateSchedule.forJurisdiction(company.jurisdiction)
+        if (vatRateSchedule == null) {
+            call.respond(
+                HttpStatusCode.Conflict,
+                ErrorResponseDto("no_vat_rate_schedule", "No VAT rate schedule is configured for jurisdiction '${company.jurisdiction}'")
+            )
+            return@post
+        }
 
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
         val arControlAccountUuid = call.parseUuid(request.arControlAccountId) ?: return@post
@@ -69,12 +83,12 @@ fun Route.recordSaleAndCollectionRoutes(
         val lines = call.parseSaleLines(request.lines, currency) ?: return@post
 
         call.respondIdempotently(
-            idempotencyKeyRepository, tenantId, "record-sale", Json.encodeToString(RecordSaleRequestDto.serializer(), request)
+            idempotencyKeyRepository, company.tenantId, "record-sale", Json.encodeToString(RecordSaleRequestDto.serializer(), request)
         ) {
             val result = recordSaleUseCase.execute(
                 RecordSaleUseCase.Request(
                     PeriodId(periodUuid), date, AccountId(arControlAccountUuid), AccountId(revenueAccountUuid),
-                    AccountId(vatControlAccountUuid), lines, CustomerId(customerUuid), request.description
+                    AccountId(vatControlAccountUuid), lines, CustomerId(customerUuid), vatRateSchedule, request.description
                 )
             )
 
@@ -87,6 +101,8 @@ fun Route.recordSaleAndCollectionRoutes(
                 is RecordSaleResult.InvalidAmount -> HttpStatusCode.BadRequest to errorResponseJson("invalid_amount")
                 is RecordSaleResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
                 is RecordSaleResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
+                is RecordSaleResult.VatCategoryNotSupported ->
+                    HttpStatusCode.BadRequest to errorResponseJson("vat_category_not_supported", result.category.name)
                 is RecordSaleResult.ArControlAccountNotFound ->
                     HttpStatusCode.NotFound to errorResponseJson("ar_control_account_not_found", result.accountId.value.toString())
                 is RecordSaleResult.RevenueAccountNotFound ->

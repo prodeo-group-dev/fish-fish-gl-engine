@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.domain.tax
 
 import com.theprodeogroup.common.Money
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import java.math.BigDecimal
 import java.time.LocalDate
 
@@ -69,6 +70,23 @@ class VatRateSchedule(private val entriesByCategory: Map<VatCategory, List<VatRa
             netAmount * rateFor(category, asOf)
         }
 
+    /**
+     * Whether [category] has a resolvable rate on this schedule -
+     * [VatCategory.EXEMPT] always does (by construction, no entry
+     * needed), any other category only if it has at least one
+     * [VatRateEntry]. Lets a caller validate a line's category
+     * *before* attempting [vatAmountFor]/[rateFor], turning "this
+     * jurisdiction's VAT law has no such band" (e.g. `SECOND_REDUCED`
+     * against [UK], which genuinely has no such rate) into a normal
+     * validation failure a use case can return as a `Result`, rather
+     * than an uncaught [IllegalArgumentException] from [rateFor] -
+     * this codebase's own stated convention
+     * (`ValidationResult`/sealed `Result` over throwing for expected
+     * domain-rule violations, not a programmer-error guard).
+     */
+    fun supports(category: VatCategory): Boolean =
+        category == VatCategory.EXEMPT || category in entriesByCategory
+
     companion object {
         /**
          * Real Irish rates (docs/IE/IE_Tax_And_Currency_Settings.md) - not
@@ -97,5 +115,46 @@ class VatRateSchedule(private val entriesByCategory: Map<VatCategory, List<VatRa
                 )
             )
         )
+
+        /**
+         * Real UK rates (docs/UK/UK_Tax_And_Currency_Settings.md) - three
+         * bands, genuinely fewer than Ireland's five: UK VAT law has no
+         * `SECOND_REDUCED`/`SUPER_REDUCED` equivalent, so this schedule
+         * deliberately has no entry for either - [supports] returns
+         * `false` for them rather than this schedule guessing a rate.
+         * Only current headline rates are researched/documented (unlike
+         * Ireland's dated 1 Jul 2026 change); `2000-01-01` assumes no
+         * relevant past change, not confirmed-absent.
+         */
+        val UK: VatRateSchedule = VatRateSchedule(
+            mapOf(
+                VatCategory.STANDARD to listOf(
+                    VatRateEntry(BigDecimal("0.20"), LocalDate.of(2000, 1, 1))
+                ),
+                VatCategory.REDUCED to listOf(
+                    VatRateEntry(BigDecimal("0.05"), LocalDate.of(2000, 1, 1))
+                ),
+                VatCategory.ZERO_RATED to listOf(
+                    VatRateEntry(BigDecimal.ZERO, LocalDate.of(2000, 1, 1))
+                )
+            )
+        )
+
+        /**
+         * The jurisdiction-routing fix (2026-09-21) - resolves which
+         * schedule applies to a Company, closing the gap where
+         * `RecordSaleUseCase`/`RecordVendorObligationUseCase` used to
+         * default every posting to [IRELAND] regardless of the
+         * Company's actual [Jurisdiction]. Returns `null`, not a
+         * silent fallback, for a jurisdiction with no configured VAT
+         * schedule yet (`NG`/`SL`/`LR`/`GN`/`CI`) - mirrors
+         * `TaxRuleRepository.findByJurisdictionAndTaxType`'s own
+         * nullable-not-defaulted shape for the identical reason.
+         */
+        fun forJurisdiction(jurisdiction: Jurisdiction): VatRateSchedule? = when (jurisdiction) {
+            Jurisdiction.IE -> IRELAND
+            Jurisdiction.UK -> UK
+            Jurisdiction.NG, Jurisdiction.SL, Jurisdiction.LR, Jurisdiction.GN, Jurisdiction.CI -> null
+        }
     }
 }

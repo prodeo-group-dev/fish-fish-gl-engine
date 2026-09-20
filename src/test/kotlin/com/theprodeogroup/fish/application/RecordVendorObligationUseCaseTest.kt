@@ -12,6 +12,7 @@ import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.purchasing.CreditorId
 import com.theprodeogroup.fish.domain.tax.VatCategory
+import com.theprodeogroup.fish.domain.tax.VatRateSchedule
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldContain
@@ -59,9 +60,10 @@ class RecordVendorObligationUseCaseTest {
         apAccountId: AccountId,
         vatAccountId: AccountId,
         lines: List<RecordVendorObligationUseCase.PurchaseLine> = listOf(RecordVendorObligationUseCase.PurchaseLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD)),
-        vendorId: CreditorId = CreditorId.generate()
+        vendorId: CreditorId = CreditorId.generate(),
+        vatRateSchedule: VatRateSchedule = VatRateSchedule.IRELAND
     ) = RecordVendorObligationUseCase.Request(
-        periodId, TODAY, expenseAccountId, apAccountId, vatAccountId, lines, vendorId, "Purchase from supplier"
+        periodId, TODAY, expenseAccountId, apAccountId, vatAccountId, lines, vendorId, vatRateSchedule, "Purchase from supplier"
     )
 
     @Test
@@ -144,7 +146,7 @@ class RecordVendorObligationUseCaseTest {
         val req = RecordVendorObligationUseCase.Request(
             period.id, LocalDate.of(2026, 7, 15), expense.id, ap.id, vat.id,
             listOf(RecordVendorObligationUseCase.PurchaseLine(Money(BigDecimal("100.00"), EUR), VatCategory.SECOND_REDUCED)),
-            CreditorId.generate()
+            CreditorId.generate(), VatRateSchedule.IRELAND
         )
 
         val result = useCase.execute(req)
@@ -266,5 +268,67 @@ class RecordVendorObligationUseCaseTest {
         val result = useCase.execute(request(period.id, expense.id, ap.id, AccountId.generate()))
 
         result.shouldBeInstanceOf<RecordVendorObligationResult.VatControlAccountNotFound>()
+    }
+
+    @Test
+    fun `given a custom VatRateSchedule passed via the Request, when executed, then it uses that schedule instead of IRELAND`() {
+        val customSchedule = VatRateSchedule(
+            mapOf(VatCategory.STANDARD to listOf(com.theprodeogroup.fish.domain.tax.VatRateEntry(BigDecimal("0.50"), LocalDate.of(2000, 1, 1))))
+        )
+        val period = openPeriod()
+        val expense = account("5000", AccountType.EXPENSE)
+        val ap = account("2000", AccountType.LIABILITY)
+        val vat = account("2150", AccountType.LIABILITY)
+
+        val result = useCase.execute(
+            request(
+                period.id, expense.id, ap.id, vat.id,
+                lines = listOf(RecordVendorObligationUseCase.PurchaseLine(Money(BigDecimal("100.00"), EUR), VatCategory.STANDARD)),
+                vatRateSchedule = customSchedule
+            )
+        )
+
+        val success = result.shouldBeInstanceOf<RecordVendorObligationResult.Success>()
+        success.journalEntry.lines.single { it.accountId == vat.id }.amount shouldBe Money(BigDecimal("50.00"), EUR)
+    }
+
+    // --- UK jurisdiction (2026-09-21) - the routing fix's own proof --------
+
+    @Test
+    fun `given a UK schedule and a standard-rated line, when executed, then the VAT line reflects 20 percent`() {
+        val period = openPeriod()
+        val expense = account("5000", AccountType.EXPENSE)
+        val ap = account("2000", AccountType.LIABILITY)
+        val vat = account("2150", AccountType.LIABILITY)
+
+        val result = useCase.execute(
+            request(
+                period.id, expense.id, ap.id, vat.id,
+                lines = listOf(RecordVendorObligationUseCase.PurchaseLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD)),
+                vatRateSchedule = VatRateSchedule.UK
+            )
+        )
+
+        val success = result.shouldBeInstanceOf<RecordVendorObligationResult.Success>()
+        success.journalEntry.lines.single { it.accountId == vat.id }.amount shouldBe Money(BigDecimal("200.00"), EUR)
+    }
+
+    @Test
+    fun `given a UK schedule and a second-reduced line, when executed, then it returns VatCategoryNotSupported`() {
+        val period = openPeriod()
+        val expense = account("5000", AccountType.EXPENSE)
+        val ap = account("2000", AccountType.LIABILITY)
+        val vat = account("2150", AccountType.LIABILITY)
+
+        val result = useCase.execute(
+            request(
+                period.id, expense.id, ap.id, vat.id,
+                lines = listOf(RecordVendorObligationUseCase.PurchaseLine(Money(BigDecimal("100.00"), EUR), VatCategory.SECOND_REDUCED)),
+                vatRateSchedule = VatRateSchedule.UK
+            )
+        )
+
+        val failure = result.shouldBeInstanceOf<RecordVendorObligationResult.VatCategoryNotSupported>()
+        failure.category shouldBe VatCategory.SECOND_REDUCED
     }
 }
