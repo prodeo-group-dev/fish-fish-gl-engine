@@ -35,6 +35,7 @@ sealed class RecordSaleResult {
     data class ArControlAccountNotFound(val accountId: AccountId) : RecordSaleResult()
     data class RevenueAccountNotFound(val accountId: AccountId) : RecordSaleResult()
     data class VatControlAccountNotFound(val accountId: AccountId) : RecordSaleResult()
+    data class VatCategoryNotSupported(val category: VatCategory) : RecordSaleResult()
 }
 
 /**
@@ -72,12 +73,21 @@ sealed class RecordSaleResult {
  *
  * [CustomerId] reused from `domain.sales` as a plain, opaque tag value,
  * unchanged from before this reshape.
+ *
+ * **`vatRateSchedule` lives on [Request], not the constructor (2026-09-21)** -
+ * originally a constructor default (`= VatRateSchedule.IRELAND`), which
+ * meant every Company posting through this use case got Irish VAT rates
+ * regardless of its actual jurisdiction, since this class is wired once
+ * at app startup, not per-request. Fixed to mirror [ComputeTaxUseCase.Request.taxRule]'s
+ * own shape exactly: the caller (the route) resolves the correct schedule
+ * via `VatRateSchedule.forJurisdiction(company.jurisdiction)` and supplies
+ * it per call - no default here, so nothing can silently fall back to
+ * the wrong jurisdiction's rates the way the old constructor default did.
  */
 class RecordSaleUseCase(
     private val periodRepository: PeriodRepository,
     private val accountRepository: AccountRepository,
-    private val journalEntryRepository: JournalEntryRepository,
-    private val vatRateSchedule: VatRateSchedule = VatRateSchedule.IRELAND
+    private val journalEntryRepository: JournalEntryRepository
 ) {
     /** One line of the sale - net amount plus the VAT category it falls under (docs/IE/IE_VAT_MVP_Design.md Decision 1: category lives on the line). */
     data class SaleLine(val netAmount: Money, val vatCategory: VatCategory) {
@@ -94,6 +104,7 @@ class RecordSaleUseCase(
         val vatControlAccountId: AccountId,
         val lines: List<SaleLine>,
         val customerId: CustomerId,
+        val vatRateSchedule: VatRateSchedule,
         val description: String? = null
     )
 
@@ -115,6 +126,11 @@ class RecordSaleUseCase(
         val vatAccount = accountRepository.findById(request.vatControlAccountId)
             ?: return RecordSaleResult.VatControlAccountNotFound(request.vatControlAccountId)
 
+        val unsupportedCategory = request.lines.map { it.vatCategory }.firstOrNull { !request.vatRateSchedule.supports(it) }
+        if (unsupportedCategory != null) {
+            return RecordSaleResult.VatCategoryNotSupported(unsupportedCategory)
+        }
+
         val currency = request.lines.first().netAmount.currency
         val zero = Money(BigDecimal.ZERO, currency)
         val netTotal = request.lines.fold(zero) { sum, line -> sum + line.netAmount }
@@ -122,7 +138,7 @@ class RecordSaleUseCase(
         val vatByCategory = request.lines
             .groupBy { it.vatCategory }
             .mapValues { (category, lines) ->
-                lines.fold(zero) { sum, line -> sum + vatRateSchedule.vatAmountFor(category, line.netAmount, request.date) }
+                lines.fold(zero) { sum, line -> sum + request.vatRateSchedule.vatAmountFor(category, line.netAmount, request.date) }
             }
             .filterValues { it.amount.signum() > 0 }
 

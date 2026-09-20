@@ -35,6 +35,7 @@ sealed class RecordVendorObligationResult {
     data class ExpenseOrAssetAccountNotFound(val accountId: AccountId) : RecordVendorObligationResult()
     data class ApControlAccountNotFound(val accountId: AccountId) : RecordVendorObligationResult()
     data class VatControlAccountNotFound(val accountId: AccountId) : RecordVendorObligationResult()
+    data class VatCategoryNotSupported(val category: VatCategory) : RecordVendorObligationResult()
 }
 
 /**
@@ -56,12 +57,19 @@ sealed class RecordVendorObligationResult {
  * happens once, at three-way match, not per line at PO creation). VAT
  * categorization is still per-line even though the expense/asset routing
  * isn't - the two are independent granularities.
+ *
+ * **`vatRateSchedule` lives on [Request], not the constructor (2026-09-21)** -
+ * mirrors [RecordSaleUseCase]'s identical fix, for the identical reason
+ * (see its own KDoc): a constructor default meant every Company got
+ * Irish VAT rates regardless of jurisdiction, since this class is wired
+ * once at app startup. The route now resolves the correct schedule via
+ * `VatRateSchedule.forJurisdiction(company.jurisdiction)` and supplies
+ * it per call.
  */
 class RecordVendorObligationUseCase(
     private val periodRepository: PeriodRepository,
     private val accountRepository: AccountRepository,
-    private val journalEntryRepository: JournalEntryRepository,
-    private val vatRateSchedule: VatRateSchedule = VatRateSchedule.IRELAND
+    private val journalEntryRepository: JournalEntryRepository
 ) {
     /** One line of the purchase - net amount plus the VAT category it falls under. */
     data class PurchaseLine(val netAmount: Money, val vatCategory: VatCategory) {
@@ -78,6 +86,7 @@ class RecordVendorObligationUseCase(
         val vatControlAccountId: AccountId,
         val lines: List<PurchaseLine>,
         val vendorId: CreditorId,
+        val vatRateSchedule: VatRateSchedule,
         val description: String? = null
     )
 
@@ -99,6 +108,11 @@ class RecordVendorObligationUseCase(
         val vatAccount = accountRepository.findById(request.vatControlAccountId)
             ?: return RecordVendorObligationResult.VatControlAccountNotFound(request.vatControlAccountId)
 
+        val unsupportedCategory = request.lines.map { it.vatCategory }.firstOrNull { !request.vatRateSchedule.supports(it) }
+        if (unsupportedCategory != null) {
+            return RecordVendorObligationResult.VatCategoryNotSupported(unsupportedCategory)
+        }
+
         val currency = request.lines.first().netAmount.currency
         val zero = Money(BigDecimal.ZERO, currency)
         val netTotal = request.lines.fold(zero) { sum, line -> sum + line.netAmount }
@@ -106,7 +120,7 @@ class RecordVendorObligationUseCase(
         val vatByCategory = request.lines
             .groupBy { it.vatCategory }
             .mapValues { (category, lines) ->
-                lines.fold(zero) { sum, line -> sum + vatRateSchedule.vatAmountFor(category, line.netAmount, request.date) }
+                lines.fold(zero) { sum, line -> sum + request.vatRateSchedule.vatAmountFor(category, line.netAmount, request.date) }
             }
             .filterValues { it.amount.signum() > 0 }
 

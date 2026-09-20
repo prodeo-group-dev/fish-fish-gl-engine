@@ -87,7 +87,7 @@ private const val TEST_EMAIL = "sop-caller@example.com"
  */
 class RecordSaleAndCollectionRoutesTest {
 
-    private class Fixture(role: Role = Role.ACCOUNTANT) {
+    private class Fixture(role: Role = Role.ACCOUNTANT, jurisdiction: Jurisdiction = Jurisdiction.UK) {
         val userRepository = FakeUserRepository()
         val membershipRepository = FakeMembershipRepository()
         val companyRepository = FakeCompanyRepository()
@@ -124,7 +124,7 @@ class RecordSaleAndCollectionRoutesTest {
         val tenantId = TenantId.generate()
         val user = User.create(TEST_EMAIL, "Test SOP Caller").also { userRepository.save(it) }
         val membership = Membership.grant(user.id, tenantId, role).also { membershipRepository.save(it) }
-        val company = Company.create(tenantId, "Test Co", ClientType.NON_PROFIT, Jurisdiction.UK, GBP).also { companyRepository.save(it) }
+        val company = Company.create(tenantId, "Test Co", ClientType.NON_PROFIT, jurisdiction, GBP).also { companyRepository.save(it) }
         val period = Period.create(company.id, PeriodType.MONTH, TODAY, TODAY.plusDays(30)).also {
             it.open()
             periodRepository.save(it)
@@ -328,6 +328,81 @@ class RecordSaleAndCollectionRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.BadRequest
+    }
+
+    // -- Jurisdiction-based VAT schedule routing (2026-09-21) --
+
+    @Test
+    fun `given a company whose jurisdiction has no configured VAT schedule, when record-sale is posted, then it returns 409`() = testApplication {
+        val fixture = Fixture(jurisdiction = Jurisdiction.NG)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/sales/record-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
+                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "45000.00", "vatCategory": "STANDARD"}], "currency": "GBP",
+                    |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.Conflict
+        val body: ErrorResponseDto = response.body()
+        body.error shouldBe "no_vat_rate_schedule"
+    }
+
+    @Test
+    fun `given a STANDARD-rated line for the UK company, when record-sale is posted, then the VAT line reflects the UK 20 percent rate`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/sales/record-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
+                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "1000.00", "vatCategory": "STANDARD"}], "currency": "GBP",
+                    |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val entry = fixture.journalEntryRepository.saveCalls.last().let { fixture.journalEntryRepository.findById(it) }
+        val vatLine = entry?.lines?.single { it.accountId == fixture.vatControlAccount.id }
+        vatLine?.amount?.amount shouldBe java.math.BigDecimal("200.00")
+    }
+
+    @Test
+    fun `given a SECOND_REDUCED line for the UK company, when record-sale is posted, then it returns 400`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/sales/record-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
+                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "100.00", "vatCategory": "SECOND_REDUCED"}], "currency": "GBP",
+                    |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.BadRequest
+        val body: ErrorResponseDto = response.body()
+        body.error shouldBe "vat_category_not_supported"
     }
 
     @Test

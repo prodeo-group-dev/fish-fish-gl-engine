@@ -43,6 +43,19 @@ class RecordSaleUseCaseTest {
 
     private val companyId = CompanyId.generate()
 
+    private fun request(
+        periodId: PeriodId,
+        arAccountId: AccountId,
+        revenueAccountId: AccountId,
+        vatAccountId: AccountId,
+        lines: List<RecordSaleUseCase.SaleLine> = listOf(RecordSaleUseCase.SaleLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD)),
+        customerId: CustomerId = CustomerId.generate(),
+        vatRateSchedule: VatRateSchedule = VatRateSchedule.IRELAND
+    ) = RecordSaleUseCase.Request(
+        periodId, TODAY, arAccountId, revenueAccountId, vatAccountId, lines, customerId,
+        vatRateSchedule, "Sale to SOCIETE JALLOH ALPHAJOR SARLU"
+    )
+
     private fun openPeriod(): Period {
         val period = Period.create(companyId, PeriodType.MONTH, TODAY, TODAY.plusDays(30))
         period.open()
@@ -56,18 +69,6 @@ class RecordSaleUseCaseTest {
         accountRepository.save(account)
         return account
     }
-
-    private fun request(
-        periodId: PeriodId,
-        arAccountId: AccountId,
-        revenueAccountId: AccountId,
-        vatAccountId: AccountId,
-        lines: List<RecordSaleUseCase.SaleLine> = listOf(RecordSaleUseCase.SaleLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD)),
-        customerId: CustomerId = CustomerId.generate()
-    ) = RecordSaleUseCase.Request(
-        periodId, TODAY, arAccountId, revenueAccountId, vatAccountId, lines, customerId,
-        "Sale to SOCIETE JALLOH ALPHAJOR SARLU"
-    )
 
     @Test
     fun `given a single standard-rated line, when executed, then it debits AR gross, credits Revenue net, and credits VAT for the rate`() {
@@ -175,7 +176,7 @@ class RecordSaleUseCaseTest {
         val req = RecordSaleUseCase.Request(
             period.id, LocalDate.of(2026, 7, 15), ar.id, revenue.id, vat.id,
             listOf(RecordSaleUseCase.SaleLine(Money(BigDecimal("100.00"), EUR), VatCategory.SECOND_REDUCED)),
-            CustomerId.generate()
+            CustomerId.generate(), VatRateSchedule.IRELAND
         )
 
         val result = useCase.execute(req)
@@ -304,21 +305,64 @@ class RecordSaleUseCaseTest {
     }
 
     @Test
-    fun `given a custom VatRateSchedule injected, when executed, then it uses that schedule instead of IRELAND`() {
+    fun `given a custom VatRateSchedule passed via the Request, when executed, then it uses that schedule instead of IRELAND`() {
         val customSchedule = VatRateSchedule(
             mapOf(VatCategory.STANDARD to listOf(com.theprodeogroup.fish.domain.tax.VatRateEntry(BigDecimal("0.50"), LocalDate.of(2000, 1, 1))))
         )
-        val customUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository, customSchedule)
         val period = openPeriod()
         val ar = account("1100", AccountType.ASSET)
         val revenue = account("4000", AccountType.REVENUE)
         val vat = account("2150", AccountType.LIABILITY)
 
-        val result = customUseCase.execute(
-            request(period.id, ar.id, revenue.id, vat.id, lines = listOf(RecordSaleUseCase.SaleLine(Money(BigDecimal("100.00"), EUR), VatCategory.STANDARD)))
+        val result = useCase.execute(
+            request(
+                period.id, ar.id, revenue.id, vat.id,
+                lines = listOf(RecordSaleUseCase.SaleLine(Money(BigDecimal("100.00"), EUR), VatCategory.STANDARD)),
+                vatRateSchedule = customSchedule
+            )
         )
 
         val success = result.shouldBeInstanceOf<RecordSaleResult.Success>()
         success.journalEntry.lines.single { it.accountId == vat.id }.amount shouldBe Money(BigDecimal("50.00"), EUR)
+    }
+
+    // --- UK jurisdiction (2026-09-21) - the routing fix's own proof --------
+
+    @Test
+    fun `given a UK schedule and a standard-rated line, when executed, then the VAT line reflects 20 percent`() {
+        val period = openPeriod()
+        val ar = account("1100", AccountType.ASSET)
+        val revenue = account("4000", AccountType.REVENUE)
+        val vat = account("2150", AccountType.LIABILITY)
+
+        val result = useCase.execute(
+            request(
+                period.id, ar.id, revenue.id, vat.id,
+                lines = listOf(RecordSaleUseCase.SaleLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD)),
+                vatRateSchedule = VatRateSchedule.UK
+            )
+        )
+
+        val success = result.shouldBeInstanceOf<RecordSaleResult.Success>()
+        success.journalEntry.lines.single { it.accountId == vat.id }.amount shouldBe Money(BigDecimal("200.00"), EUR)
+    }
+
+    @Test
+    fun `given a UK schedule and a second-reduced line, when executed, then it returns VatCategoryNotSupported`() {
+        val period = openPeriod()
+        val ar = account("1100", AccountType.ASSET)
+        val revenue = account("4000", AccountType.REVENUE)
+        val vat = account("2150", AccountType.LIABILITY)
+
+        val result = useCase.execute(
+            request(
+                period.id, ar.id, revenue.id, vat.id,
+                lines = listOf(RecordSaleUseCase.SaleLine(Money(BigDecimal("100.00"), EUR), VatCategory.SECOND_REDUCED)),
+                vatRateSchedule = VatRateSchedule.UK
+            )
+        )
+
+        val failure = result.shouldBeInstanceOf<RecordSaleResult.VatCategoryNotSupported>()
+        failure.category shouldBe VatCategory.SECOND_REDUCED
     }
 }

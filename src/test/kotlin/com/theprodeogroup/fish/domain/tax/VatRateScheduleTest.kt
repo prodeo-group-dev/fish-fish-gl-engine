@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.domain.tax
 
 import com.theprodeogroup.common.Money
+import com.theprodeogroup.fish.domain.common.Jurisdiction
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
@@ -143,5 +144,80 @@ class VatRateScheduleTest {
         val net = Money(BigDecimal("100.00"), eur)
 
         VatRateSchedule.IRELAND.vatAmountFor(VatCategory.SECOND_REDUCED, net, LocalDate.of(2026, 7, 15)) shouldBe Money(BigDecimal("9.00"), eur)
+    }
+
+    // --- UK: real rates, genuinely fewer bands than Ireland ---------------
+
+    @Test
+    fun `given the standard category, when rate resolved against the UK schedule, then it is 20 percent`() {
+        VatRateSchedule.UK.rateFor(VatCategory.STANDARD, LocalDate.of(2026, 1, 1)) shouldEqualNumerically BigDecimal("0.20")
+    }
+
+    @Test
+    fun `given the reduced category, when rate resolved against the UK schedule, then it is 5 percent`() {
+        VatRateSchedule.UK.rateFor(VatCategory.REDUCED, LocalDate.of(2026, 1, 1)) shouldEqualNumerically BigDecimal("0.05")
+    }
+
+    @Test
+    fun `given the zero-rated category, when rate resolved against the UK schedule, then it is 0 percent`() {
+        VatRateSchedule.UK.rateFor(VatCategory.ZERO_RATED, LocalDate.of(2026, 1, 1)) shouldEqualNumerically BigDecimal.ZERO
+    }
+
+    @Test
+    fun `given second-reduced requested against the UK schedule, when rate resolved, then it fails - UK VAT law has no such band`() {
+        shouldThrow<IllegalArgumentException> {
+            VatRateSchedule.UK.rateFor(VatCategory.SECOND_REDUCED, LocalDate.of(2026, 1, 1))
+        }
+    }
+
+    @Test
+    fun `given super-reduced requested against the UK schedule, when rate resolved, then it fails - UK VAT law has no such band`() {
+        shouldThrow<IllegalArgumentException> {
+            VatRateSchedule.UK.rateFor(VatCategory.SUPER_REDUCED, LocalDate.of(2026, 1, 1))
+        }
+    }
+
+    // --- supports(): whether a category has a resolvable rate -------------
+
+    @Test
+    fun `given the UK schedule and standard, when checked for support, then it is supported`() {
+        VatRateSchedule.UK.supports(VatCategory.STANDARD) shouldBe true
+    }
+
+    @Test
+    fun `given the UK schedule and second-reduced, when checked for support, then it is not supported`() {
+        VatRateSchedule.UK.supports(VatCategory.SECOND_REDUCED) shouldBe false
+    }
+
+    @Test
+    fun `given the Ireland schedule and second-reduced, when checked for support, then it is supported`() {
+        VatRateSchedule.IRELAND.supports(VatCategory.SECOND_REDUCED) shouldBe true
+    }
+
+    @Test
+    fun `given any schedule and exempt, when checked for support, then it is always supported`() {
+        VatRateSchedule.UK.supports(VatCategory.EXEMPT) shouldBe true
+        VatRateSchedule.IRELAND.supports(VatCategory.EXEMPT) shouldBe true
+    }
+
+    // --- forJurisdiction(): the routing fix ---------------------------------
+
+    @Test
+    fun `given Ireland, when a schedule is resolved for the jurisdiction, then it is the Ireland schedule`() {
+        VatRateSchedule.forJurisdiction(Jurisdiction.IE) shouldBe VatRateSchedule.IRELAND
+    }
+
+    @Test
+    fun `given the UK, when a schedule is resolved for the jurisdiction, then it is the UK schedule`() {
+        VatRateSchedule.forJurisdiction(Jurisdiction.UK) shouldBe VatRateSchedule.UK
+    }
+
+    @Test
+    fun `given a jurisdiction with no configured VAT schedule, when resolved, then it returns null rather than silently defaulting`() {
+        VatRateSchedule.forJurisdiction(Jurisdiction.NG) shouldBe null
+        VatRateSchedule.forJurisdiction(Jurisdiction.SL) shouldBe null
+        VatRateSchedule.forJurisdiction(Jurisdiction.LR) shouldBe null
+        VatRateSchedule.forJurisdiction(Jurisdiction.GN) shouldBe null
+        VatRateSchedule.forJurisdiction(Jurisdiction.CI) shouldBe null
     }
 }
