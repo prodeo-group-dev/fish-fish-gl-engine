@@ -149,6 +149,9 @@ class PurchasePostingContextRoutesTest {
         val cashAccount = if (configureAccounts) {
             Account.create(company.id, AccountType.ASSET, com.theprodeogroup.fish.domain.ledger.AccountClassification.CURRENT, "1000", "Cash").also { accountRepository.save(it) }
         } else null
+        val vatAccount = if (configureAccounts) {
+            Account.create(company.id, AccountType.LIABILITY, com.theprodeogroup.fish.domain.ledger.AccountClassification.CURRENT, "2150", "VAT Control Account").also { accountRepository.save(it) }
+        } else null
         val facilityLiabilityAccount = if (configureAccounts && configureFacilityLiability) {
             Account.create(company.id, AccountType.LIABILITY, com.theprodeogroup.fish.domain.ledger.AccountClassification.CURRENT, "2300", "Trade Finance Facility Payable").also { accountRepository.save(it) }
         } else null
@@ -218,6 +221,7 @@ class PurchasePostingContextRoutesTest {
         body.apControlAccountId shouldBe fixture.apAccount!!.id.value.toString()
         body.expenseOrAssetAccountId shouldBe fixture.expenseAccount!!.id.value.toString()
         body.settlementAccountId shouldBe fixture.cashAccount!!.id.value.toString()
+        body.vatControlAccountId shouldBe fixture.vatAccount!!.id.value.toString()
         body.currency shouldBe "GBP"
         body.facilityLiabilityAccountId shouldBe fixture.facilityLiabilityAccount!!.id.value.toString()
     }

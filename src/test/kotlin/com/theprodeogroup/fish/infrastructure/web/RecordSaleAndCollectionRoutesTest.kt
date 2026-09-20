@@ -132,6 +132,7 @@ class RecordSaleAndCollectionRoutesTest {
         val arControlAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1100", "Accounts Receivable").also { accountRepository.save(it) }
         val revenueAccount = Account.create(company.id, AccountType.REVENUE, null, "4000", "Sales Revenue").also { accountRepository.save(it) }
         val cashAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1000", "Cash").also { accountRepository.save(it) }
+        val vatControlAccount = Account.create(company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2150", "VAT Control Account").also { accountRepository.save(it) }
 
 
         val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
@@ -209,7 +210,8 @@ class RecordSaleAndCollectionRoutesTest {
             setBody(
                 """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
                     |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
-                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "amount": "45000.00", "currency": "GBP",
+                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "45000.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
                     |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
@@ -231,7 +233,8 @@ class RecordSaleAndCollectionRoutesTest {
             setBody(
                 """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
                     |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
-                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "amount": "45000.00", "currency": "GBP",
+                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "45000.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
                     |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
@@ -252,7 +255,8 @@ class RecordSaleAndCollectionRoutesTest {
             setBody(
                 """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
                     |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
-                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "amount": "45000.00", "currency": "GBP",
+                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "45000.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
                     |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
@@ -273,7 +277,8 @@ class RecordSaleAndCollectionRoutesTest {
             setBody(
                 """{"companyId": "${UUID.randomUUID()}", "periodId": "${fixture.period.id.value}",
                     |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
-                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "amount": "45000.00", "currency": "GBP",
+                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "45000.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
                     |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
@@ -294,7 +299,8 @@ class RecordSaleAndCollectionRoutesTest {
             setBody(
                 """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
                     |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
-                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "amount": "45000.00", "currency": "GBP",
+                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "45000.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
                     |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
@@ -315,7 +321,8 @@ class RecordSaleAndCollectionRoutesTest {
             setBody(
                 """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
                     |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
-                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "amount": "0.00", "currency": "GBP",
+                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "0.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
                     |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
@@ -421,7 +428,8 @@ class RecordSaleAndCollectionRoutesTest {
         val idempotencyKey = UUID.randomUUID().toString()
         val requestBody = """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
             |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
-            |"revenueAccountId": "${fixture.revenueAccount.id.value}", "amount": "45000.00", "currency": "GBP",
+            |"revenueAccountId": "${fixture.revenueAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+            |"lines": [{"netAmount": "45000.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
             |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
 
         val first = client.post("/api/sales/record-sale") {
@@ -461,7 +469,8 @@ class RecordSaleAndCollectionRoutesTest {
             setBody(
                 """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
                     |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
-                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "amount": "45000.00", "currency": "GBP",
+                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "45000.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
                     |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
@@ -473,7 +482,8 @@ class RecordSaleAndCollectionRoutesTest {
             setBody(
                 """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
                     |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
-                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "amount": "99999.00", "currency": "GBP",
+                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "99999.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
                     |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
@@ -490,7 +500,8 @@ class RecordSaleAndCollectionRoutesTest {
         val client = createClient { install(ContentNegotiation) { json() } }
         val requestBody = """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
             |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
-            |"revenueAccountId": "${fixture.revenueAccount.id.value}", "amount": "45000.00", "currency": "GBP",
+            |"revenueAccountId": "${fixture.revenueAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+            |"lines": [{"netAmount": "45000.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
             |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
 
         client.post("/api/sales/record-sale") {

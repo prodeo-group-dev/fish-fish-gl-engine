@@ -8,6 +8,9 @@ import com.theprodeogroup.fish.domain.tax.TaxRule
 import com.theprodeogroup.fish.domain.tax.TaxRuleId
 import com.theprodeogroup.fish.domain.tax.TaxRuleRepository
 import com.theprodeogroup.fish.domain.tax.TaxType
+import com.theprodeogroup.fish.domain.tax.VatReturn
+import com.theprodeogroup.fish.domain.tax.VatReturnId
+import com.theprodeogroup.fish.domain.tax.VatReturnRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 
 /**
@@ -31,5 +34,17 @@ class FakeTaxComputationRepository : TaxComputationRepository {
     }
     override fun findById(id: TaxComputationId): TaxComputation? = store[id]
     override fun findAllByCompany(companyId: CompanyId): List<TaxComputation> =
+        store.values.filter { it.companyId == companyId }
+}
+
+class FakeVatReturnRepository : VatReturnRepository {
+    val saveCalls = mutableListOf<VatReturnId>()
+    private val store = mutableMapOf<VatReturnId, VatReturn>()
+    override fun save(vatReturn: VatReturn) {
+        saveCalls.add(vatReturn.id)
+        store[vatReturn.id] = vatReturn
+    }
+    override fun findById(id: VatReturnId): VatReturn? = store[id]
+    override fun findAllByCompany(companyId: CompanyId): List<VatReturn> =
         store.values.filter { it.companyId == companyId }
 }

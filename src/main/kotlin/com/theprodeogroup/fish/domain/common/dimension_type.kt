@@ -101,6 +101,18 @@ enum class DimensionType {
     CASH_FLOW_ACTIVITY,
 
     /**
+     * VAT category the line was computed under (2026-09-19,
+     * docs/IE/IE_VAT_MVP_Design.md) - tagged on the VAT Control Account
+     * leg of a `RecordSaleUseCase`/`RecordVendorObligationUseCase`
+     * posting. Value is a `domain.tax.VatCategory` enum name. Same
+     * "tag the control-account line so reporting can derive a breakdown
+     * from already-posted JournalEntry data" reasoning already used for
+     * CUSTOMER/VENDOR (AR/AP aging) - `VatReturn` reads this to produce
+     * a per-category audit breakdown, not just a net total.
+     */
+    VAT_CATEGORY,
+
+    /**
      * Custom dimension 1 (client-defined)
      */
     CUSTOM_1,

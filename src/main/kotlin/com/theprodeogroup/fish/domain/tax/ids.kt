@@ -29,3 +29,16 @@ value class TaxComputationId(val value: UUID) {
         fun generate(): TaxComputationId = TaxComputationId(UUID.randomUUID())
     }
 }
+
+/**
+ * Identity of a VatReturn - same persisted-for-audit reasoning as
+ * [TaxComputationId], not the "ephemeral, recomputed on demand" precedent
+ * every other report type follows (docs/IE/IE_VAT_MVP_Design.md Decision
+ * 4: a filed VAT figure must be preserved as it was actually computed).
+ */
+@JvmInline
+value class VatReturnId(val value: UUID) {
+    companion object {
+        fun generate(): VatReturnId = VatReturnId(UUID.randomUUID())
+    }
+}

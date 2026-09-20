@@ -42,6 +42,7 @@ fun Route.salesPostingContextRoutes(
                     periodId = result.periodId.value.toString(),
                     arControlAccountId = result.arControlAccountId.value.toString(),
                     revenueAccountId = result.revenueAccountId.value.toString(),
+                    vatControlAccountId = result.vatControlAccountId.value.toString(),
                     currency = result.currency.currencyCode
                 )
             )
@@ -53,6 +54,8 @@ fun Route.salesPostingContextRoutes(
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("ar_control_account_not_configured", "This Company's Chart of Accounts has no Accounts Receivable control account (code 1100)"))
             SalesPostingContextResult.RevenueAccountNotConfigured ->
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("revenue_account_not_configured", "This Company's Chart of Accounts has no Revenue account"))
+            SalesPostingContextResult.VatControlAccountNotConfigured ->
+                call.respond(HttpStatusCode.Conflict, ErrorResponseDto("vat_control_account_not_configured", "This Company's Chart of Accounts has no VAT Control Account (code ${com.theprodeogroup.fish.domain.ledger.ChartOfAccountsTemplate.VAT_CONTROL_ACCOUNT_CODE})"))
         }
     }
 }

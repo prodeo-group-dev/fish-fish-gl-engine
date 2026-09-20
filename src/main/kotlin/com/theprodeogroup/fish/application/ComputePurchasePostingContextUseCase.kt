@@ -19,6 +19,7 @@ sealed class PurchasePostingContextResult {
         val apControlAccountId: AccountId,
         val expenseOrAssetAccountId: AccountId,
         val settlementAccountId: AccountId,
+        val vatControlAccountId: AccountId,
         val currency: Currency,
         val facilityLiabilityAccountId: AccountId? = null
     ) : PurchasePostingContextResult()
@@ -27,6 +28,7 @@ sealed class PurchasePostingContextResult {
     data object ApControlAccountNotConfigured : PurchasePostingContextResult()
     data object ExpenseAccountNotConfigured : PurchasePostingContextResult()
     data object CashAccountNotConfigured : PurchasePostingContextResult()
+    data object VatControlAccountNotConfigured : PurchasePostingContextResult()
 }
 
 /**
@@ -80,9 +82,11 @@ class ComputePurchasePostingContextUseCase(
         val facilityLiabilityAccount = accounts.firstOrNull {
             it.type == AccountType.LIABILITY && it.code == ChartOfAccountsTemplate.FACILITY_LIABILITY_CODE
         }
+        val vatAccount = accounts.firstOrNull { it.type == AccountType.LIABILITY && it.code == ChartOfAccountsTemplate.VAT_CONTROL_ACCOUNT_CODE }
+            ?: return PurchasePostingContextResult.VatControlAccountNotConfigured
 
         return PurchasePostingContextResult.Success(
-            period.id, apAccount.id, expenseAccount.id, cashAccount.id, company.baseCurrency, facilityLiabilityAccount?.id
+            period.id, apAccount.id, expenseAccount.id, cashAccount.id, vatAccount.id, company.baseCurrency, facilityLiabilityAccount?.id
         )
     }
 }

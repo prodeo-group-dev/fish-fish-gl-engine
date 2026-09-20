@@ -31,3 +31,9 @@ interface TaxComputationRepository {
     fun findById(id: TaxComputationId): TaxComputation?
     fun findAllByCompany(companyId: CompanyId): List<TaxComputation>
 }
+
+interface VatReturnRepository {
+    fun save(vatReturn: VatReturn)
+    fun findById(id: VatReturnId): VatReturn?
+    fun findAllByCompany(companyId: CompanyId): List<VatReturn>
+}

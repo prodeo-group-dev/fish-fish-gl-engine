@@ -14,6 +14,9 @@ import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.sales.CustomerId
+import com.theprodeogroup.fish.domain.tax.VatCategory
+import com.theprodeogroup.fish.domain.tax.VatRateSchedule
+import java.math.BigDecimal
 import java.time.LocalDate
 
 /**
@@ -31,51 +34,71 @@ sealed class RecordSaleResult {
     data object PeriodNotOpen : RecordSaleResult()
     data class ArControlAccountNotFound(val accountId: AccountId) : RecordSaleResult()
     data class RevenueAccountNotFound(val accountId: AccountId) : RecordSaleResult()
+    data class VatControlAccountNotFound(val accountId: AccountId) : RecordSaleResult()
 }
 
 /**
  * The *Record sale* thin posting interface
  * (docs/Sales_Order_Processing_DDD_Design.md Section 0/4) - Dr AR
- * Control/Cr Revenue only, tagged `DimensionType.CUSTOMER` with a
- * caller-supplied [CustomerId]. Called by `fish-sales-order-processing`
+ * Control, Cr Revenue, plus (2026-09-19, docs/IE/IE_VAT_MVP_Design.md) Cr
+ * VAT Control per category present. Called by `fish-sales-order-processing`
  * (SOP) once it resolves its own contractually-correct revenue
- * recognition point (e.g. the CIF loading point, materially earlier
- * than physical goods issue for the sugar deal scenario) - **not**
- * driven by any aggregate in this repo. `domain.sales.Customer`/
- * `SalesOrder` still exist here unchanged (Section 6 - nothing in
- * `fish-fish-gl-engine` is deleted by this), this use case is
- * additive, coexisting with the old `PostSalesOrderUseCase`.
+ * recognition point.
  *
- * Deliberately posts no COGS/Inventory lines - unlike today's
- * `SalesOrder.deliverLine()`, which bundles both into one compound
- * entry at the delivery moment. Once revenue recognition can fire
- * before physical goods issue, that bundling stops making sense:
- * Inventory Management's own `PostInventoryIssueUseCase` already
- * proves COGS/Inventory posting doesn't need a driving SalesOrder,
- * and fires independently whenever physical issue actually happens.
+ * **VAT rate resolution and computation happen here, atomically, in the
+ * same call that posts the entry** - a direct instruction ("the required
+ * atomicity is high") deliberately rejecting the alternative of SOP
+ * fetching a rate via a separate GET first and passing a pre-computed
+ * amount, which has a staleness/race window between the two calls. SOP
+ * sends each line's net amount + [VatCategory] + the transaction date;
+ * this use case resolves the rate `asOf` that date via [vatRateSchedule]
+ * and computes the VAT amount itself.
  *
- * [CustomerId] reused from `domain.sales` as a plain, opaque tag value
- * - the same non-authoritative-identifier treatment `EmployeeId` gets
- * on `LeaveAccrual` even though `Employee` lives entirely outside this
- * repo (design doc Section 5, item 8).
+ * **One VAT line per distinct category present, not one netted line** -
+ * necessary for [DimensionType.VAT_CATEGORY] tagging to mean anything
+ * (one dimension value per `JournalLine`), and what makes `VatReturn`'s
+ * per-category audit breakdown possible. [VatCategory.ZERO_RATED] and
+ * [VatCategory.EXEMPT] both compute to a zero VAT amount and are omitted
+ * from the posted lines entirely - "nothing to post" for a zero amount,
+ * the same precedent `PayRun.post()`/every other zero-side-omission case
+ * in this codebase already established - **not** the same thing as
+ * "no VAT line ever needed for this category," which would be
+ * indistinguishable from an ordinary untagged/未taxed line at read time
+ * were it posted as an explicit zero.
+ *
+ * Deliberately posts no COGS/Inventory lines, unchanged from before this
+ * VAT reshape - see the original KDoc history in git for that reasoning
+ * (Inventory Management's own posting fires independently).
+ *
+ * [CustomerId] reused from `domain.sales` as a plain, opaque tag value,
+ * unchanged from before this reshape.
  */
 class RecordSaleUseCase(
     private val periodRepository: PeriodRepository,
     private val accountRepository: AccountRepository,
-    private val journalEntryRepository: JournalEntryRepository
+    private val journalEntryRepository: JournalEntryRepository,
+    private val vatRateSchedule: VatRateSchedule = VatRateSchedule.IRELAND
 ) {
+    /** One line of the sale - net amount plus the VAT category it falls under (docs/IE/IE_VAT_MVP_Design.md Decision 1: category lives on the line). */
+    data class SaleLine(val netAmount: Money, val vatCategory: VatCategory) {
+        init {
+            require(netAmount.amount.signum() > 0) { "SaleLine netAmount must be positive" }
+        }
+    }
+
     data class Request(
         val periodId: PeriodId,
         val date: LocalDate,
         val arControlAccountId: AccountId,
         val revenueAccountId: AccountId,
-        val amount: Money,
+        val vatControlAccountId: AccountId,
+        val lines: List<SaleLine>,
         val customerId: CustomerId,
         val description: String? = null
     )
 
     fun execute(request: Request): RecordSaleResult {
-        if (request.amount.amount.signum() <= 0) {
+        if (request.lines.isEmpty()) {
             return RecordSaleResult.InvalidAmount
         }
 
@@ -89,14 +112,35 @@ class RecordSaleUseCase(
             ?: return RecordSaleResult.ArControlAccountNotFound(request.arControlAccountId)
         val revenueAccount = accountRepository.findById(request.revenueAccountId)
             ?: return RecordSaleResult.RevenueAccountNotFound(request.revenueAccountId)
+        val vatAccount = accountRepository.findById(request.vatControlAccountId)
+            ?: return RecordSaleResult.VatControlAccountNotFound(request.vatControlAccountId)
+
+        val currency = request.lines.first().netAmount.currency
+        val zero = Money(BigDecimal.ZERO, currency)
+        val netTotal = request.lines.fold(zero) { sum, line -> sum + line.netAmount }
+
+        val vatByCategory = request.lines
+            .groupBy { it.vatCategory }
+            .mapValues { (category, lines) ->
+                lines.fold(zero) { sum, line -> sum + vatRateSchedule.vatAmountFor(category, line.netAmount, request.date) }
+            }
+            .filterValues { it.amount.signum() > 0 }
+
+        val vatTotal = vatByCategory.values.fold(zero) { sum, amount -> sum + amount }
+        val grossTotal = netTotal + vatTotal
+
+        val vatLines = vatByCategory.map { (category, amount) ->
+            JournalLine(vatAccount.id, amount, TransactionSide.CREDIT, mapOf(DimensionType.VAT_CATEGORY to category.name))
+        }
 
         val lines = listOf(
             JournalLine(
-                arAccount.id, request.amount, TransactionSide.DEBIT,
+                arAccount.id, grossTotal, TransactionSide.DEBIT,
                 mapOf(DimensionType.CUSTOMER to request.customerId.value.toString())
             ),
-            JournalLine(revenueAccount.id, request.amount, TransactionSide.CREDIT)
-        )
+            JournalLine(revenueAccount.id, netTotal, TransactionSide.CREDIT)
+        ) + vatLines
+
         val entry = JournalEntry.create(
             request.periodId, request.date, lines, JournalSource.INTEGRATION, request.description
         )
@@ -106,7 +150,7 @@ class RecordSaleUseCase(
                 posting.errors.joinToString()
         }
 
-        val touchedAccounts: List<Account> = listOf(arAccount, revenueAccount)
+        val touchedAccounts: List<Account> = listOfNotNull(arAccount, revenueAccount, vatAccount.takeIf { vatLines.isNotEmpty() })
         for (account in touchedAccounts) {
             account.recordActivity()
             accountRepository.save(account)

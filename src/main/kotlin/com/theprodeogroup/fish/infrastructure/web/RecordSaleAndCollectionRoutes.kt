@@ -8,6 +8,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.sales.CustomerId
+import com.theprodeogroup.fish.domain.tax.VatCategory
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
@@ -61,9 +62,11 @@ fun Route.recordSaleAndCollectionRoutes(
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
         val arControlAccountUuid = call.parseUuid(request.arControlAccountId) ?: return@post
         val revenueAccountUuid = call.parseUuid(request.revenueAccountId) ?: return@post
+        val vatControlAccountUuid = call.parseUuid(request.vatControlAccountId) ?: return@post
         val customerUuid = call.parseUuid(request.customerId) ?: return@post
-        val amount = call.parseMoney(request.amount, request.currency) ?: return@post
+        val currency = call.parseCurrency(request.currency) ?: return@post
         val date = call.parseLocalDate(request.date) ?: return@post
+        val lines = call.parseSaleLines(request.lines, currency) ?: return@post
 
         call.respondIdempotently(
             idempotencyKeyRepository, tenantId, "record-sale", Json.encodeToString(RecordSaleRequestDto.serializer(), request)
@@ -71,7 +74,7 @@ fun Route.recordSaleAndCollectionRoutes(
             val result = recordSaleUseCase.execute(
                 RecordSaleUseCase.Request(
                     PeriodId(periodUuid), date, AccountId(arControlAccountUuid), AccountId(revenueAccountUuid),
-                    amount, CustomerId(customerUuid), request.description
+                    AccountId(vatControlAccountUuid), lines, CustomerId(customerUuid), request.description
                 )
             )
 
@@ -88,6 +91,8 @@ fun Route.recordSaleAndCollectionRoutes(
                     HttpStatusCode.NotFound to errorResponseJson("ar_control_account_not_found", result.accountId.value.toString())
                 is RecordSaleResult.RevenueAccountNotFound ->
                     HttpStatusCode.NotFound to errorResponseJson("revenue_account_not_found", result.accountId.value.toString())
+                is RecordSaleResult.VatControlAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("vat_control_account_not_found", result.accountId.value.toString())
             }
         }
     }
@@ -158,3 +163,43 @@ private suspend fun ApplicationCall.parseLocalDate(value: String): LocalDate? =
         respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "date must be ISO-8601 (YYYY-MM-DD)"))
         null
     }
+
+/** Parses an ISO currency code, responding 400 and returning `null` on failure. */
+private suspend fun ApplicationCall.parseCurrency(value: String): Currency? =
+    try {
+        Currency.getInstance(value)
+    } catch (e: IllegalArgumentException) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "currency is not a valid ISO currency code"))
+        null
+    }
+
+/**
+ * Parses [SaleLineDto]s into [RecordSaleUseCase.SaleLine]s - GL resolves
+ * the VAT rate/amount itself (this use case's own KDoc), so the wire
+ * shape only ever carries a net amount and a raw [VatCategory] name.
+ * Responds 400 and returns `null` on a non-positive amount or an
+ * unrecognized category name, rather than letting either throw
+ * uncaught out of the route.
+ */
+private suspend fun ApplicationCall.parseSaleLines(lines: List<SaleLineDto>, currency: Currency): List<RecordSaleUseCase.SaleLine>? {
+    if (lines.isEmpty()) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "lines must not be empty"))
+        return null
+    }
+    val parsed = mutableListOf<RecordSaleUseCase.SaleLine>()
+    for (line in lines) {
+        val netAmountValue = line.netAmount.toBigDecimalOrNull()
+        if (netAmountValue == null || netAmountValue.signum() <= 0) {
+            respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "line netAmount must be a positive decimal"))
+            return null
+        }
+        val category = try {
+            VatCategory.valueOf(line.vatCategory)
+        } catch (e: IllegalArgumentException) {
+            respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "'${line.vatCategory}' is not a valid vatCategory"))
+            return null
+        }
+        parsed.add(RecordSaleUseCase.SaleLine(Money(netAmountValue, currency), category))
+    }
+    return parsed
+}

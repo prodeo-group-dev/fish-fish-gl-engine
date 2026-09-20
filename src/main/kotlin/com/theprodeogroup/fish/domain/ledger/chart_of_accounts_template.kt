@@ -97,6 +97,22 @@ object ChartOfAccountsTemplate {
      */
     const val FACILITY_LIABILITY_CODE = "2300"
 
+    /**
+     * VAT Control Account (added 2026-09-19, docs/IE/IE_VAT_MVP_Design.md
+     * Decision 2) - a single netting liability, credited by output VAT,
+     * debited by input VAT. Its balance directly *is* the VAT return
+     * figure (credit = owed to Revenue, debit = reclaimable) - no
+     * separate Payable/Receivable split, since a VAT-registered
+     * business's net position genuinely swings between owing and being
+     * owed a refund period to period. Code "2150" sits between Credit
+     * Cards (2100) and Accrued Leave Liability (2200), the only unused
+     * slot in the existing 2000s range. Seeded on every business
+     * template, same scoping [payrollAccounts]/[facilityLiabilityAccounts]
+     * already use - personal finance ([ClientType.INDIVIDUAL]) never
+     * registers for VAT.
+     */
+    const val VAT_CONTROL_ACCOUNT_CODE = "2150"
+
     fun accountsFor(clientType: ClientType, companyId: CompanyId): List<Account> =
         when (clientType) {
             ClientType.INDIVIDUAL -> individualAccounts(companyId)
@@ -136,6 +152,7 @@ object ChartOfAccountsTemplate {
         ),
         payrollAccounts(companyId),
         facilityLiabilityAccounts(companyId),
+        vatAccounts(companyId),
     ).flatten()
 
     private fun partnershipAccounts(companyId: CompanyId): List<Account> = listOf(
@@ -154,6 +171,7 @@ object ChartOfAccountsTemplate {
         ),
         payrollAccounts(companyId),
         facilityLiabilityAccounts(companyId),
+        vatAccounts(companyId),
     ).flatten()
 
     private fun companyLimitedAccounts(companyId: CompanyId): List<Account> = listOf(
@@ -173,6 +191,7 @@ object ChartOfAccountsTemplate {
         ),
         payrollAccounts(companyId),
         facilityLiabilityAccounts(companyId),
+        vatAccounts(companyId),
     ).flatten()
 
     private fun nonProfitAccounts(companyId: CompanyId): List<Account> = listOf(
@@ -192,10 +211,15 @@ object ChartOfAccountsTemplate {
         ),
         payrollAccounts(companyId),
         facilityLiabilityAccounts(companyId),
+        vatAccounts(companyId),
     ).flatten()
 
     private fun facilityLiabilityAccounts(companyId: CompanyId): List<Account> = listOf(
         liability(companyId, FACILITY_LIABILITY_CODE, "Trade Finance Facility Payable", AccountClassification.CURRENT),
+    )
+
+    private fun vatAccounts(companyId: CompanyId): List<Account> = listOf(
+        liability(companyId, VAT_CONTROL_ACCOUNT_CODE, "VAT Control Account", AccountClassification.CURRENT),
     )
 
     private fun payrollAccounts(companyId: CompanyId): List<Account> = listOf(

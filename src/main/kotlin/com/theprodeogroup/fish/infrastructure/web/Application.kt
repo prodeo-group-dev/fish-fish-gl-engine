@@ -61,6 +61,9 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedLeaveAccrualRep
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedPeriodRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTaxComputationRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTaxRuleRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedVatReturnRepository
+import com.theprodeogroup.fish.application.ComputeVatReturnUseCase
+import com.theprodeogroup.fish.domain.tax.VatReturnRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
@@ -139,6 +142,7 @@ fun Application.productionModule() {
     val taxRuleRepository = ExposedTaxRuleRepository()
     val taxComputationRepository = ExposedTaxComputationRepository()
     val computeTaxUseCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
+    val vatReturnRepository = ExposedVatReturnRepository()
     val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
     val createAccountUseCase = CreateAccountUseCase(companyRepository, accountRepository)
     val recordOpeningBalanceUseCase = RecordOpeningBalanceUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
@@ -194,6 +198,7 @@ fun Application.productionModule() {
         computeTaxUseCase = computeTaxUseCase,
         taxRuleRepository = taxRuleRepository,
         taxComputationRepository = taxComputationRepository,
+        vatReturnRepository = vatReturnRepository,
         periodRepository = periodRepository,
         accountRepository = accountRepository,
         journalEntryRepository = journalEntryRepository,
@@ -253,6 +258,15 @@ fun Application.fishModule(
     computeTaxUseCase: ComputeTaxUseCase,
     taxRuleRepository: TaxRuleRepository,
     taxComputationRepository: TaxComputationRepository,
+    // Nullable, unlike every other repository param here (2026-09-19,
+    // VAT MVP) - deliberately, not an oversight: VAT is genuinely new,
+    // additive capability (docs/IE/IE_VAT_MVP_Design.md), and making it
+    // required would mean touching every one of the ~20 existing test
+    // files that already call this function with a full fixture, for a
+    // capability most of those tests have no reason to exercise. Mirrors
+    // the same optional-with-fallback treatment `serviceVerifier`/
+    // `imServiceVerifier`/etc. already get above, not a new pattern.
+    vatReturnRepository: VatReturnRepository? = null,
     periodRepository: PeriodRepository,
     accountRepository: AccountRepository,
     journalEntryRepository: JournalEntryRepository,
@@ -414,6 +428,11 @@ fun Application.fishModule(
                 salesToExpenseRatioRoutes(computeSalesToExpenseRatioUseCase, companyRepository)
                 reportsRoutes(computeBalanceSheetUseCase, computeProfitAndLossUseCase, computeCashFlowUseCase, companyRepository)
                 taxRoutes(computeTaxUseCase, companyRepository, taxRuleRepository, taxComputationRepository)
+                if (vatReturnRepository != null) {
+                    vatReturnRoutes(
+                        ComputeVatReturnUseCase(accountRepository, journalEntryRepository, vatReturnRepository), companyRepository
+                    )
+                }
                 fixedAssetRoutes(
                     createFixedAssetUseCase, recordFixedAssetDepreciationUseCase, assessFixedAssetImpairmentUseCase,
                     disposeFixedAssetUseCase, computeFixedAssetRegisterUseCase, fixedAssetRepository, periodRepository,

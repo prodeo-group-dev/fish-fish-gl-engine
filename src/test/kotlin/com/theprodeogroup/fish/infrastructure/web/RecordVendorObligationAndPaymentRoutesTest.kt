@@ -132,6 +132,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
         val apControlAccount = Account.create(company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2100", "Accounts Payable").also { accountRepository.save(it) }
         val inventoryAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1300", "Inventory").also { accountRepository.save(it) }
         val cashAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1000", "Cash").also { accountRepository.save(it) }
+        val vatControlAccount = Account.create(company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2150", "VAT Control Account").also { accountRepository.save(it) }
 
         val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
@@ -208,7 +209,8 @@ class RecordVendorObligationAndPaymentRoutesTest {
             setBody(
                 """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
-                    |"apControlAccountId": "${fixture.apControlAccount.id.value}", "amount": "12500.00", "currency": "GBP",
+                    |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "12500.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
                     |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
@@ -230,7 +232,8 @@ class RecordVendorObligationAndPaymentRoutesTest {
             setBody(
                 """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
-                    |"apControlAccountId": "${fixture.apControlAccount.id.value}", "amount": "12500.00", "currency": "GBP",
+                    |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "12500.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
                     |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
@@ -251,7 +254,8 @@ class RecordVendorObligationAndPaymentRoutesTest {
             setBody(
                 """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
-                    |"apControlAccountId": "${fixture.apControlAccount.id.value}", "amount": "12500.00", "currency": "GBP",
+                    |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "12500.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
                     |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
@@ -272,7 +276,8 @@ class RecordVendorObligationAndPaymentRoutesTest {
             setBody(
                 """{"companyId": "${UUID.randomUUID()}", "periodId": "${fixture.period.id.value}",
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
-                    |"apControlAccountId": "${fixture.apControlAccount.id.value}", "amount": "12500.00", "currency": "GBP",
+                    |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "12500.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
                     |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
@@ -293,7 +298,8 @@ class RecordVendorObligationAndPaymentRoutesTest {
             setBody(
                 """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
-                    |"apControlAccountId": "${fixture.apControlAccount.id.value}", "amount": "12500.00", "currency": "GBP",
+                    |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "12500.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
                     |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
@@ -314,7 +320,8 @@ class RecordVendorObligationAndPaymentRoutesTest {
             setBody(
                 """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
-                    |"apControlAccountId": "${fixture.apControlAccount.id.value}", "amount": "0.00", "currency": "GBP",
+                    |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "0.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
                     |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }

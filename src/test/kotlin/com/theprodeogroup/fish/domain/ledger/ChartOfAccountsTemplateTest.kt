@@ -147,4 +147,23 @@ class ChartOfAccountsTemplateTest {
 
         accounts.none { it.code == ChartOfAccountsTemplate.FACILITY_LIABILITY_CODE } shouldBe true
     }
+
+    @Test
+    fun `given every business ClientType, when a template is requested, then it includes a VAT Control Account at the documented code`() {
+        for (clientType in ClientType.entries.filter { it != ClientType.INDIVIDUAL }) {
+            val accounts = ChartOfAccountsTemplate.accountsFor(clientType, CompanyId.generate())
+
+            val vatControlAccount = accounts.single { it.code == ChartOfAccountsTemplate.VAT_CONTROL_ACCOUNT_CODE }
+            vatControlAccount.name shouldBe "VAT Control Account"
+            vatControlAccount.type shouldBe AccountType.LIABILITY
+            vatControlAccount.classification shouldBe AccountClassification.CURRENT
+        }
+    }
+
+    @Test
+    fun `given INDIVIDUAL, when a template is requested, then it has no VAT Control Account`() {
+        val accounts = ChartOfAccountsTemplate.accountsFor(ClientType.INDIVIDUAL, CompanyId.generate())
+
+        accounts.none { it.code == ChartOfAccountsTemplate.VAT_CONTROL_ACCOUNT_CODE } shouldBe true
+    }
 }

@@ -3,6 +3,7 @@ package com.theprodeogroup.fish.application
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.domain.ledger.AccountType
+import com.theprodeogroup.fish.domain.ledger.ChartOfAccountsTemplate
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
@@ -17,12 +18,14 @@ sealed class SalesPostingContextResult {
         val periodId: PeriodId,
         val arControlAccountId: AccountId,
         val revenueAccountId: AccountId,
+        val vatControlAccountId: AccountId,
         val currency: Currency
     ) : SalesPostingContextResult()
     data object CompanyNotFound : SalesPostingContextResult()
     data object NoOpenPeriod : SalesPostingContextResult()
     data object ArControlAccountNotConfigured : SalesPostingContextResult()
     data object RevenueAccountNotConfigured : SalesPostingContextResult()
+    data object VatControlAccountNotConfigured : SalesPostingContextResult()
 }
 
 /**
@@ -57,7 +60,9 @@ class ComputeSalesPostingContextUseCase(
             ?: return SalesPostingContextResult.ArControlAccountNotConfigured
         val revenueAccount = accounts.filter { it.type == AccountType.REVENUE }.minByOrNull { it.code }
             ?: return SalesPostingContextResult.RevenueAccountNotConfigured
+        val vatAccount = accounts.firstOrNull { it.type == AccountType.LIABILITY && it.code == ChartOfAccountsTemplate.VAT_CONTROL_ACCOUNT_CODE }
+            ?: return SalesPostingContextResult.VatControlAccountNotConfigured
 
-        return SalesPostingContextResult.Success(period.id, arAccount.id, revenueAccount.id, company.baseCurrency)
+        return SalesPostingContextResult.Success(period.id, arAccount.id, revenueAccount.id, vatAccount.id, company.baseCurrency)
     }
 }

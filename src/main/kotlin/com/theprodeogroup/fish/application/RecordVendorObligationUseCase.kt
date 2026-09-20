@@ -14,6 +14,9 @@ import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.purchasing.CreditorId
+import com.theprodeogroup.fish.domain.tax.VatCategory
+import com.theprodeogroup.fish.domain.tax.VatRateSchedule
+import java.math.BigDecimal
 import java.time.LocalDate
 
 /**
@@ -31,55 +34,55 @@ sealed class RecordVendorObligationResult {
     data object PeriodNotOpen : RecordVendorObligationResult()
     data class ExpenseOrAssetAccountNotFound(val accountId: AccountId) : RecordVendorObligationResult()
     data class ApControlAccountNotFound(val accountId: AccountId) : RecordVendorObligationResult()
+    data class VatControlAccountNotFound(val accountId: AccountId) : RecordVendorObligationResult()
 }
 
 /**
  * The *Record vendor obligation* thin posting interface
  * (docs/Purchase_Order_Processing_DDD_Design.md Section 0/4) - the
- * Purchasing mirror of [RecordSaleUseCase]. Dr caller-specified
- * Expense/Asset account, Cr AP Control account, tagged
- * `DimensionType.VENDOR` with a caller-supplied [CreditorId]. Called by
- * `fish-purchase-order-processing` (POP) once its own `PurchaseOrder`
- * records a successful three-way match (UC-PO5) - **not** at PO-send,
- * a deliberate, flagged departure from this repo's current
- * `PurchaseOrder.send()`/`PostPurchaseOrderUseCase`, which still
- * recognize AP immediately at send. `domain.purchasing.Creditor`/
- * `PurchaseOrder` still exist here unchanged (design doc Section 6 -
- * nothing in `fish-fish-gl-engine` is deleted by this), this use case
- * is additive, coexisting with the old `PostPurchaseOrderUseCase`.
+ * Purchasing mirror of [RecordSaleUseCase], input VAT instead of output
+ * VAT. Dr caller-specified Expense/Asset (net), Dr VAT Control per
+ * category present, Cr AP Control (gross), tagged `DimensionType.VENDOR`.
  *
- * **Single Expense/Asset account, not a list** - POP's own
- * `PurchaseOrderLine` KDoc is explicit that "account routing happens at
- * the GL Engine's thin *Record vendor obligation* call... and only
- * once, at three-way match, not per line at PO creation," so this
- * mirrors [RecordSaleUseCase]'s single-account shape rather than
- * replaying every `PurchaseOrderLine`'s own account as a separate debit
- * line. If POP later needs split account routing (e.g. a PO with GOODS
- * and SERVICE lines hitting different accounts), that's a multi-line
- * extension to design then, not guessed here.
+ * **Same atomicity contract as [RecordSaleUseCase]** (2026-09-19, "the
+ * required atomicity is high") - POP sends each line's net amount +
+ * [VatCategory] + the transaction date; this use case resolves the rate
+ * `asOf` that date via [vatRateSchedule] and computes the VAT amount
+ * itself, in the same call that posts the entry. See [RecordSaleUseCase]'s
+ * own KDoc for the full reasoning, not repeated here.
  *
- * [CreditorId] reused from `domain.purchasing` as a plain, opaque tag
- * value - the same non-authoritative-identifier treatment [CustomerId]
- * gets on [RecordSaleUseCase] even though `Creditor` itself is expected
- * to eventually live entirely in POP (design doc Section 0).
+ * **Single Expense/Asset account, not a list** - unchanged from before
+ * this VAT reshape (POP's own `PurchaseOrderLine` KDoc: account routing
+ * happens once, at three-way match, not per line at PO creation). VAT
+ * categorization is still per-line even though the expense/asset routing
+ * isn't - the two are independent granularities.
  */
 class RecordVendorObligationUseCase(
     private val periodRepository: PeriodRepository,
     private val accountRepository: AccountRepository,
-    private val journalEntryRepository: JournalEntryRepository
+    private val journalEntryRepository: JournalEntryRepository,
+    private val vatRateSchedule: VatRateSchedule = VatRateSchedule.IRELAND
 ) {
+    /** One line of the purchase - net amount plus the VAT category it falls under. */
+    data class PurchaseLine(val netAmount: Money, val vatCategory: VatCategory) {
+        init {
+            require(netAmount.amount.signum() > 0) { "PurchaseLine netAmount must be positive" }
+        }
+    }
+
     data class Request(
         val periodId: PeriodId,
         val date: LocalDate,
         val expenseOrAssetAccountId: AccountId,
         val apControlAccountId: AccountId,
-        val amount: Money,
+        val vatControlAccountId: AccountId,
+        val lines: List<PurchaseLine>,
         val vendorId: CreditorId,
         val description: String? = null
     )
 
     fun execute(request: Request): RecordVendorObligationResult {
-        if (request.amount.amount.signum() <= 0) {
+        if (request.lines.isEmpty()) {
             return RecordVendorObligationResult.InvalidAmount
         }
 
@@ -93,14 +96,36 @@ class RecordVendorObligationUseCase(
             ?: return RecordVendorObligationResult.ExpenseOrAssetAccountNotFound(request.expenseOrAssetAccountId)
         val apControlAccount = accountRepository.findById(request.apControlAccountId)
             ?: return RecordVendorObligationResult.ApControlAccountNotFound(request.apControlAccountId)
+        val vatAccount = accountRepository.findById(request.vatControlAccountId)
+            ?: return RecordVendorObligationResult.VatControlAccountNotFound(request.vatControlAccountId)
+
+        val currency = request.lines.first().netAmount.currency
+        val zero = Money(BigDecimal.ZERO, currency)
+        val netTotal = request.lines.fold(zero) { sum, line -> sum + line.netAmount }
+
+        val vatByCategory = request.lines
+            .groupBy { it.vatCategory }
+            .mapValues { (category, lines) ->
+                lines.fold(zero) { sum, line -> sum + vatRateSchedule.vatAmountFor(category, line.netAmount, request.date) }
+            }
+            .filterValues { it.amount.signum() > 0 }
+
+        val vatTotal = vatByCategory.values.fold(zero) { sum, amount -> sum + amount }
+        val grossTotal = netTotal + vatTotal
+
+        val vatLines = vatByCategory.map { (category, amount) ->
+            JournalLine(vatAccount.id, amount, TransactionSide.DEBIT, mapOf(DimensionType.VAT_CATEGORY to category.name))
+        }
 
         val lines = listOf(
-            JournalLine(expenseOrAssetAccount.id, request.amount, TransactionSide.DEBIT),
+            JournalLine(expenseOrAssetAccount.id, netTotal, TransactionSide.DEBIT)
+        ) + vatLines + listOf(
             JournalLine(
-                apControlAccount.id, request.amount, TransactionSide.CREDIT,
+                apControlAccount.id, grossTotal, TransactionSide.CREDIT,
                 mapOf(DimensionType.VENDOR to request.vendorId.value.toString())
             )
         )
+
         val entry = JournalEntry.create(
             request.periodId, request.date, lines, JournalSource.INTEGRATION, request.description
         )
@@ -110,7 +135,7 @@ class RecordVendorObligationUseCase(
                 posting.errors.joinToString()
         }
 
-        val touchedAccounts: List<Account> = listOf(expenseOrAssetAccount, apControlAccount)
+        val touchedAccounts: List<Account> = listOfNotNull(expenseOrAssetAccount, apControlAccount, vatAccount.takeIf { vatLines.isNotEmpty() })
         for (account in touchedAccounts) {
             account.recordActivity()
             accountRepository.save(account)

@@ -44,6 +44,7 @@ fun Route.purchasePostingContextRoutes(
                     apControlAccountId = result.apControlAccountId.value.toString(),
                     expenseOrAssetAccountId = result.expenseOrAssetAccountId.value.toString(),
                     settlementAccountId = result.settlementAccountId.value.toString(),
+                    vatControlAccountId = result.vatControlAccountId.value.toString(),
                     currency = result.currency.currencyCode,
                     facilityLiabilityAccountId = result.facilityLiabilityAccountId?.value?.toString()
                 )
@@ -58,6 +59,8 @@ fun Route.purchasePostingContextRoutes(
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("expense_account_not_configured", "This Company's Chart of Accounts has no Expense account"))
             PurchasePostingContextResult.CashAccountNotConfigured ->
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("cash_account_not_configured", "This Company's Chart of Accounts has no Cash account (code 1000)"))
+            PurchasePostingContextResult.VatControlAccountNotConfigured ->
+                call.respond(HttpStatusCode.Conflict, ErrorResponseDto("vat_control_account_not_configured", "This Company's Chart of Accounts has no VAT Control Account (code ${com.theprodeogroup.fish.domain.ledger.ChartOfAccountsTemplate.VAT_CONTROL_ACCOUNT_CODE})"))
         }
     }
 }

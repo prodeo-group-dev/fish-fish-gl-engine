@@ -5,17 +5,22 @@ package com.theprodeogroup.fish.domain.tax
  * 2.4/3.4; spec Section 7.12 names three examples: corporate income tax,
  * VAT/GST, payroll/PAYE).
  *
- * **Only [CORPORATE_INCOME_TAX] is actually computable so far** -
- * confirmed scope before building `ComputeTaxUseCase`/`TaxComputation`
- * (2026-08-20, docs/DDD_Design.md Section 10.10). The other two aren't
- * named here yet, deliberately, to avoid implying a working computation
- * that doesn't exist:
- * - **VAT/GST** needs a genuinely different, two-sided computation
- *   (output tax on sales minus input tax on purchases), which needs a
- *   way to tag which specific *transactions* are VAT-eligible - a real
- *   new modeling concern this codebase doesn't have yet (`applicable
- *   accounts/periods` per spec 7.12 isn't the same granularity as
- *   `applicable transactions`).
+ * **[CORPORATE_INCOME_TAX] and [VALUE_ADDED_TAX] are both computable now.**
+ * CIT confirmed scope before building `ComputeTaxUseCase`/`TaxComputation`
+ * (2026-08-20, docs/DDD_Design.md Section 10.10). VAT was added
+ * 2026-09-19 (docs/IE/IE_VAT_MVP_Design.md, the RoI MVP threshold) once
+ * the two gaps this enum's own prior KDoc flagged were actually closed:
+ * a line-level rate lookup ([VatCategory]/[VatRateSchedule], a genuinely
+ * different shape from [RateStructure]'s taxpayer-level CIT computation),
+ * and per-transaction-line VAT tagging (`SalesOrderLine`/`PurchaseOrderLine`
+ * gaining a `vatCategory` field, in `fish-sales-order-processing`/
+ * `fish-purchase-order-processing`, not this repo). **[VALUE_ADDED_TAX] is
+ * NOT computed via `TaxComputation.of()`** - that path is `ProfitAndLoss`-based
+ * (a Period's net profit), the wrong shape for VAT (due on gross
+ * transaction value, over an arbitrary filing-period date range, not tied
+ * to a GL `Period`). See `VatReturn`/`ComputeVatReturnUseCase` for VAT's
+ * own computation path.
+ *
  * - **PAYROLL_PAYE** can't be computed at all with what this system
  *   currently tracks - `PayRun` (`domain.payroll`) is deliberately
  *   company-level total wages/salaries only, with no `Employee`
@@ -27,5 +32,6 @@ package com.theprodeogroup.fish.domain.tax
  * computation shape needs - not preemptively.
  */
 enum class TaxType {
-    CORPORATE_INCOME_TAX
+    CORPORATE_INCOME_TAX,
+    VALUE_ADDED_TAX
 }

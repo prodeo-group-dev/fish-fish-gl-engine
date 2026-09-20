@@ -98,6 +98,7 @@ data class PurchasePostingContextResponseDto(
     val apControlAccountId: String,
     val expenseOrAssetAccountId: String,
     val settlementAccountId: String,
+    val vatControlAccountId: String,
     val currency: String,
     val facilityLiabilityAccountId: String? = null
 )
@@ -123,6 +124,19 @@ data class PayrollPostingContextResponseDto(
  * neither use case has an owning aggregate in this repo to resolve
  * tenant scoping from.
  */
+/**
+ * One line of a sale - net amount plus its VAT category (2026-09-19,
+ * docs/IE/IE_VAT_MVP_Design.md). `vatCategory` is the raw
+ * `domain.tax.VatCategory` enum name (e.g. "STANDARD", "EXEMPT") - GL
+ * resolves the rate and computes the VAT amount itself, atomically, not
+ * SOP (see [RecordSaleUseCase]'s own KDoc for why).
+ */
+@Serializable
+data class SaleLineDto(
+    val netAmount: String,
+    val vatCategory: String
+)
+
 @Serializable
 data class RecordSaleRequestDto(
     val companyId: String,
@@ -130,7 +144,8 @@ data class RecordSaleRequestDto(
     val date: String,
     val arControlAccountId: String,
     val revenueAccountId: String,
-    val amount: String,
+    val vatControlAccountId: String,
+    val lines: List<SaleLineDto>,
     val currency: String,
     val customerId: String,
     val description: String? = null
@@ -321,6 +336,19 @@ data class CreateSalesInvoiceResponseDto(
  * directly since neither use case has an owning aggregate in this repo
  * to resolve tenant scoping from.
  */
+/**
+ * One line of a purchase - net amount plus its VAT category
+ * (2026-09-19, docs/IE/IE_VAT_MVP_Design.md), the Purchasing mirror of
+ * [SaleLineDto]. GL resolves the rate and computes the VAT amount
+ * itself, atomically, not POP - see [RecordVendorObligationUseCase]'s
+ * own KDoc.
+ */
+@Serializable
+data class PurchaseLineDto(
+    val netAmount: String,
+    val vatCategory: String
+)
+
 @Serializable
 data class RecordVendorObligationRequestDto(
     val companyId: String,
@@ -328,7 +356,8 @@ data class RecordVendorObligationRequestDto(
     val date: String,
     val expenseOrAssetAccountId: String,
     val apControlAccountId: String,
-    val amount: String,
+    val vatControlAccountId: String,
+    val lines: List<PurchaseLineDto>,
     val currency: String,
     val vendorId: String,
     val description: String? = null
@@ -522,10 +551,33 @@ data class TaxComputationDto(
 )
 
 @Serializable
+data class ComputeVatReturnRequestDto(
+    val filingPeriodStartDate: String,
+    val filingPeriodEndDate: String,
+    val vatControlAccountId: String
+)
+
+@Serializable
+data class VatReturnResponseDto(
+    val id: String,
+    val companyId: String,
+    val filingPeriodStartDate: String,
+    val filingPeriodEndDate: String,
+    val vatControlAccountId: String,
+    val outputVat: String,
+    val inputVat: String,
+    val netVatDue: String,
+    val direction: String,
+    val currency: String,
+    val computedAt: String
+)
+
+@Serializable
 data class SalesPostingContextResponseDto(
     val periodId: String,
     val arControlAccountId: String,
     val revenueAccountId: String,
+    val vatControlAccountId: String,
     val currency: String
 )
 

@@ -8,6 +8,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.purchasing.CreditorId
+import com.theprodeogroup.fish.domain.tax.VatCategory
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
@@ -56,9 +57,11 @@ fun Route.recordVendorObligationAndPaymentRoutes(
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
         val expenseOrAssetAccountUuid = call.parseUuid(request.expenseOrAssetAccountId) ?: return@post
         val apControlAccountUuid = call.parseUuid(request.apControlAccountId) ?: return@post
+        val vatControlAccountUuid = call.parseUuid(request.vatControlAccountId) ?: return@post
         val vendorUuid = call.parseUuid(request.vendorId) ?: return@post
-        val amount = call.parseMoney(request.amount, request.currency) ?: return@post
+        val currency = call.parseCurrency(request.currency) ?: return@post
         val date = call.parseLocalDate(request.date) ?: return@post
+        val lines = call.parsePurchaseLines(request.lines, currency) ?: return@post
 
         call.respondIdempotently(
             idempotencyKeyRepository, tenantId, "record-vendor-obligation",
@@ -67,7 +70,7 @@ fun Route.recordVendorObligationAndPaymentRoutes(
             val result = recordVendorObligationUseCase.execute(
                 RecordVendorObligationUseCase.Request(
                     PeriodId(periodUuid), date, AccountId(expenseOrAssetAccountUuid), AccountId(apControlAccountUuid),
-                    amount, CreditorId(vendorUuid), request.description
+                    AccountId(vatControlAccountUuid), lines, CreditorId(vendorUuid), request.description
                 )
             )
 
@@ -84,6 +87,8 @@ fun Route.recordVendorObligationAndPaymentRoutes(
                     HttpStatusCode.NotFound to errorResponseJson("expense_or_asset_account_not_found", result.accountId.value.toString())
                 is RecordVendorObligationResult.ApControlAccountNotFound ->
                     HttpStatusCode.NotFound to errorResponseJson("ap_control_account_not_found", result.accountId.value.toString())
+                is RecordVendorObligationResult.VatControlAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("vat_control_account_not_found", result.accountId.value.toString())
             }
         }
     }
@@ -155,3 +160,40 @@ private suspend fun ApplicationCall.parseLocalDate(value: String): LocalDate? =
         respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "date must be ISO-8601 (YYYY-MM-DD)"))
         null
     }
+
+/** Parses an ISO currency code, responding 400 and returning `null` on failure. */
+private suspend fun ApplicationCall.parseCurrency(value: String): Currency? =
+    try {
+        Currency.getInstance(value)
+    } catch (e: IllegalArgumentException) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "currency is not a valid ISO currency code"))
+        null
+    }
+
+/**
+ * Parses [PurchaseLineDto]s into [RecordVendorObligationUseCase.PurchaseLine]s -
+ * the Purchasing mirror of `parseSaleLines`. Responds 400 and returns
+ * `null` on a non-positive amount or an unrecognized category name.
+ */
+private suspend fun ApplicationCall.parsePurchaseLines(lines: List<PurchaseLineDto>, currency: Currency): List<RecordVendorObligationUseCase.PurchaseLine>? {
+    if (lines.isEmpty()) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "lines must not be empty"))
+        return null
+    }
+    val parsed = mutableListOf<RecordVendorObligationUseCase.PurchaseLine>()
+    for (line in lines) {
+        val netAmountValue = line.netAmount.toBigDecimalOrNull()
+        if (netAmountValue == null || netAmountValue.signum() <= 0) {
+            respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "line netAmount must be a positive decimal"))
+            return null
+        }
+        val category = try {
+            VatCategory.valueOf(line.vatCategory)
+        } catch (e: IllegalArgumentException) {
+            respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "'${line.vatCategory}' is not a valid vatCategory"))
+            return null
+        }
+        parsed.add(RecordVendorObligationUseCase.PurchaseLine(Money(netAmountValue, currency), category))
+    }
+    return parsed
+}
