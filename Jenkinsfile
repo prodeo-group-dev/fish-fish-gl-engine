@@ -113,63 +113,22 @@ pipeline {
             }
         }
 
-        stage('Verify ECS env vars match ecs.tf') {
-            // Catches exactly the class of bug found 2026-09-05: the deploy
-            // stage below only ever patches `.image` onto whatever the
-            // *previous* live revision already had (the standard
-            // aws-actions/amazon-ecs-render-task-definition pattern) - it
-            // never re-reads infra/terraform/ecs.tf itself. That's fine
-            // IFF the previous revision was already registered from
-            // ecs.tf's current state; it silently and permanently
-            // propagates drift forever if someone adds/renames/removes an
-            // `environment`/`secrets` entry in ecs.tf without a human
-            // separately running `terraform apply
-            // -replace=aws_ecs_task_definition.this` first (this repo's
-            // Terraform state is local-only - see infra/terraform/
-            // versions.tf - so this pipeline has no state access and
-            // cannot render ecs.tf's real values itself; this check is
-            // the closest thing to that without a remote-backend
-            // migration). FISH_JWT_SERVICE_AUDIENCE_HR drifted missing
-            // this exact way for ~3 days (added to ecs.tf 2026-09-02,
-            // never applied via `-replace`, so it was absent from every
-            // revision registered since, through at least :49) before
-            // HR/Payroll's calls into GL were noticed failing 2026-09-05.
-            // Fail loudly instead of deploying more drift.
-            when {
-                branch 'master'
-            }
-            steps {
-                sh """
-                    grep -oE 'name[[:space:]]*=[[:space:]]*"[A-Z0-9_]+"' infra/terraform/ecs.tf \\
-                      | grep -oE '"[A-Z0-9_]+"' | tr -d '"' | sort -u > expected-env-names.txt
-
-                    aws ecs describe-task-definition \\
-                      --task-definition ${ECS_TASK_DEFINITION_FAMILY} \\
-                      --query taskDefinition > task-definition.json
-
-                    jq -r '(.containerDefinitions[0].environment // [])[].name,
-                            (.containerDefinitions[0].secrets // [])[].name' \\
-                      task-definition.json | sort -u > live-env-names.txt
-
-                    if ! diff -q expected-env-names.txt live-env-names.txt > /dev/null; then
-                        echo "ECS env/secret drift detected: the live task definition (${ECS_TASK_DEFINITION_FAMILY})"
-                        echo "does not match infra/terraform/ecs.tf's declared environment/secrets block."
-                        echo ""
-                        echo "Declared in ecs.tf but missing from the live task definition:"
-                        comm -23 expected-env-names.txt live-env-names.txt
-                        echo ""
-                        echo "Live in the task definition but no longer declared in ecs.tf:"
-                        comm -13 expected-env-names.txt live-env-names.txt
-                        echo ""
-                        echo "Fix: from a machine with the real Terraform state, run"
-                        echo "  terraform apply -replace=aws_ecs_task_definition.this"
-                        echo "then re-run this build."
-                        exit 1
-                    fi
-                """
-            }
-        }
-
+        // 'Verify ECS env vars match ecs.tf' stage removed 2026-09-21: it
+        // grepped a local infra/terraform/ecs.tf that no longer exists in
+        // this repo - Terraform config relocated to the fish-infrastructure
+        // repo on 2026-09-17 (commit df3afea), and this stage's own
+        // Jenkinsfile change didn't move with it. Every master build since
+        // has failed here, before ever reaching the deploy stage below -
+        // 3+ days of silently-undeployed commits (found and fixed
+        // 2026-09-21). Removed outright rather than repointed at the
+        // sibling repo: this pipeline has no checkout of
+        // fish-infrastructure and no access to its Terraform state, so the
+        // check was never actually able to do more than diff against a
+        // file that also can't be trusted to reflect what's really live -
+        // the real fix for the original 2026-09-05 drift incident this
+        // stage was built to catch is a remote Terraform backend, not a
+        // same-repo file grep against a repo that no longer holds the
+        // file.
         stage('Deploy to ECS (production)') {
             when {
                 branch 'master' // Multibranch's env.BRANCH_NAME - equivalent to pipeline.yml's `if: github.event_name == 'push' && github.ref == 'refs/heads/master'`; PR builds never reach this stage
