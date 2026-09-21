@@ -73,6 +73,7 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation as ClientContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.serialization.kotlinx.json.json as clientJson
+import kotlinx.serialization.json.Json
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.application.log
@@ -183,7 +184,15 @@ fun Application.productionModule() {
     // human caller without this configured.
     val eaApiBaseUrl = System.getenv("EA_API_BASE_URL")
         ?: error("EA_API_BASE_URL environment variable is required - no default for a security-relevant value")
-    val eaHttpClient = HttpClient(CIO) { install(ClientContentNegotiation) { clientJson() } }
+    // ignoreUnknownKeys = true (2026-09-21, incident) - EA's own GET /me
+    // response shape has already drifted out from under EaMyProfileResponseDto's
+    // strict mirror twice now (first kycStatus, then userId), each time
+    // hard-crashing every GL route that calls out to EA for a membership
+    // check (AddCompanyToTenantUseCase among them) with an unhandled
+    // JsonConvertException rather than a clean Failure result. A field GL
+    // never reads shouldn't be able to take down company creation - see
+    // EaMyProfileResponseDto's own KDoc for the first occurrence of this.
+    val eaHttpClient = HttpClient(CIO) { install(ClientContentNegotiation) { clientJson(Json { ignoreUnknownKeys = true }) } }
     val eaMembershipGateway = KtorEaMembershipGateway(eaHttpClient, eaApiBaseUrl)
 
     fishModule(
