@@ -86,7 +86,15 @@ class PostJournalEntryUseCase(
 
         val accounts = mutableListOf<Account>()
         for (accountId in request.lines.map { it.accountId }.distinct()) {
+            // Cross-tenant isolation gap (2026-09-21): an Account belonging to a different
+            // Company than this Period's was previously accepted as long as it existed at
+            // all, letting a caller post into another Company's ledger by supplying an
+            // Account id they don't own. `.takeIf { it.companyId == period.companyId }`
+            // mirrors RecordOpeningBalanceUseCase's own established fix for the identical
+            // gap - a cross-Company Account is treated as AccountNotFound, not a distinct
+            // "forbidden" case, so this never confirms another Company's Account exists.
             val account = accountRepository.findById(accountId)
+                ?.takeIf { it.companyId == period.companyId }
                 ?: return PostJournalEntryResult.AccountNotFound(accountId)
             accounts.add(account)
         }
