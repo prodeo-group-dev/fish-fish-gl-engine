@@ -116,4 +116,24 @@ class DisposeFixedAssetUseCaseTest {
 
         result.shouldBeInstanceOf<DisposeFixedAssetResult.AccumulatedImpairmentAccountRequired>()
     }
+
+    @Test
+    fun `given a Cash Account belonging to another Company, when executed, then it returns CashAccountNotFound`() {
+        val period = openPeriod()
+        val asset = asset()
+        val otherCompanysCash = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1000", "Test Account")
+        accountRepository.save(otherCompanysCash)
+        val fixedAssetAccount = account("1200", AccountType.ASSET)
+        val accumulatedDepreciationAccount = account("1210", AccountType.ASSET)
+        val saleOfFixedAssetAccount = account("4900", AccountType.REVENUE)
+
+        val result = useCase.execute(
+            DisposeFixedAssetUseCase.Request(
+                asset.id, Money(BigDecimal("6000.00"), GBP), otherCompanysCash.id, fixedAssetAccount.id,
+                accumulatedDepreciationAccount.id, saleOfFixedAssetAccount.id, period.id, TODAY
+            )
+        )
+
+        result.shouldBeInstanceOf<DisposeFixedAssetResult.CashAccountNotFound>()
+    }
 }

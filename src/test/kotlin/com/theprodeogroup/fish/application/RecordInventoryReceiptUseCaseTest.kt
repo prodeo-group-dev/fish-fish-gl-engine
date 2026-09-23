@@ -148,4 +148,16 @@ class RecordInventoryReceiptUseCaseTest {
 
         result.shouldBeInstanceOf<RecordInventoryReceiptResult.ContraAccountNotFound>()
     }
+
+    @Test
+    fun `given a contra Account belonging to another Company, when executed, then it returns ContraAccountNotFound`() {
+        val period = openPeriod()
+        val inventoryAsset = account("1300", AccountType.ASSET)
+        val otherCompanysContra = Account.create(CompanyId.generate(), AccountType.LIABILITY, AccountClassification.CURRENT, "2100", "Test Account")
+        accountRepository.save(otherCompanysContra)
+
+        val result = useCase.execute(request(period.id, inventoryAsset.id, otherCompanysContra.id))
+
+        result.shouldBeInstanceOf<RecordInventoryReceiptResult.ContraAccountNotFound>()
+    }
 }

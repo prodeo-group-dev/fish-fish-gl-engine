@@ -250,4 +250,19 @@ class RecordExpectedCreditLossUseCaseTest {
 
         result.shouldBeInstanceOf<RecordExpectedCreditLossResult.AllowanceAccountNotFound>()
     }
+
+    @Test
+    fun `given an allowance Account belonging to another Company, when executed, then it returns AllowanceAccountNotFound`() {
+        val period = openPeriod()
+        val expense = account("7500", AccountType.EXPENSE)
+        val otherCompanysAllowance = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1250", "Test Account")
+        accountRepository.save(otherCompanysAllowance)
+        val agingSnapshot = aging(saleEntry(Money(BigDecimal("1000.00"), GBP), daysOverdue = 10))
+
+        val result = useCase.execute(
+            request(period.id, expense.id, otherCompanysAllowance.id, agingSnapshot, mapOf(AgingBucketLabel.CURRENT to BigDecimal("0.10")))
+        )
+
+        result.shouldBeInstanceOf<RecordExpectedCreditLossResult.AllowanceAccountNotFound>()
+    }
 }

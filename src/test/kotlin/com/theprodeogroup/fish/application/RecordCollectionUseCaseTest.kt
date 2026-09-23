@@ -161,4 +161,16 @@ class RecordCollectionUseCaseTest {
 
         result.shouldBeInstanceOf<RecordCollectionResult.ArControlAccountNotFound>()
     }
+
+    @Test
+    fun `given an AR control Account belonging to another Company, when executed, then it returns ArControlAccountNotFound`() {
+        val period = openPeriod()
+        val cash = account("1000", AccountType.ASSET)
+        val otherCompanysAr = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1200", "Test Account")
+        accountRepository.save(otherCompanysAr)
+
+        val result = useCase.execute(request(period.id, cash.id, otherCompanysAr.id))
+
+        result.shouldBeInstanceOf<RecordCollectionResult.ArControlAccountNotFound>()
+    }
 }

@@ -78,16 +78,25 @@ class DisposeFixedAssetUseCase(
             return DisposeFixedAssetResult.PeriodNotOpen
         }
 
+        // Cross-tenant isolation fix (2026-09-23, same gap/fix as PostJournalEntryUseCase):
+        // each Account must belong to the FixedAsset's own Company, or it's treated as
+        // AccountNotFound - never a distinct "forbidden" case, so this never confirms
+        // another Company's Account exists.
         val cashAccount = accountRepository.findById(request.cashAccountId)
+            ?.takeIf { it.companyId == fixedAsset.companyId }
             ?: return DisposeFixedAssetResult.CashAccountNotFound(request.cashAccountId)
         val fixedAssetAccount = accountRepository.findById(request.fixedAssetAccountId)
+            ?.takeIf { it.companyId == fixedAsset.companyId }
             ?: return DisposeFixedAssetResult.FixedAssetAccountNotFound(request.fixedAssetAccountId)
         val accumulatedDepreciationAccount = accountRepository.findById(request.accumulatedDepreciationAccountId)
+            ?.takeIf { it.companyId == fixedAsset.companyId }
             ?: return DisposeFixedAssetResult.AccumulatedDepreciationAccountNotFound(request.accumulatedDepreciationAccountId)
         val saleOfFixedAssetAccount = accountRepository.findById(request.saleOfFixedAssetAccountId)
+            ?.takeIf { it.companyId == fixedAsset.companyId }
             ?: return DisposeFixedAssetResult.SaleOfFixedAssetAccountNotFound(request.saleOfFixedAssetAccountId)
         val accumulatedImpairmentAccount = request.accumulatedImpairmentAccountId?.let { accountId ->
-            accountRepository.findById(accountId) ?: return DisposeFixedAssetResult.AccumulatedImpairmentAccountNotFound(accountId)
+            accountRepository.findById(accountId)?.takeIf { it.companyId == fixedAsset.companyId }
+                ?: return DisposeFixedAssetResult.AccumulatedImpairmentAccountNotFound(accountId)
         }
 
         val entry = fixedAsset.dispose(

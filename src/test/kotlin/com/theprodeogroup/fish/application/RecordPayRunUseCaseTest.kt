@@ -190,4 +190,17 @@ class RecordPayRunUseCaseTest {
 
         result.shouldBeInstanceOf<RecordPayRunResult.CashAccountNotFound>()
     }
+
+    @Test
+    fun `given a Cash Account belonging to another Company, when executed, then it returns CashAccountNotFound`() {
+        val period = openPeriod()
+        val wages = account("6000", AccountType.EXPENSE)
+        val salaries = account("6010", AccountType.EXPENSE)
+        val otherCompanysCash = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1000", "Test Account")
+        accountRepository.save(otherCompanysCash)
+
+        val result = useCase.execute(request(period.id, wages.id, salaries.id, otherCompanysCash.id))
+
+        result.shouldBeInstanceOf<RecordPayRunResult.CashAccountNotFound>()
+    }
 }

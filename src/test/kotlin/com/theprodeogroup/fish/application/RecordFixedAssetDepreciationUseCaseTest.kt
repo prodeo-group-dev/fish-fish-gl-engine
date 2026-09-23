@@ -156,4 +156,19 @@ class RecordFixedAssetDepreciationUseCaseTest {
 
         result.shouldBeInstanceOf<RecordFixedAssetDepreciationResult.AccumulatedDepreciationAccountNotFound>()
     }
+
+    @Test
+    fun `given an Accumulated Depreciation Account belonging to another Company, when executed, then it returns AccumulatedDepreciationAccountNotFound`() {
+        val period = openPeriod()
+        val asset = asset()
+        val expenseAccount = account("6100", AccountType.EXPENSE)
+        val otherCompanysAccumulatedDepreciation = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1210", "Test Account")
+        accountRepository.save(otherCompanysAccumulatedDepreciation)
+
+        val result = useCase.execute(
+            RecordFixedAssetDepreciationUseCase.Request(asset.id, expenseAccount.id, otherCompanysAccumulatedDepreciation.id, period.id, TODAY)
+        )
+
+        result.shouldBeInstanceOf<RecordFixedAssetDepreciationResult.AccumulatedDepreciationAccountNotFound>()
+    }
 }
