@@ -61,7 +61,7 @@ fun Route.taxRoutes(
             return@post
         }
         if (!call.verifyClaimedTenant(company.tenantId)) return@post
-        call.authorizeTenantForModule(company.tenantId, ManagedModule.TAX, AccessLevel.WRITE) ?: return@post
+        call.authorizeTenantForModule(company.tenantId, company.id, ManagedModule.TAX, AccessLevel.WRITE) ?: return@post
 
         val taxRule = taxRuleRepository.findByJurisdictionAndTaxType(company.jurisdiction, TaxType.CORPORATE_INCOME_TAX)
         if (taxRule == null) {
@@ -128,7 +128,7 @@ fun Route.taxRoutes(
             return@get
         }
         if (!call.verifyClaimedTenant(company.tenantId)) return@get
-        call.authorizeTenantForModule(company.tenantId, ManagedModule.TAX, AccessLevel.READ) ?: return@get
+        call.authorizeTenantForModule(company.tenantId, company.id, ManagedModule.TAX, AccessLevel.READ) ?: return@get
 
         val computations = taxComputationRepository.findAllByCompany(companyId).map { it.toDto() }
         call.respond(HttpStatusCode.OK, computations)

@@ -331,15 +331,22 @@ private fun ApplicationCall.rawBearerToken(): String? =
  *
  * **Human callers always resolve through EA, fail-closed.** Looks up the
  * calling token's membership/access via EA, then applies the
- * [minAccessLevel]/[module] floor. **The EA-unreachable case responds
- * 503, not 401/403** - a caller shouldn't have to guess whether "the
- * request failed" means "you lack access" or "the dependency this now
- * relies on is down" (`docs/Tenancy_Administration_Extraction_DDD_Design.md`
- * §3's open latency/availability question, resolved here as fail-closed
- * rather than silently falling back to anything).
+ * [minAccessLevel]/[module] floor **at [companyId] specifically**
+ * (2026-09-23, `Per_Company_RBAC_Design.md` - EA's own per-Company RBAC
+ * rewrite means [CallerMembership.accessLevel]/`.grantedModules` no
+ * longer exist as flat Tenant-wide values at all; every caller of this
+ * function already has a `companyId` in scope, since every one of them
+ * first calls [resolveTenantForCompany] to get here). **The EA-unreachable
+ * case responds 503, not 401/403** - a caller shouldn't have to guess
+ * whether "the request failed" means "you lack access" or "the
+ * dependency this now relies on is down"
+ * (`docs/Tenancy_Administration_Extraction_DDD_Design.md` §3's open
+ * latency/availability question, resolved here as fail-closed rather
+ * than silently falling back to anything).
  */
 private suspend fun ApplicationCall.authorizeTenant(
     tenantId: TenantId,
+    companyId: CompanyId,
     minAccessLevel: AccessLevel,
     module: ManagedModule? = null
 ): AuthorizedCaller? {
@@ -373,12 +380,12 @@ private suspend fun ApplicationCall.authorizeTenant(
                 respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "No active Membership in the requested Tenant"))
                 return null
             }
-            if (!membership.accessLevel.atLeast(minAccessLevel)) {
-                respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership's access level cannot perform this action"))
+            if (!membership.accessLevelAt(companyId).atLeast(minAccessLevel)) {
+                respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership's access level at the requested Company cannot perform this action"))
                 return null
             }
-            if (module != null && module !in membership.grantedModules) {
-                respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership is not granted access to the $module module"))
+            if (module != null && module !in membership.grantedModulesAt(companyId)) {
+                respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership is not granted access to the $module module at the requested Company"))
                 return null
             }
             AuthorizedCaller(result.email, result.name)
@@ -387,45 +394,50 @@ private suspend fun ApplicationCall.authorizeTenant(
 }
 
 /**
- * Requires [AccessLevel.WRITE] or above in [tenantId] (2026-08-29,
+ * Requires [AccessLevel.WRITE] or above at [companyId] (2026-08-29,
  * replacing the old `Role.READ_ONLY` check - see [AccessLevel]'s own
- * KDoc for why enforcement moved off `Role` entirely). Responds and
+ * KDoc for why enforcement moved off `Role` entirely; rescoped from
+ * Tenant-wide to per-Company 2026-09-23, closing the gap
+ * `Per_Company_RBAC_Design.md` §2.3/§2.7 flagged: this codebase's own
+ * ~26 call sites authorized "WRITE somewhere in this Tenant" against a
+ * resource that actually belongs to one specific Company). Responds and
  * returns `null` on failure (401/403/503 - see [authorizeTenant]),
  * matching the "respond inline, caller checks for null" idiom every
  * route in this package uses to keep route bodies linear rather than
  * nested.
  */
-suspend fun ApplicationCall.authorizeTenantForWrite(tenantId: TenantId): AuthorizedCaller? =
-    authorizeTenant(tenantId, AccessLevel.WRITE)
+suspend fun ApplicationCall.authorizeTenantForWrite(tenantId: TenantId, companyId: CompanyId): AuthorizedCaller? =
+    authorizeTenant(tenantId, companyId, AccessLevel.WRITE)
 
 /**
  * [authorizeTenantForWrite]'s counterpart for a route that grants real
- * access to others - inviting a staff member ([InviteStaffMemberUseCase])
- * is a materially different kind of action than posting a financial
- * entry, and [AccessLevel.WRITE] (an ordinary Accountant's own level)
- * was never meant to imply "and can also decide who else gets in."
- * Only [AccessLevel.ADMIN] clears this floor - [Role.OWNER_ADMIN] gets
- * it by default (`Membership.defaultAccessLevelFor`), matching the
- * user's own explicit direction (2026-08-31) that only an admin-level
- * Membership may invite staff.
+ * access to others. **Currently unused within GL itself** - staff
+ * invitation (`InviteStaffMemberUseCase`) lives in EA, not GL, as of the
+ * Tenancy Administration extraction, so nothing in this codebase calls
+ * this today. Kept (not deleted) for interface symmetry with EA's own
+ * `authorizeTenantOwnerAdmin`-shaped gates and in case a future
+ * GL-native admin action needs the same floor. Only [AccessLevel.ADMIN]
+ * clears this floor, at [companyId] specifically (rescoped alongside
+ * every other `authorizeTenantFor*` function, 2026-09-23).
  */
-suspend fun ApplicationCall.authorizeTenantForAdmin(tenantId: TenantId): AuthorizedCaller? =
-    authorizeTenant(tenantId, AccessLevel.ADMIN)
+suspend fun ApplicationCall.authorizeTenantForAdmin(tenantId: TenantId, companyId: CompanyId): AuthorizedCaller? =
+    authorizeTenant(tenantId, companyId, AccessLevel.ADMIN)
 
 /**
  * [authorizeTenantForWrite]'s counterpart for a route scoped to one
  * [ManagedModule] specifically (2026-08-31, Tax's own route - the
- * first route in this codebase to actually enforce
- * [com.theprodeogroup.fish.domain.tenancy.Membership.grantedModules],
- * not just [AccessLevel]). Existing GL routes (journal entries,
- * reports, etc.) predate this and were **not** retrofitted to check
- * module grants - they're all implicitly "the GL module," and
+ * first route in this codebase to actually enforce a Membership's
+ * granted modules, not just [AccessLevel]). Existing GL routes (journal
+ * entries, reports, etc.) predate this and were **not** retrofitted to
+ * check module grants - they're all implicitly "the GL module," and
  * `grantedModules` has so far only gated WEB's own tab visibility for
  * them. This is a real, known gap, not an oversight: closing it for
- * every existing route is a separate piece of work.
+ * every existing route is a separate piece of work. Rescoped to
+ * [companyId] alongside [minAccessLevel] (2026-09-23) - both the
+ * AccessLevel and the module grant are per-Company now.
  */
-suspend fun ApplicationCall.authorizeTenantForModule(tenantId: TenantId, module: ManagedModule, minAccessLevel: AccessLevel): AuthorizedCaller? =
-    authorizeTenant(tenantId, minAccessLevel, module)
+suspend fun ApplicationCall.authorizeTenantForModule(tenantId: TenantId, companyId: CompanyId, module: ManagedModule, minAccessLevel: AccessLevel): AuthorizedCaller? =
+    authorizeTenant(tenantId, companyId, minAccessLevel, module)
 
 /**
  * [authorizeTenantForWrite]'s counterpart for a route that only reads
@@ -439,10 +451,66 @@ suspend fun ApplicationCall.authorizeTenantForModule(tenantId: TenantId, module:
  * money-velocity KPI route (2026-08-27) - this codebase's first
  * read-only, Company-scoped `GET` endpoint; every prior route was
  * either a write ([authorizeTenantForWrite]) or needed no Tenant scope
- * at all ([MeRoutes]).
+ * at all ([MeRoutes]). Rescoped to [companyId] alongside every other
+ * `authorizeTenantFor*` function, 2026-09-23 - the Owner-Admin's
+ * intrinsic Tenant-wide `READ` floor (`CallerMembership.accessLevelAt`)
+ * means this still passes for the Owner-Admin at any Company, exactly
+ * as before.
  */
-suspend fun ApplicationCall.authorizeTenantForRead(tenantId: TenantId): AuthorizedCaller? =
-    authorizeTenant(tenantId, AccessLevel.READ)
+suspend fun ApplicationCall.authorizeTenantForRead(tenantId: TenantId, companyId: CompanyId): AuthorizedCaller? =
+    authorizeTenant(tenantId, companyId, AccessLevel.READ)
+
+/**
+ * Requires the calling Membership to be the Tenant's Owner-Admin
+ * (2026-09-23) - the one genuinely Tenant-wide-only gate in this file,
+ * for `TenantRoutes.kt`'s "add a Company to this Tenant" route, which by
+ * definition has no `companyId` yet to scope a per-Company check to.
+ * Mirrors EA's own equivalent decision for its analogous
+ * `POST /tenants/{tenantId}/company-registration` route
+ * (`authorizeTenantOwnerAdmin`, `EA/.../infrastructure/web/Auth.kt`) -
+ * kept consistent rather than falling back to a bare Tenant-wide
+ * `AccessLevel` check, which no longer exists as a coherent concept once
+ * every ordinary Membership's AccessLevel is per-Company.
+ */
+suspend fun ApplicationCall.authorizeTenantOwnerAdmin(tenantId: TenantId): AuthorizedCaller? {
+    val caller = principal<AuthenticatedCaller>()
+    if (caller == null) {
+        respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
+        return null
+    }
+    if (caller.isServiceAccount) {
+        return AuthorizedCaller(caller.email, caller.email)
+    }
+    val token = rawBearerToken()
+    if (token == null) {
+        respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
+        return null
+    }
+
+    val gateway = application.attributes[EaMembershipGatewayKey]
+    return when (val result = gateway.lookupCaller(token)) {
+        is EaCallerLookupResult.Unauthorized -> {
+            respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
+            null
+        }
+        is EaCallerLookupResult.Failure -> {
+            respond(HttpStatusCode.ServiceUnavailable, ErrorResponseDto("service_unavailable", "Could not reach the authorization service"))
+            null
+        }
+        is EaCallerLookupResult.Success -> {
+            val membership = result.memberships.firstOrNull { it.tenantId == tenantId }
+            if (membership == null) {
+                respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "No active Membership in the requested Tenant"))
+                return null
+            }
+            if (!membership.isOwnerAdmin) {
+                respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "Only the Tenant's Owner-Admin can perform this action"))
+                return null
+            }
+            AuthorizedCaller(result.email, result.name)
+        }
+    }
+}
 
 /**
  * Resolves which [TenantId] owns [companyId] - `Membership` is

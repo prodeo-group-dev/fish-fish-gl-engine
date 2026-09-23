@@ -57,7 +57,7 @@ fun Route.recordVendorObligationAndPaymentRoutes(
             return@post
         }
         if (!call.verifyClaimedTenant(company.tenantId)) return@post
-        call.authorizeTenantForWrite(company.tenantId) ?: return@post
+        call.authorizeTenantForWrite(company.tenantId, company.id) ?: return@post
 
         val vatRateSchedule = VatRateSchedule.forJurisdiction(company.jurisdiction)
         if (vatRateSchedule == null) {
@@ -112,9 +112,10 @@ fun Route.recordVendorObligationAndPaymentRoutes(
     post("/purchasing/record-payment") {
         val request = call.receive<RecordVendorPaymentRequestDto>()
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
-        val tenantId = call.resolveTenantForCompany(CompanyId(companyUuid), companyRepository) ?: return@post
+        val companyId = CompanyId(companyUuid)
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        call.authorizeTenantForWrite(tenantId, companyId) ?: return@post
 
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
         val apControlAccountUuid = call.parseUuid(request.apControlAccountId) ?: return@post

@@ -34,7 +34,7 @@ fun Route.customerBalancesRoutes(
 
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForRead(tenantId) ?: return@post
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@post
 
         val request = call.receive<ComputeCustomerBalancesRequestDto>()
         val customerIds = mutableListOf<CustomerId>()

@@ -143,9 +143,9 @@ class VatReturnRoutesTest {
         val tenant = TenantId.generate()
         val company = Company.create(tenant, "Test Co IE", ClientType.COMPANY_LIMITED, Jurisdiction.IE, EUR)
         val adminUser = User.create(ADMIN_EMAIL, "VAT Admin").also { userRepository.save(it) }
-        val adminMembership = Membership.grant(adminUser.id, tenant, Role.OWNER_ADMIN)
+        val adminMembership = Membership.grant(adminUser.id, tenant, Role.OWNER_ADMIN, company.id)
         val restrictedUser = User.create(RESTRICTED_EMAIL, "HR-only Staff").also { userRepository.save(it) }
-        val restrictedMembership = Membership.grant(restrictedUser.id, tenant, Role.ACCOUNTANT, grantedModules = setOf(ManagedModule.HR))
+        val restrictedMembership = Membership.grant(restrictedUser.id, tenant, Role.ACCOUNTANT, company.id, grantedModules = setOf(ManagedModule.HR))
 
         val setup = run {
             companyRepository.save(company)

@@ -92,7 +92,7 @@ fun Route.journalEntryRoutes(
         val companyId = CompanyId(companyUuid)
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
         if (!call.verifyClaimedTenant(tenantId)) return@get
-        call.authorizeTenantForRead(tenantId) ?: return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
         val accounts = accountRepository.findAllByCompany(companyId)
             .filter { it.active }
@@ -118,7 +118,7 @@ fun Route.journalEntryRoutes(
         val companyId = CompanyId(companyUuid)
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        call.authorizeTenantForWrite(tenantId, companyId) ?: return@post
 
         val request = call.receive<CreateAccountRequestDto>()
         val type = try {
@@ -185,7 +185,7 @@ fun Route.journalEntryRoutes(
         val accountUuid = call.parseUuid(accountIdRaw) ?: return@post
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        call.authorizeTenantForWrite(tenantId, companyId) ?: return@post
 
         val request = call.receive<RecordOpeningBalanceRequestDto>()
         val contraAccountUuid = call.parseUuid(request.contraAccountId) ?: return@post
@@ -233,7 +233,7 @@ fun Route.journalEntryRoutes(
         val companyId = CompanyId(companyUuid)
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
         if (!call.verifyClaimedTenant(tenantId)) return@get
-        call.authorizeTenantForRead(tenantId) ?: return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
         val entries = journalEntryRepository.findAllByCompany(companyId)
             .sortedByDescending { it.date }
@@ -280,7 +280,7 @@ fun Route.journalEntryRoutes(
             call.respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "X-Tenant-Id does not own the requested Period"))
             return@post
         }
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        call.authorizeTenantForWrite(tenantId, period.companyId) ?: return@post
 
         val lines = call.parseJournalLines(request.lines) ?: return@post
         val date = try {

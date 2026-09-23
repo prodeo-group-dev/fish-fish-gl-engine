@@ -30,7 +30,7 @@ fun Route.expenseVelocityRoutes(
 
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
         if (!call.verifyClaimedTenant(tenantId)) return@get
-        call.authorizeTenantForRead(tenantId) ?: return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
         when (val result = computeExpenseVelocityUseCase.execute(companyId)) {
             is ComputeExpenseVelocityUseCase.Result.Success -> call.respond(

@@ -413,7 +413,7 @@ fun Application.fishModule(
                 createSalesInvoiceRoutes(createSalesInvoiceUseCase, listSalesInvoicesUseCase, companyRepository, customerRepository, idempotencyKeyRepository)
                 recordVendorObligationAndPaymentRoutes(recordVendorObligationUseCase, recordVendorPaymentUseCase, companyRepository, idempotencyKeyRepository)
                 recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
-                meRoutes(companyRepository)
+                meRoutes()
                 moneyVelocityRoutes(computeMoneyVelocityUseCase, companyRepository)
                 salesPostingContextRoutes(
                     ComputeSalesPostingContextUseCase(companyRepository, periodRepository, accountRepository), companyRepository

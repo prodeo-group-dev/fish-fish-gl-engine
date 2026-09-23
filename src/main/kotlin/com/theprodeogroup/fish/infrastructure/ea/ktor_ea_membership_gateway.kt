@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.infrastructure.ea
 
 import com.theprodeogroup.fish.domain.tenancy.AccessLevel
+import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.ManagedModule
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantId
@@ -55,13 +56,20 @@ class KtorEaMembershipGateway(
     private fun EaTenantMembershipDto.toCallerMembership() = CallerMembership(
         tenantId = TenantId(UUID.fromString(tenantId)),
         tenantName = tenantName,
-        role = Role.valueOf(role),
-        accessLevel = AccessLevel.valueOf(accessLevel),
+        isOwnerAdmin = isOwnerAdmin,
         tenantStatus = tenantStatus,
         kybStatus = kybStatus,
         adminPhoneNumber = adminPhoneNumber,
         adminPhoneVerificationStatus = adminPhoneVerificationStatus,
         phoneVerificationDeadline = phoneVerificationDeadline,
+        companies = companies.map { it.toCompanyAccess() }
+    )
+
+    private fun EaCompanySummaryDto.toCompanyAccess() = CompanyAccess(
+        companyId = CompanyId(UUID.fromString(id)),
+        name = name,
+        role = role?.let { Role.valueOf(it) },
+        accessLevel = accessLevel?.let { AccessLevel.valueOf(it) },
         grantedModules = grantedModules.map { ManagedModule.valueOf(it) }.toSet()
     )
 }

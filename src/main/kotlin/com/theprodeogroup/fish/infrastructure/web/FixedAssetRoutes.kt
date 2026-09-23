@@ -73,7 +73,7 @@ fun Route.fixedAssetRoutes(
         val companyId = call.parseFixedAssetCompanyId() ?: return@get
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
         if (!call.verifyClaimedTenant(tenantId)) return@get
-        call.authorizeTenantForRead(tenantId) ?: return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
         call.respond(fixedAssetRepository.findAllByCompany(companyId).map { it.toDto() })
     }
@@ -82,7 +82,7 @@ fun Route.fixedAssetRoutes(
         val companyId = call.parseFixedAssetCompanyId() ?: return@get
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
         if (!call.verifyClaimedTenant(tenantId)) return@get
-        call.authorizeTenantForRead(tenantId) ?: return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
         when (val result = computeFixedAssetRegisterUseCase.execute(companyId)) {
             is ComputeFixedAssetRegisterUseCase.Result.Success -> {
@@ -129,7 +129,7 @@ fun Route.fixedAssetRoutes(
         val companyId = CompanyId(companyUuid)
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        call.authorizeTenantForWrite(tenantId, companyId) ?: return@post
 
         val category = try {
             AssetCategory.valueOf(request.category.uppercase())
@@ -216,7 +216,7 @@ fun Route.fixedAssetRoutes(
         }
         val tenantId = call.resolveTenantForCompany(period.companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        call.authorizeTenantForWrite(tenantId, period.companyId) ?: return@post
 
         val depreciationExpenseAccountId = call.parseUuid(request.depreciationExpenseAccountId) ?: return@post
         val accumulatedDepreciationAccountId = call.parseUuid(request.accumulatedDepreciationAccountId) ?: return@post
@@ -261,7 +261,7 @@ fun Route.fixedAssetRoutes(
         }
         val tenantId = call.resolveTenantForCompany(period.companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        call.authorizeTenantForWrite(tenantId, period.companyId) ?: return@post
 
         val recoverableAmount = call.parseMoney(request.recoverableAmount, request.currency) ?: return@post
         val impairmentExpenseAccountId = call.parseUuid(request.impairmentExpenseAccountId) ?: return@post
@@ -307,7 +307,7 @@ fun Route.fixedAssetRoutes(
         }
         val tenantId = call.resolveTenantForCompany(period.companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        call.authorizeTenantForWrite(tenantId, period.companyId) ?: return@post
 
         val proceeds = call.parseMoney(request.proceeds, request.currency) ?: return@post
         val cashAccountId = call.parseUuid(request.cashAccountId) ?: return@post

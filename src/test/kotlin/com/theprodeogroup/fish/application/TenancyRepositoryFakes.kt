@@ -9,6 +9,7 @@ import com.theprodeogroup.fish.domain.tenancy.ManagedModule
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.infrastructure.ea.CallerMembership
+import com.theprodeogroup.fish.infrastructure.ea.CompanyAccess
 import com.theprodeogroup.fish.infrastructure.ea.EaCallerLookupResult
 import com.theprodeogroup.fish.infrastructure.ea.EaMembershipGateway
 import java.util.UUID
@@ -65,30 +66,59 @@ value class MembershipId(val value: UUID) {
     }
 }
 
+/**
+ * **Rewritten 2026-09-23** (`Per_Company_RBAC_Design.md`) - a fake
+ * `Membership` now represents one (Company, Role, AccessLevel,
+ * grantedModules) assignment, mirroring EA's real per-Company RBAC model
+ * (`CompanyAccess`/`CallerMembership.accessLevelAt`), rather than a
+ * single Tenant-wide grant. [isOwnerAdmin] defaults from `role ==
+ * Role.OWNER_ADMIN` - [Role.OWNER_ADMIN] stays meaningful in this fake
+ * purely as a convenient default trigger, not because production code
+ * branches on it (`Auth.kt` never does; only [CallerMembership.isOwnerAdmin]
+ * matters there). [FakeEaMembershipGateway.lookupCaller] groups a user's
+ * Memberships by [tenantId] and folds every Membership's [isOwnerAdmin]
+ * with `any { }` to build one [CallerMembership] per Tenant, so a caller
+ * granted Owner-Admin via *any* one of their Memberships in a Tenant is
+ * treated as the Tenant's Owner-Admin overall, matching how EA itself
+ * only ever has one Owner-Admin per Tenant.
+ */
 class Membership private constructor(
     val id: MembershipId,
     val userId: UserId,
     val tenantId: TenantId,
+    val companyId: CompanyId,
     val role: Role,
     val accessLevel: AccessLevel,
-    val grantedModules: Set<ManagedModule>
+    val grantedModules: Set<ManagedModule>,
+    val isOwnerAdmin: Boolean
 ) {
     companion object {
         fun grant(
             userId: UserId,
             tenantId: TenantId,
             role: Role,
+            companyId: CompanyId,
             accessLevel: AccessLevel = defaultAccessLevelFor(role),
             grantedModules: Set<ManagedModule> = ManagedModule.entries.toSet(),
+            isOwnerAdmin: Boolean = (role == Role.OWNER_ADMIN),
             id: MembershipId = MembershipId.generate()
-        ): Membership = Membership(id, userId, tenantId, role, accessLevel, grantedModules)
+        ): Membership = Membership(id, userId, tenantId, companyId, role, accessLevel, grantedModules, isOwnerAdmin)
 
-        private fun defaultAccessLevelFor(role: Role): AccessLevel = when (role) {
+        /**
+         * Public (not `private`) so route-test `Fixture` classes can use
+         * it as a constructor default-parameter expression when
+         * translating an old `Role.READ_ONLY`/`Role.APPROVER`-style
+         * fixture into an explicit `accessLevel` override against a real
+         * functional [Role] (2026-09-23 Per-Company RBAC rewrite - see
+         * this class's own KDoc).
+         */
+        fun defaultAccessLevelFor(role: Role): AccessLevel = when (role) {
             Role.OWNER_ADMIN -> AccessLevel.ADMIN
             Role.ACCOUNTANT -> AccessLevel.WRITE
-            Role.APPROVER -> AccessLevel.APPROVE
-            Role.READ_ONLY -> AccessLevel.READ
-            Role.COMPLIANCE_ETHICS_REVIEW -> AccessLevel.READ
+            Role.SALES_OFFICER -> AccessLevel.WRITE
+            Role.PURCHASING_OFFICER -> AccessLevel.WRITE
+            Role.INVENTORY_MANAGER -> AccessLevel.WRITE
+            Role.HR_OFFICER -> AccessLevel.WRITE
         }
     }
 }
@@ -111,10 +141,18 @@ class FakeMembershipRepository {
  * route test but `MeRoutesTest` ever asserts on - that test calls
  * [describeTenant] to override them for the one case that does; every
  * other test only cares about `role`/`accessLevel`/`grantedModules`.
+ *
+ * [companyRepository] is optional - only `MeRoutesTest` asserts on a
+ * [CompanyAccess.name], since real EA resolves each Company's actual
+ * name (`MeRoutes.kt`'s own KDoc); every other route test only cares
+ * about `role`/`accessLevel`/`grantedModules`, so this stays `null`
+ * (and [CompanyAccess.name] falls back to `""`) everywhere else rather
+ * than forcing every one of the ~23 route-test `Fixture`s to wire it up.
  */
 class FakeEaMembershipGateway(
     private val userRepository: FakeUserRepository,
-    private val membershipRepository: FakeMembershipRepository
+    private val membershipRepository: FakeMembershipRepository,
+    private val companyRepository: FakeCompanyRepository? = null
 ) : EaMembershipGateway {
     private data class TenantDescription(
         val name: String,
@@ -149,19 +187,26 @@ class FakeEaMembershipGateway(
         val activeMemberships = membershipRepository.findAllByUser(user.id)
         if (activeMemberships.isEmpty()) return EaCallerLookupResult.Unauthorized
 
-        val memberships = activeMemberships.map { membership ->
-            val description = tenantDescriptions[membership.tenantId]
+        val memberships = activeMemberships.groupBy { it.tenantId }.map { (tenantId, membershipsForTenant) ->
+            val description = tenantDescriptions[tenantId]
             CallerMembership(
-                tenantId = membership.tenantId,
+                tenantId = tenantId,
                 tenantName = description?.name ?: "",
-                role = membership.role,
-                accessLevel = membership.accessLevel,
+                isOwnerAdmin = membershipsForTenant.any { it.isOwnerAdmin },
                 tenantStatus = description?.status ?: "ACTIVE",
                 kybStatus = description?.kybStatus ?: "VERIFIED",
                 adminPhoneNumber = description?.adminPhoneNumber,
                 adminPhoneVerificationStatus = description?.adminPhoneVerificationStatus ?: "PENDING",
                 phoneVerificationDeadline = description?.phoneVerificationDeadline,
-                grantedModules = membership.grantedModules
+                companies = membershipsForTenant.map { membership ->
+                    CompanyAccess(
+                        companyId = membership.companyId,
+                        name = companyRepository?.findById(membership.companyId)?.name ?: "",
+                        role = membership.role,
+                        accessLevel = membership.accessLevel,
+                        grantedModules = membership.grantedModules
+                    )
+                }
             )
         }
 

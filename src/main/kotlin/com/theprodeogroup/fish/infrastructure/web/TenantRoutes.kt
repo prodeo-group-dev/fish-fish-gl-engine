@@ -34,7 +34,11 @@ fun Route.tenantRoutesAuthenticated(addCompanyToTenantUseCase: AddCompanyToTenan
         val tenantUuid = call.parseUuid(tenantIdRaw) ?: return@post
         val tenantId = TenantId(tenantUuid)
 
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        // No companyId exists yet - this route creates one - so the
+        // per-Company authorizeTenantForWrite doesn't apply here (2026-09-23,
+        // Per_Company_RBAC_Design.md). Matches EA's own equivalent
+        // Owner-Admin-only gate on its analogous company-registration route.
+        call.authorizeTenantOwnerAdmin(tenantId) ?: return@post
 
         val request = call.receive<AddCompanyToTenantRequestDto>()
         val clientType = try {

@@ -48,6 +48,7 @@ import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import com.theprodeogroup.fish.domain.tenancy.Company
+import com.theprodeogroup.fish.domain.tenancy.ManagedModule
 import com.theprodeogroup.fish.application.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantId
@@ -118,13 +119,13 @@ class MeRoutesTest {
         val disposeFixedAssetUseCase = DisposeFixedAssetUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeFixedAssetRegisterUseCase = ComputeFixedAssetRegisterUseCase(companyRepository, fixedAssetRepository)
 
-        val eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository)
+        val eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository, companyRepository)
         val tenantId = TenantId.generate()
         val adminUser = User.create(ADMIN_EMAIL, "Founding Admin").also { userRepository.save(it) }
         val company = Company.create(tenantId, "Purse UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
         val adminSetup = run {
             companyRepository.save(company)
-            val membership = Membership.grant(adminUser.id, tenantId, Role.OWNER_ADMIN)
+            val membership = Membership.grant(adminUser.id, tenantId, Role.OWNER_ADMIN, company.id)
             membershipRepository.save(membership)
             eaMembershipGateway.describeTenant(tenantId, name = "Purse", status = "ACTIVE")
         }
@@ -193,12 +194,37 @@ class MeRoutesTest {
         val tenantDto = body.tenants.single()
         tenantDto.tenantId shouldBe fixture.tenantId.value.toString()
         tenantDto.tenantName shouldBe "Purse"
-        tenantDto.role shouldBe Role.OWNER_ADMIN.name
-        tenantDto.accessLevel shouldBe AccessLevel.ADMIN.name
+        tenantDto.isOwnerAdmin shouldBe true
         tenantDto.tenantStatus shouldBe "ACTIVE"
         tenantDto.adminPhoneVerificationStatus shouldBe "PENDING"
         tenantDto.phoneVerificationDeadline shouldBe null
-        tenantDto.companies shouldBe listOf(CompanySummaryDto(fixture.company.id.value.toString(), "Purse UK"))
+        tenantDto.companies shouldBe listOf(
+            CompanySummaryDto(
+                id = fixture.company.id.value.toString(),
+                name = "Purse UK",
+                role = Role.OWNER_ADMIN.name,
+                accessLevel = AccessLevel.ADMIN.name,
+                grantedModules = ManagedModule.entries.map { it.name }
+            )
+        )
+    }
+
+    @Test
+    fun `given a Tenant with two Companies but the caller's Membership only grants access at one, when GET me is called, then companies is scoped to that Membership's own access, not every Company under the Tenant`() = testApplication {
+        val fixture = Fixture()
+        Company.create(fixture.tenantId, "Purse NI", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
+            .also { fixture.companyRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/me") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: MyProfileResponseDto = response.body()
+        val tenantDto = body.tenants.single()
+        tenantDto.companies.map { it.id } shouldBe listOf(fixture.company.id.value.toString())
     }
 
     @Test

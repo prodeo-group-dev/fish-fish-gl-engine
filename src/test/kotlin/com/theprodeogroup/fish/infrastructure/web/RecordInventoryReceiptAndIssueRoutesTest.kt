@@ -51,6 +51,7 @@ import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountType
 import com.theprodeogroup.fish.domain.ledger.Period
+import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.application.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
@@ -89,7 +90,7 @@ private const val TEST_EMAIL = "im-caller@example.com"
  */
 class RecordInventoryReceiptAndIssueRoutesTest {
 
-    private class Fixture(role: Role = Role.ACCOUNTANT) {
+    private class Fixture(role: Role = Role.ACCOUNTANT, accessLevel: AccessLevel = Membership.defaultAccessLevelFor(role)) {
         val userRepository = FakeUserRepository()
         val membershipRepository = FakeMembershipRepository()
         val companyRepository = FakeCompanyRepository()
@@ -125,8 +126,8 @@ class RecordInventoryReceiptAndIssueRoutesTest {
 
         val tenantId = TenantId.generate()
         val user = User.create(TEST_EMAIL, "Test IM Caller").also { userRepository.save(it) }
-        val membership = Membership.grant(user.id, tenantId, role).also { membershipRepository.save(it) }
         val company = Company.create(tenantId, "Test Co", ClientType.NON_PROFIT, Jurisdiction.UK, GBP).also { companyRepository.save(it) }
+        val membership = Membership.grant(user.id, tenantId, role, company.id, accessLevel = accessLevel).also { membershipRepository.save(it) }
         val period = Period.create(company.id, PeriodType.MONTH, TODAY, TODAY.plusDays(30)).also {
             it.open()
             periodRepository.save(it)
@@ -285,7 +286,7 @@ class RecordInventoryReceiptAndIssueRoutesTest {
 
     @Test
     fun `given a caller with a READ_ONLY Membership, when record-receipt is posted, then it returns 403`() = testApplication {
-        val fixture = Fixture(Role.READ_ONLY)
+        val fixture = Fixture(accessLevel = AccessLevel.READ)
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 

@@ -34,7 +34,7 @@ fun Route.salesPostingContextRoutes(
 
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
         if (!call.verifyClaimedTenant(tenantId)) return@get
-        call.authorizeTenantForRead(tenantId) ?: return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
         when (val result = computeSalesPostingContextUseCase.execute(companyId)) {
             is SalesPostingContextResult.Success -> call.respond(

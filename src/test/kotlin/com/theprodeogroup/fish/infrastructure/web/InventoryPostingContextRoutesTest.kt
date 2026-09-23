@@ -129,7 +129,7 @@ class InventoryPostingContextRoutesTest {
         val adminUser = User.create(ADMIN_EMAIL, "Founding Admin").also { userRepository.save(it) }
         val adminSetup = run {
             companyRepository.save(company)
-            val membership = Membership.grant(adminUser.id, tenant, Role.OWNER_ADMIN)
+            val membership = Membership.grant(adminUser.id, tenant, Role.OWNER_ADMIN, company.id)
             membershipRepository.save(membership)
         }
 

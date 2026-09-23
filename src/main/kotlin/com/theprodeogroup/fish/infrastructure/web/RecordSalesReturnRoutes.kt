@@ -40,9 +40,10 @@ fun Route.recordSalesReturnRoutes(
     post("/sales/record-sales-return") {
         val request = call.receive<RecordSalesReturnRequestDto>()
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
-        val tenantId = call.resolveTenantForCompany(CompanyId(companyUuid), companyRepository) ?: return@post
+        val companyId = CompanyId(companyUuid)
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        call.authorizeTenantForWrite(tenantId, companyId) ?: return@post
 
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
         val salesReturnsAccountUuid = call.parseUuid(request.salesReturnsAccountId) ?: return@post

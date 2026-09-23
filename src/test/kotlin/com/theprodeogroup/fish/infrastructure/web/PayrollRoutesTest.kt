@@ -128,8 +128,8 @@ class PayrollRoutesTest {
 
         val tenantId = TenantId.generate()
         val user = User.create(TEST_EMAIL, "Test Payroll Caller").also { userRepository.save(it) }
-        val membership = Membership.grant(user.id, tenantId, role).also { membershipRepository.save(it) }
         val company = Company.create(tenantId, "Test Co", ClientType.NON_PROFIT, Jurisdiction.UK, GBP).also { companyRepository.save(it) }
+        val membership = Membership.grant(user.id, tenantId, role, company.id).also { membershipRepository.save(it) }
         val period = Period.create(company.id, PeriodType.MONTH, TODAY, TODAY.plusDays(30)).also {
             it.open()
             periodRepository.save(it)
