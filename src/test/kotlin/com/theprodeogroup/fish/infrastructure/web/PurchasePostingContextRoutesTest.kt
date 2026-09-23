@@ -51,6 +51,7 @@ import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountType
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.tenancy.Company
+import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.application.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantId
@@ -129,7 +130,7 @@ class PurchasePostingContextRoutesTest {
         val adminUser = User.create(ADMIN_EMAIL, "Founding Admin").also { userRepository.save(it) }
         val adminSetup = run {
             companyRepository.save(company)
-            val membership = Membership.grant(adminUser.id, tenant, Role.OWNER_ADMIN)
+            val membership = Membership.grant(adminUser.id, tenant, Role.OWNER_ADMIN, company.id)
             membershipRepository.save(membership)
         }
 
@@ -326,7 +327,7 @@ class PurchasePostingContextRoutesTest {
         // proving the human path still resolves through EA as before.
         val otherUser = User.create("outsider@example.com", "Outsider").also { fixture.userRepository.save(it) }
         val otherTenant = TenantId.generate()
-        fixture.membershipRepository.save(Membership.grant(otherUser.id, otherTenant, Role.OWNER_ADMIN))
+        fixture.membershipRepository.save(Membership.grant(otherUser.id, otherTenant, Role.OWNER_ADMIN, CompanyId.generate()))
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 

@@ -31,7 +31,7 @@ fun Route.moneyVelocityRoutes(
 
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
         if (!call.verifyClaimedTenant(tenantId)) return@get
-        call.authorizeTenantForRead(tenantId) ?: return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
         when (val result = computeMoneyVelocityUseCase.execute(companyId)) {
             is ComputeMoneyVelocityUseCase.Result.Success -> call.respond(

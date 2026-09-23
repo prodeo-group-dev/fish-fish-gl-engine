@@ -29,7 +29,7 @@ fun Route.reportsRoutes(
         val companyId = call.parseCompanyId() ?: return@get
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
         if (!call.verifyClaimedTenant(tenantId)) return@get
-        call.authorizeTenantForRead(tenantId) ?: return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
         when (val result = computeBalanceSheetUseCase.execute(companyId)) {
             is ComputeBalanceSheetUseCase.Result.Success -> {
@@ -59,7 +59,7 @@ fun Route.reportsRoutes(
         val companyId = call.parseCompanyId() ?: return@get
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
         if (!call.verifyClaimedTenant(tenantId)) return@get
-        call.authorizeTenantForRead(tenantId) ?: return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
         when (val result = computeProfitAndLossUseCase.execute(companyId)) {
             is ComputeProfitAndLossUseCase.Result.Success -> {
@@ -87,7 +87,7 @@ fun Route.reportsRoutes(
         val companyId = call.parseCompanyId() ?: return@get
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
         if (!call.verifyClaimedTenant(tenantId)) return@get
-        call.authorizeTenantForRead(tenantId) ?: return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
         when (val result = computeCashFlowUseCase.execute(companyId)) {
             is ComputeCashFlowUseCase.Result.Success -> {

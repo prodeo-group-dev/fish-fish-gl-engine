@@ -62,7 +62,7 @@ fun Route.recordSaleAndCollectionRoutes(
             return@post
         }
         if (!call.verifyClaimedTenant(company.tenantId)) return@post
-        call.authorizeTenantForWrite(company.tenantId) ?: return@post
+        call.authorizeTenantForWrite(company.tenantId, company.id) ?: return@post
 
         val vatRateSchedule = VatRateSchedule.forJurisdiction(company.jurisdiction)
         if (vatRateSchedule == null) {
@@ -116,9 +116,10 @@ fun Route.recordSaleAndCollectionRoutes(
     post("/sales/record-collection") {
         val request = call.receive<RecordCollectionRequestDto>()
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
-        val tenantId = call.resolveTenantForCompany(CompanyId(companyUuid), companyRepository) ?: return@post
+        val companyId = CompanyId(companyUuid)
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        call.authorizeTenantForWrite(tenantId, companyId) ?: return@post
 
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
         val settlementAccountUuid = call.parseUuid(request.settlementAccountId) ?: return@post

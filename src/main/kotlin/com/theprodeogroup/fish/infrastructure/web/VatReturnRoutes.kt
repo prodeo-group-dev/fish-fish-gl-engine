@@ -48,7 +48,7 @@ fun Route.vatReturnRoutes(
             return@post
         }
         if (!call.verifyClaimedTenant(company.tenantId)) return@post
-        call.authorizeTenantForModule(company.tenantId, ManagedModule.TAX, AccessLevel.WRITE) ?: return@post
+        call.authorizeTenantForModule(company.tenantId, company.id, ManagedModule.TAX, AccessLevel.WRITE) ?: return@post
 
         val request = call.receive<ComputeVatReturnRequestDto>()
         val vatControlAccountUuid = call.parseUuid(request.vatControlAccountId) ?: return@post

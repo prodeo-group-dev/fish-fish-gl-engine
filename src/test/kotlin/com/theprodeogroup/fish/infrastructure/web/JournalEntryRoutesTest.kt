@@ -55,6 +55,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountType
 import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Period
+import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.application.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
@@ -93,7 +94,7 @@ private const val TEST_EMAIL = "accountant@example.com"
  */
 class JournalEntryRoutesTest {
 
-    private class Fixture(role: Role) {
+    private class Fixture(role: Role = Role.ACCOUNTANT, accessLevel: AccessLevel = Membership.defaultAccessLevelFor(role)) {
         val userRepository = FakeUserRepository()
         val membershipRepository = FakeMembershipRepository()
         val companyRepository = FakeCompanyRepository()
@@ -129,8 +130,8 @@ class JournalEntryRoutesTest {
 
         val tenantId = TenantId.generate()
         val user = User.create(TEST_EMAIL, "Test Accountant").also { userRepository.save(it) }
-        val membership = Membership.grant(user.id, tenantId, role).also { membershipRepository.save(it) }
         val company = Company.create(tenantId, "Test Co", ClientType.NON_PROFIT, Jurisdiction.UK, GBP).also { companyRepository.save(it) }
+        val membership = Membership.grant(user.id, tenantId, role, company.id, accessLevel = accessLevel).also { membershipRepository.save(it) }
         val period = Period.create(company.id, PeriodType.MONTH, TODAY, TODAY.plusDays(30)).also {
             it.open()
             periodRepository.save(it)
@@ -243,7 +244,7 @@ class JournalEntryRoutesTest {
 
     @Test
     fun `given a caller with a READ_ONLY Membership, when posted, then it returns 403`() = testApplication {
-        val fixture = Fixture(Role.READ_ONLY)
+        val fixture = Fixture(accessLevel = AccessLevel.READ)
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
@@ -330,7 +331,7 @@ class JournalEntryRoutesTest {
 
     @Test
     fun `given a caller with a READ_ONLY role Membership, when GET accounts is called, then it returns 200`() = testApplication {
-        val fixture = Fixture(Role.READ_ONLY)
+        val fixture = Fixture(accessLevel = AccessLevel.READ)
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
@@ -389,7 +390,7 @@ class JournalEntryRoutesTest {
 
     @Test
     fun `given a caller with a READ_ONLY role Membership, when GET journal-entries is called, then it returns 200`() = testApplication {
-        val fixture = Fixture(Role.READ_ONLY)
+        val fixture = Fixture(accessLevel = AccessLevel.READ)
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 

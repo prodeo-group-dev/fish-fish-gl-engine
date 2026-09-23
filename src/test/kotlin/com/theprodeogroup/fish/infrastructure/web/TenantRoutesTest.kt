@@ -47,6 +47,7 @@ import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.tenancy.Company
+import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.application.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantId
@@ -119,14 +120,14 @@ class TenantRoutesTest {
         val existingTenantId = TenantId.generate()
         val existingCompany = Company.create(existingTenantId, "Existing Co UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP).also { companyRepository.save(it) }
         val existingUser = User.create(EXISTING_ADMIN_EMAIL, "Existing Admin").also { userRepository.save(it) }
-        val existingMembership = Membership.grant(existingUser.id, existingTenantId, Role.OWNER_ADMIN).also { membershipRepository.save(it) }
+        val existingMembership = Membership.grant(existingUser.id, existingTenantId, Role.OWNER_ADMIN, existingCompany.id).also { membershipRepository.save(it) }
 
         // A genuinely different Tenant, so the "authenticated but wrong
         // Tenant" 403 case can be tested without also tripping the
         // separate "no User/Membership at all" 401 case.
         val otherTenantId = TenantId.generate()
         val outsiderUser = User.create(OUTSIDER_EMAIL, "Outsider Admin").also { userRepository.save(it) }
-        val outsiderMembership = Membership.grant(outsiderUser.id, otherTenantId, Role.OWNER_ADMIN).also { membershipRepository.save(it) }
+        val outsiderMembership = Membership.grant(outsiderUser.id, otherTenantId, Role.OWNER_ADMIN, CompanyId.generate()).also { membershipRepository.save(it) }
 
         val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)

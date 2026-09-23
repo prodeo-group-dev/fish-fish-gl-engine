@@ -57,6 +57,7 @@ import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.tenancy.Company
+import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.application.Membership
 import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import com.theprodeogroup.fish.domain.tenancy.Role
@@ -141,7 +142,7 @@ class MoneyVelocityRoutesTest {
         val adminUser = User.create(ADMIN_EMAIL, "Founding Admin").also { userRepository.save(it) }
         val adminSetup = run {
             companyRepository.save(company)
-            val membership = Membership.grant(adminUser.id, tenant, Role.OWNER_ADMIN)
+            val membership = Membership.grant(adminUser.id, tenant, Role.OWNER_ADMIN, company.id)
             membershipRepository.save(membership)
         }
 
@@ -249,7 +250,7 @@ class MoneyVelocityRoutesTest {
         val fixture = Fixture()
         val outsiderTenant = TenantId.generate()
         val outsiderUser = User.create("outsider@example.com", "Outsider").also { fixture.userRepository.save(it) }
-        val outsiderMembership = Membership.grant(outsiderUser.id, outsiderTenant, Role.OWNER_ADMIN)
+        val outsiderMembership = Membership.grant(outsiderUser.id, outsiderTenant, Role.OWNER_ADMIN, CompanyId.generate())
         fixture.membershipRepository.save(outsiderMembership)
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
@@ -266,7 +267,7 @@ class MoneyVelocityRoutesTest {
     fun `given a Membership with AccessLevel NONE in the correct Tenant, when GET money-velocity is called, then it returns 403`() = testApplication {
         val fixture = Fixture()
         val noAccessUser = User.create("no-access@example.com", "No Access").also { fixture.userRepository.save(it) }
-        val noAccessMembership = Membership.grant(noAccessUser.id, fixture.tenant, Role.READ_ONLY, AccessLevel.NONE)
+        val noAccessMembership = Membership.grant(noAccessUser.id, fixture.tenant, Role.ACCOUNTANT, fixture.company.id, accessLevel = AccessLevel.NONE)
         fixture.membershipRepository.save(noAccessMembership)
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }

@@ -58,6 +58,7 @@ import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.tenancy.Company
+import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.application.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantId
@@ -139,7 +140,7 @@ class ExpenseVelocityRoutesTest {
         val adminUser = User.create(ADMIN_EMAIL, "Founding Admin").also { userRepository.save(it) }
         val adminSetup = run {
             companyRepository.save(company)
-            val membership = Membership.grant(adminUser.id, tenant, Role.OWNER_ADMIN)
+            val membership = Membership.grant(adminUser.id, tenant, Role.OWNER_ADMIN, company.id)
             membershipRepository.save(membership)
         }
 
@@ -249,7 +250,7 @@ class ExpenseVelocityRoutesTest {
         val fixture = Fixture()
         val outsiderTenant = TenantId.generate()
         val outsiderUser = User.create("outsider@example.com", "Outsider").also { fixture.userRepository.save(it) }
-        val outsiderMembership = Membership.grant(outsiderUser.id, outsiderTenant, Role.OWNER_ADMIN)
+        val outsiderMembership = Membership.grant(outsiderUser.id, outsiderTenant, Role.OWNER_ADMIN, CompanyId.generate())
         fixture.membershipRepository.save(outsiderMembership)
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }

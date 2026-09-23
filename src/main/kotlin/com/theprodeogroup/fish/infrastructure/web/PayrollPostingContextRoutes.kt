@@ -38,7 +38,7 @@ fun Route.payrollPostingContextRoutes(
 
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
         if (!call.verifyClaimedTenant(tenantId)) return@get
-        call.authorizeTenantForRead(tenantId) ?: return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
         when (val result = computePayrollPostingContextUseCase.execute(companyId)) {
             is PayrollPostingContextResult.Success -> call.respond(

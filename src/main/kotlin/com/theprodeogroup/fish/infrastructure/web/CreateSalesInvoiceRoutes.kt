@@ -61,7 +61,7 @@ fun Route.createSalesInvoiceRoutes(
         val companyId = CompanyId(companyUuid)
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
         if (!call.verifyClaimedTenant(tenantId)) return@get
-        call.authorizeTenantForRead(tenantId) ?: return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
         val customers = customerRepository.findAllByCompany(companyId).map {
             CustomerSummaryDto(it.id.value.toString(), it.name, it.balance.amount.toPlainString(), it.balance.currency.currencyCode)
@@ -79,7 +79,7 @@ fun Route.createSalesInvoiceRoutes(
         val companyId = CompanyId(companyUuid)
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
         if (!call.verifyClaimedTenant(tenantId)) return@get
-        call.authorizeTenantForRead(tenantId) ?: return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
         when (val result = listSalesInvoicesUseCase.execute(companyId)) {
             is ListSalesInvoicesUseCase.Result.Success -> call.respond(
@@ -102,7 +102,7 @@ fun Route.createSalesInvoiceRoutes(
         val companyId = CompanyId(companyUuid)
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        val caller = call.authorizeTenantForWrite(tenantId) ?: return@post
+        val caller = call.authorizeTenantForWrite(tenantId, companyId) ?: return@post
 
         val saleType = try {
             SaleType.valueOf(request.saleType.uppercase())

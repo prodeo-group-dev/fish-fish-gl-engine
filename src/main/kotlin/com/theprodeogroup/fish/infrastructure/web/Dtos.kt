@@ -502,25 +502,40 @@ data class AddCompanyToTenantResponseDto(
     val openingBalanceJournalEntryId: String? = null
 )
 
+/**
+ * [role]/[accessLevel]/[grantedModules] are null/empty when the caller
+ * has no explicit assignment at this Company - the only way that
+ * happens is an Owner-Admin whose Companies list includes this one
+ * purely via their intrinsic Tenant-wide `READ` floor (2026-09-23,
+ * `Per_Company_RBAC_Design.md` - see `CallerMembership.accessLevelAt`).
+ */
 @Serializable
 data class CompanySummaryDto(
     val id: String,
-    val name: String
+    val name: String,
+    val role: String? = null,
+    val accessLevel: String? = null,
+    val grantedModules: List<String> = emptyList()
 )
 
+/**
+ * **Rewritten 2026-09-23** (`Per_Company_RBAC_Design.md`) - `role`/
+ * `accessLevel`/`grantedModules` move from single Tenant-wide fields to
+ * per-Company (on each [CompanySummaryDto] in [companies]), and
+ * [isOwnerAdmin] replaces the old Tenant-wide `role == "OWNER_ADMIN"`
+ * comparison.
+ */
 @Serializable
 data class MyTenantDto(
     val tenantId: String,
     val tenantName: String,
-    val role: String,
-    val accessLevel: String,
+    val isOwnerAdmin: Boolean,
     val tenantStatus: String,
     val kybStatus: String,
     val adminPhoneNumber: String?,
     val adminPhoneVerificationStatus: String,
     val phoneVerificationDeadline: String?,
-    val companies: List<CompanySummaryDto>,
-    val grantedModules: List<String>
+    val companies: List<CompanySummaryDto>
 )
 
 @Serializable

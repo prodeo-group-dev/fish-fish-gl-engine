@@ -84,7 +84,7 @@ fun Route.payrollRoutes(
         val leaveAccrual = call.loadLeaveAccrual(leaveAccrualRepository) ?: return@post
         val tenantId = call.resolveTenantForCompany(leaveAccrual.companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        call.authorizeTenantForWrite(tenantId, leaveAccrual.companyId) ?: return@post
 
         val request = call.receive<RemeasureLeaveAccrualRequestDto>()
         val targetAmount = call.parseMoney(request.targetAmount, request.currency) ?: return@post
@@ -128,7 +128,7 @@ fun Route.payrollRoutes(
         val leaveAccrual = call.loadLeaveAccrual(leaveAccrualRepository) ?: return@post
         val tenantId = call.resolveTenantForCompany(leaveAccrual.companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        call.authorizeTenantForWrite(tenantId, leaveAccrual.companyId) ?: return@post
 
         val request = call.receive<UtilizeLeaveAccrualRequestDto>()
         val amount = call.parseMoney(request.amount, request.currency) ?: return@post
@@ -169,9 +169,10 @@ fun Route.payrollRoutes(
     post("/payroll/record-pay-run") {
         val request = call.receive<RecordPayRunRequestDto>()
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
-        val tenantId = call.resolveTenantForCompany(CompanyId(companyUuid), companyRepository) ?: return@post
+        val companyId = CompanyId(companyUuid)
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        call.authorizeTenantForWrite(tenantId, companyId) ?: return@post
 
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
         val totalWages = call.parseMoney(request.totalWages, request.currency) ?: return@post
@@ -213,9 +214,10 @@ fun Route.payrollRoutes(
     post("/leave-accruals") {
         val request = call.receive<GetOrCreateLeaveAccrualRequestDto>()
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
-        val tenantId = call.resolveTenantForCompany(CompanyId(companyUuid), companyRepository) ?: return@post
+        val companyId = CompanyId(companyUuid)
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        call.authorizeTenantForWrite(tenantId, companyId) ?: return@post
 
         val employeeUuid = call.parseUuid(request.employeeId) ?: return@post
         val currency = call.parseCurrency(request.currency) ?: return@post

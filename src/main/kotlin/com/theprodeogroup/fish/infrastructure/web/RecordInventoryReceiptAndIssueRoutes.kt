@@ -54,9 +54,10 @@ fun Route.recordInventoryReceiptAndIssueRoutes(
     post("/inventory/record-receipt") {
         val request = call.receive<RecordInventoryReceiptRequestDto>()
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
-        val tenantId = call.resolveTenantForCompany(CompanyId(companyUuid), companyRepository) ?: return@post
+        val companyId = CompanyId(companyUuid)
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        call.authorizeTenantForWrite(tenantId, companyId) ?: return@post
 
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
         val inventoryAssetAccountUuid = call.parseUuid(request.inventoryAssetAccountId) ?: return@post
@@ -96,9 +97,10 @@ fun Route.recordInventoryReceiptAndIssueRoutes(
     post("/inventory/record-issue") {
         val request = call.receive<RecordInventoryIssueRequestDto>()
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
-        val tenantId = call.resolveTenantForCompany(CompanyId(companyUuid), companyRepository) ?: return@post
+        val companyId = CompanyId(companyUuid)
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
         if (!call.verifyClaimedTenant(tenantId)) return@post
-        call.authorizeTenantForWrite(tenantId) ?: return@post
+        call.authorizeTenantForWrite(tenantId, companyId) ?: return@post
 
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
         val contraAccountUuid = call.parseUuid(request.contraAccountId) ?: return@post

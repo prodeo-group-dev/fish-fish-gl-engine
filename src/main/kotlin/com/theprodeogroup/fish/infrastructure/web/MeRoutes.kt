@@ -1,6 +1,5 @@
 package com.theprodeogroup.fish.infrastructure.web
 
-import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.infrastructure.ea.EaCallerLookupResult
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -31,18 +30,26 @@ import io.ktor.server.routing.get
  * multiple Tenants and/or Companies needs real names to pick from, not
  * raw UUIDs.
  *
- * **[MyTenantDto.accessLevel] added 2026-09-04** ("each of GL/POP/IM/
- * SOP/HR" cross-repo authorization) - `/me` is this platform's only
- * externally-reachable way for POP/SOP/IM/HR to learn a caller's
- * `AccessLevel`/`grantedModules` for a given Tenant, since Membership
- * lives only in GL's own database. A calling service forwards the
- * caller's own bearer token here, finds the entry matching its own
- * configured Tenant, and checks `accessLevel`/`grantedModules` itself -
- * the same [AccessLevel.atLeast] comparison
- * [authorizeTenantForModule] already does in-process for GL's own
- * routes, just reachable over HTTP for a caller that isn't GL.
+ * **[MyTenantDto.companies] carries `accessLevel`/`grantedModules` per
+ * Company, added 2026-09-04, rescoped 2026-09-23** - `/me` is this
+ * platform's only externally-reachable way for POP/SOP/IM/HR to learn a
+ * caller's `AccessLevel`/`grantedModules`, since Membership lives only in
+ * EA's own database (Tenancy Administration extraction) and both are now
+ * per-Company, not Tenant-wide. A calling service forwards the caller's
+ * own bearer token here, finds the entry matching its own configured
+ * Tenant and Company, and checks `accessLevel`/`grantedModules` itself -
+ * the same [AccessLevel.atLeast] comparison [authorizeTenantForModule]
+ * already does in-process for GL's own routes, just reachable over HTTP
+ * for a caller that isn't GL.
+ *
+ * **`companies` is now sourced from EA's own per-Membership scope
+ * (`membership.companies`), not `companyRepository.findAllByTenant()`
+ * (2026-09-23)** - the old version showed every Company under the Tenant
+ * to every Membership regardless of that Membership's own actual access,
+ * the same pre-existing gap independently found and fixed on EA's own
+ * `/me` during its per-Company RBAC rewrite.
  */
-fun Route.meRoutes(companyRepository: CompanyRepository) {
+fun Route.meRoutes() {
     get("/me") {
         // Not fishAuthenticated - /me is only ever reached with a human
         // caller's own token (see this file's own KDoc: a calling
@@ -70,20 +77,25 @@ fun Route.meRoutes(companyRepository: CompanyRepository) {
             }
             is EaCallerLookupResult.Success -> {
                 val tenants = result.memberships.map { membership ->
-                    val companies = companyRepository.findAllByTenant(membership.tenantId)
-                        .map { CompanySummaryDto(it.id.value.toString(), it.name) }
+                    val companies = membership.companies.map {
+                        CompanySummaryDto(
+                            id = it.companyId.value.toString(),
+                            name = it.name,
+                            role = it.role?.name,
+                            accessLevel = it.accessLevel?.name,
+                            grantedModules = it.grantedModules.map { module -> module.name }
+                        )
+                    }
                     MyTenantDto(
                         tenantId = membership.tenantId.value.toString(),
                         tenantName = membership.tenantName,
-                        role = membership.role.name,
-                        accessLevel = membership.accessLevel.name,
+                        isOwnerAdmin = membership.isOwnerAdmin,
                         tenantStatus = membership.tenantStatus,
                         kybStatus = membership.kybStatus,
                         adminPhoneNumber = membership.adminPhoneNumber,
                         adminPhoneVerificationStatus = membership.adminPhoneVerificationStatus,
                         phoneVerificationDeadline = membership.phoneVerificationDeadline,
-                        companies = companies,
-                        grantedModules = membership.grantedModules.map { it.name }
+                        companies = companies
                     )
                 }
 

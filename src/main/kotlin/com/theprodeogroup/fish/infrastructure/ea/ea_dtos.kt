@@ -3,34 +3,45 @@ package com.theprodeogroup.fish.infrastructure.ea
 import kotlinx.serialization.Serializable
 
 /**
- * Mirrors EA's own `MyTenantDto`/`MyProfileResponseDto`
+ * Mirrors EA's own `MyTenantDto`/`MyProfileResponseDto`/`CompanySummaryDto`
  * (`EA/.../infrastructure/web/Dtos.kt`) field-for-field - GL is a
  * client of EA's `GET /me`, not a shared-module consumer, so this is a
  * deliberate duplicate of the wire shape rather than a cross-repo type
  * dependency (same reasoning IM's own `gl_engine_dtos.kt` already
  * applies to GL's response shapes).
+ *
+ * **Rewritten 2026-09-23** (`Per_Company_RBAC_Design.md`) for EA's
+ * per-Company RBAC rewrite - `EaTenantMembershipDto.role`/`.accessLevel`
+ * are gone (EA no longer sends them; they were never optional here, so
+ * leaving them declared would crash every authorized GL request the
+ * moment EA stopped sending them, exactly the incident already recorded
+ * against this file once before). `role`/`accessLevel`/`grantedModules`
+ * now live per-Company on [EaCompanySummaryDto], and **GL now actually
+ * reads this field** - unlike before, when GL sourced Company names from
+ * its own local `CompanyRepository` and ignored EA's own `companies`
+ * list entirely, `role`/`accessLevel`/`grantedModules` exist nowhere
+ * else now that they're no longer Tenant-wide.
  */
-/** Mirrors EA's own `CompanySummaryDto` (`EA/.../infrastructure/web/Dtos.kt`) - present on the wire since 2026-09-05's login/company-list feature, but GL never reads this field, since it already sources Companies from its own local `CompanyRepository` (`MeRoutes.kt`). Declared purely so deserialization succeeds against EA's real response shape. */
 @Serializable
 data class EaCompanySummaryDto(
     val id: String,
-    val name: String
+    val name: String,
+    val role: String? = null,
+    val accessLevel: String? = null,
+    val grantedModules: List<String> = emptyList()
 )
 
 @Serializable
 data class EaTenantMembershipDto(
     val tenantId: String,
     val tenantName: String,
-    val role: String,
-    val accessLevel: String,
+    val isOwnerAdmin: Boolean,
     val tenantStatus: String,
     val kybStatus: String,
     val adminPhoneNumber: String?,
     val adminPhoneVerificationStatus: String,
     val phoneVerificationDeadline: String?,
-    // Present on the wire since 2026-09-05, never read here - see [EaCompanySummaryDto]'s own KDoc.
-    val companies: List<EaCompanySummaryDto>,
-    val grantedModules: List<String>
+    val companies: List<EaCompanySummaryDto>
 )
 
 /**
