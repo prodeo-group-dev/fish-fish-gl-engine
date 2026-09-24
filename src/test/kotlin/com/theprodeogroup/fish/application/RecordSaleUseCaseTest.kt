@@ -305,6 +305,19 @@ class RecordSaleUseCaseTest {
     }
 
     @Test
+    fun `given a Revenue Account belonging to another Company, when executed, then it returns RevenueAccountNotFound`() {
+        val period = openPeriod()
+        val ar = account("1100", AccountType.ASSET)
+        val otherCompanysRevenue = Account.create(CompanyId.generate(), AccountType.REVENUE, null, "4000", "Test Account")
+        accountRepository.save(otherCompanysRevenue)
+        val vat = account("2150", AccountType.LIABILITY)
+
+        val result = useCase.execute(request(period.id, ar.id, otherCompanysRevenue.id, vat.id))
+
+        result.shouldBeInstanceOf<RecordSaleResult.RevenueAccountNotFound>()
+    }
+
+    @Test
     fun `given a custom VatRateSchedule passed via the Request, when executed, then it uses that schedule instead of IRELAND`() {
         val customSchedule = VatRateSchedule(
             mapOf(VatCategory.STANDARD to listOf(com.theprodeogroup.fish.domain.tax.VatRateEntry(BigDecimal("0.50"), LocalDate.of(2000, 1, 1))))

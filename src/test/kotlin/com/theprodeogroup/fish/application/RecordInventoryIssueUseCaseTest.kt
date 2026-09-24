@@ -142,4 +142,16 @@ class RecordInventoryIssueUseCaseTest {
 
         result.shouldBeInstanceOf<RecordInventoryIssueResult.InventoryAssetAccountNotFound>()
     }
+
+    @Test
+    fun `given an Inventory Asset Account belonging to another Company, when executed, then it returns InventoryAssetAccountNotFound`() {
+        val period = openPeriod()
+        val cogs = account("5000", AccountType.EXPENSE)
+        val otherCompanysInventory = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1300", "Test Account")
+        accountRepository.save(otherCompanysInventory)
+
+        val result = useCase.execute(request(period.id, cogs.id, otherCompanysInventory.id))
+
+        result.shouldBeInstanceOf<RecordInventoryIssueResult.InventoryAssetAccountNotFound>()
+    }
 }

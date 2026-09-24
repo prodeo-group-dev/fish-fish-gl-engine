@@ -101,11 +101,18 @@ class RecordVendorObligationUseCase(
             return RecordVendorObligationResult.PeriodNotOpen
         }
 
+        // Cross-tenant isolation fix (2026-09-23, same gap/fix as PostJournalEntryUseCase):
+        // each Account must belong to this Period's own Company, or it's treated as
+        // AccountNotFound - never a distinct "forbidden" case, so this never confirms
+        // another Company's Account exists.
         val expenseOrAssetAccount = accountRepository.findById(request.expenseOrAssetAccountId)
+            ?.takeIf { it.companyId == period.companyId }
             ?: return RecordVendorObligationResult.ExpenseOrAssetAccountNotFound(request.expenseOrAssetAccountId)
         val apControlAccount = accountRepository.findById(request.apControlAccountId)
+            ?.takeIf { it.companyId == period.companyId }
             ?: return RecordVendorObligationResult.ApControlAccountNotFound(request.apControlAccountId)
         val vatAccount = accountRepository.findById(request.vatControlAccountId)
+            ?.takeIf { it.companyId == period.companyId }
             ?: return RecordVendorObligationResult.VatControlAccountNotFound(request.vatControlAccountId)
 
         val unsupportedCategory = request.lines.map { it.vatCategory }.firstOrNull { !request.vatRateSchedule.supports(it) }

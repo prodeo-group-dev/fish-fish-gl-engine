@@ -150,4 +150,16 @@ class RecordVendorPaymentUseCaseTest {
 
         result.shouldBeInstanceOf<RecordVendorPaymentResult.SettlementAccountNotFound>()
     }
+
+    @Test
+    fun `given a settlement Account belonging to another Company, when executed, then it returns SettlementAccountNotFound`() {
+        val period = openPeriod()
+        val apControl = account("2100", AccountType.LIABILITY)
+        val otherCompanysCash = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1000", "Test Account")
+        accountRepository.save(otherCompanysCash)
+
+        val result = useCase.execute(request(period.id, apControl.id, otherCompanysCash.id))
+
+        result.shouldBeInstanceOf<RecordVendorPaymentResult.SettlementAccountNotFound>()
+    }
 }

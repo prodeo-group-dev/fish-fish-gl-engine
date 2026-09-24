@@ -188,4 +188,16 @@ class RecordFXRevaluationUseCaseTest {
 
         result.shouldBeInstanceOf<RecordFXRevaluationResult.FxGainLossAccountNotFound>()
     }
+
+    @Test
+    fun `given an FX gain-loss Account belonging to another Company, when executed, then it returns FxGainLossAccountNotFound`() {
+        val period = openPeriod()
+        val receivable = account("1200", AccountType.ASSET)
+        val otherCompanysFxGainLoss = Account.create(CompanyId.generate(), AccountType.REVENUE, null, "7900", "Test Account")
+        accountRepository.save(otherCompanysFxGainLoss)
+
+        val result = useCase.execute(request(period.id, receivable.id, otherCompanysFxGainLoss.id))
+
+        result.shouldBeInstanceOf<RecordFXRevaluationResult.FxGainLossAccountNotFound>()
+    }
 }

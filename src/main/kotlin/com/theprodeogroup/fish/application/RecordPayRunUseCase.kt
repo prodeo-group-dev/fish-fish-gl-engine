@@ -87,11 +87,18 @@ class RecordPayRunUseCase(
             return RecordPayRunResult.PeriodNotOpen
         }
 
+        // Cross-tenant isolation fix (2026-09-23, same gap/fix as PostJournalEntryUseCase):
+        // each Account must belong to this Period's own Company, or it's treated as
+        // AccountNotFound - never a distinct "forbidden" case, so this never confirms
+        // another Company's Account exists.
         val wagesAccount = accountRepository.findById(request.wagesExpenseAccountId)
+            ?.takeIf { it.companyId == period.companyId }
             ?: return RecordPayRunResult.WagesExpenseAccountNotFound(request.wagesExpenseAccountId)
         val salariesAccount = accountRepository.findById(request.salariesExpenseAccountId)
+            ?.takeIf { it.companyId == period.companyId }
             ?: return RecordPayRunResult.SalariesExpenseAccountNotFound(request.salariesExpenseAccountId)
         val cashAccount = accountRepository.findById(request.cashAccountId)
+            ?.takeIf { it.companyId == period.companyId }
             ?: return RecordPayRunResult.CashAccountNotFound(request.cashAccountId)
 
         val payRun = PayRun.create(request.companyId, request.date, request.totalWages, request.totalSalaries)

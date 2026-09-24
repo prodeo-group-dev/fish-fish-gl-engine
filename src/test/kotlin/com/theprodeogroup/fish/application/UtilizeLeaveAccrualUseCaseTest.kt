@@ -186,6 +186,22 @@ class UtilizeLeaveAccrualUseCaseTest {
     }
 
     @Test
+    fun `given a cash Account belonging to another Company, when executed, then it returns CashAccountNotFound`() {
+        val period = openPeriod()
+        val expense = account("6100", AccountType.EXPENSE)
+        val liability = account("2400", AccountType.LIABILITY)
+        val accrual = accrualWithBalance(period, expense, liability, "500.00")
+        val otherCompanysCash = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1000", "Test Account")
+        accountRepository.save(otherCompanysCash)
+
+        val result = useCase.execute(
+            UtilizeLeaveAccrualUseCase.Request(accrual.id, Money(BigDecimal("200.00"), GBP), otherCompanysCash.id, liability.id, period.id, TODAY)
+        )
+
+        result.shouldBeInstanceOf<UtilizeLeaveAccrualResult.CashAccountNotFound>()
+    }
+
+    @Test
     fun `given an amount in a different currency, when executed, then it returns CurrencyMismatch`() {
         val period = openPeriod()
         val expense = account("6100", AccountType.EXPENSE)

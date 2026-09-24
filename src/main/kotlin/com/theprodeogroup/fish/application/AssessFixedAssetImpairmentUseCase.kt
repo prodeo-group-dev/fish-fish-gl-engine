@@ -65,9 +65,15 @@ class AssessFixedAssetImpairmentUseCase(
             return AssessFixedAssetImpairmentResult.PeriodNotOpen
         }
 
+        // Cross-tenant isolation fix (2026-09-23, same gap/fix as PostJournalEntryUseCase):
+        // each Account must belong to the FixedAsset's own Company, or it's treated as
+        // AccountNotFound - never a distinct "forbidden" case, so this never confirms
+        // another Company's Account exists.
         val impairmentExpenseAccount = accountRepository.findById(request.impairmentExpenseAccountId)
+            ?.takeIf { it.companyId == fixedAsset.companyId }
             ?: return AssessFixedAssetImpairmentResult.ImpairmentExpenseAccountNotFound(request.impairmentExpenseAccountId)
         val accumulatedImpairmentAccount = accountRepository.findById(request.accumulatedImpairmentAccountId)
+            ?.takeIf { it.companyId == fixedAsset.companyId }
             ?: return AssessFixedAssetImpairmentResult.AccumulatedImpairmentAccountNotFound(request.accumulatedImpairmentAccountId)
 
         val entry = fixedAsset.assessImpairment(

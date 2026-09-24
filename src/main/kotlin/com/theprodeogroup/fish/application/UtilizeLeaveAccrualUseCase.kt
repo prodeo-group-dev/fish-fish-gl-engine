@@ -94,9 +94,15 @@ class UtilizeLeaveAccrualUseCase(
             return UtilizeLeaveAccrualResult.PeriodNotOpen
         }
 
+        // Cross-tenant isolation fix (2026-09-23, same gap/fix as PostJournalEntryUseCase):
+        // each Account must belong to the LeaveAccrual's own Company, or it's treated as
+        // AccountNotFound - never a distinct "forbidden" case, so this never confirms
+        // another Company's Account exists.
         val cashAccount = accountRepository.findById(request.cashAccountId)
+            ?.takeIf { it.companyId == leaveAccrual.companyId }
             ?: return UtilizeLeaveAccrualResult.CashAccountNotFound(request.cashAccountId)
         val liabilityAccount = accountRepository.findById(request.accruedLeaveLiabilityAccountId)
+            ?.takeIf { it.companyId == leaveAccrual.companyId }
             ?: return UtilizeLeaveAccrualResult.AccruedLeaveLiabilityAccountNotFound(request.accruedLeaveLiabilityAccountId)
 
         if (request.amount.currency != leaveAccrual.balance.currency) {

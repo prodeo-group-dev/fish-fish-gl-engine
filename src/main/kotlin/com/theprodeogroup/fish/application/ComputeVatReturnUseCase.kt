@@ -46,7 +46,12 @@ class ComputeVatReturnUseCase(
     )
 
     fun execute(request: Request): ComputeVatReturnResult {
+        // Cross-tenant isolation fix (2026-09-23, same gap/fix as PostJournalEntryUseCase):
+        // the Account must belong to the requested Company, or it's treated as
+        // AccountNotFound - never a distinct "forbidden" case, so this never confirms
+        // another Company's Account exists.
         val vatAccount = accountRepository.findById(request.vatControlAccountId)
+            ?.takeIf { it.companyId == request.companyId }
             ?: return ComputeVatReturnResult.VatControlAccountNotFound(request.vatControlAccountId)
 
         val postedEntries = journalEntryRepository.findAllByCompany(request.companyId)

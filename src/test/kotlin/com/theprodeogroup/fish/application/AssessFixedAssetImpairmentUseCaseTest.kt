@@ -86,4 +86,21 @@ class AssessFixedAssetImpairmentUseCaseTest {
 
         result.shouldBeInstanceOf<AssessFixedAssetImpairmentResult.NoChangeNeeded>()
     }
+
+    @Test
+    fun `given an Impairment Expense Account belonging to another Company, when executed, then it returns ImpairmentExpenseAccountNotFound`() {
+        val period = openPeriod()
+        val asset = asset()
+        val otherCompanysImpairmentExpense = Account.create(CompanyId.generate(), AccountType.EXPENSE, null, "6200", "Test Account")
+        accountRepository.save(otherCompanysImpairmentExpense)
+        val accumulatedImpairmentAccount = account("1220", AccountType.ASSET)
+
+        val result = useCase.execute(
+            AssessFixedAssetImpairmentUseCase.Request(
+                asset.id, Money(BigDecimal("7000.00"), GBP), otherCompanysImpairmentExpense.id, accumulatedImpairmentAccount.id, period.id, TODAY
+            )
+        )
+
+        result.shouldBeInstanceOf<AssessFixedAssetImpairmentResult.ImpairmentExpenseAccountNotFound>()
+    }
 }

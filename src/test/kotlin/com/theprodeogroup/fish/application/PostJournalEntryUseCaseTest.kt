@@ -163,4 +163,27 @@ class PostJournalEntryUseCaseTest {
         journalEntryRepository.saveCalls shouldBe emptyList()
         accountRepository.saveCalls.size shouldBe saveCallsBeforeExecute
     }
+
+    @Test
+    fun `given a line referencing another Company's Account, when executed, then it returns AccountNotFound and posts nothing`() {
+        val period = openPeriod()
+        val cash = account("1000", "Cash")
+
+        val otherCompanyId = CompanyId.generate()
+        val otherCompanysRevenue = Account.create(otherCompanyId, AccountType.REVENUE, null, "4000", "Sales")
+        accountRepository.save(otherCompanysRevenue)
+
+        val lines = listOf(
+            JournalLine(cash.id, Money(BigDecimal("100.00"), GBP), TransactionSide.DEBIT),
+            JournalLine(otherCompanysRevenue.id, Money(BigDecimal("100.00"), GBP), TransactionSide.CREDIT)
+        )
+        val saveCallsBeforeExecute = accountRepository.saveCalls.size
+
+        val result = useCase.execute(PostJournalEntryUseCase.Request(period.id, TODAY, lines, JournalSource.MANUAL))
+
+        val notFound = result.shouldBeInstanceOf<PostJournalEntryResult.AccountNotFound>()
+        notFound.accountId shouldBe otherCompanysRevenue.id
+        journalEntryRepository.saveCalls shouldBe emptyList()
+        accountRepository.saveCalls.size shouldBe saveCallsBeforeExecute
+    }
 }

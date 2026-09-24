@@ -194,6 +194,21 @@ class RemeasureLeaveAccrualUseCaseTest {
     }
 
     @Test
+    fun `given a leave expense Account belonging to another Company, when executed, then it returns LeaveExpenseAccountNotFound`() {
+        val period = openPeriod()
+        val otherCompanysExpense = Account.create(CompanyId.generate(), AccountType.EXPENSE, null, "6100", "Test Account")
+        accountRepository.save(otherCompanysExpense)
+        val liability = account("2400", AccountType.LIABILITY)
+        val accrual = leaveAccrual()
+
+        val result = useCase.execute(
+            RemeasureLeaveAccrualUseCase.Request(accrual.id, Money(BigDecimal("500.00"), GBP), otherCompanysExpense.id, liability.id, period.id, TODAY)
+        )
+
+        result.shouldBeInstanceOf<RemeasureLeaveAccrualResult.LeaveExpenseAccountNotFound>()
+    }
+
+    @Test
     fun `given a target amount in a different currency, when executed, then it returns CurrencyMismatch`() {
         val period = openPeriod()
         val expense = account("6100", AccountType.EXPENSE)

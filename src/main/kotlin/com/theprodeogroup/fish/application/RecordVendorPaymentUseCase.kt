@@ -82,9 +82,15 @@ class RecordVendorPaymentUseCase(
             return RecordVendorPaymentResult.PeriodNotOpen
         }
 
+        // Cross-tenant isolation fix (2026-09-23, same gap/fix as PostJournalEntryUseCase):
+        // each Account must belong to this Period's own Company, or it's treated as
+        // AccountNotFound - never a distinct "forbidden" case, so this never confirms
+        // another Company's Account exists.
         val apControlAccount = accountRepository.findById(request.apControlAccountId)
+            ?.takeIf { it.companyId == period.companyId }
             ?: return RecordVendorPaymentResult.ApControlAccountNotFound(request.apControlAccountId)
         val settlementAccount = accountRepository.findById(request.settlementAccountId)
+            ?.takeIf { it.companyId == period.companyId }
             ?: return RecordVendorPaymentResult.SettlementAccountNotFound(request.settlementAccountId)
 
         val lines = listOf(

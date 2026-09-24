@@ -80,4 +80,14 @@ class ComputeVatReturnUseCaseTest {
 
         result.shouldBeInstanceOf<ComputeVatReturnResult.VatControlAccountNotFound>()
     }
+
+    @Test
+    fun `given a VAT Control Account belonging to another Company, when executed, then it returns VatControlAccountNotFound`() {
+        val otherCompanysVat = Account.create(CompanyId.generate(), AccountType.LIABILITY, AccountClassification.CURRENT, "2150", "VAT Control Account")
+        accountRepository.save(otherCompanysVat)
+
+        val result = useCase.execute(ComputeVatReturnUseCase.Request(companyId, JAN_FEB_2026, otherCompanysVat.id, EUR))
+
+        result.shouldBeInstanceOf<ComputeVatReturnResult.VatControlAccountNotFound>()
+    }
 }

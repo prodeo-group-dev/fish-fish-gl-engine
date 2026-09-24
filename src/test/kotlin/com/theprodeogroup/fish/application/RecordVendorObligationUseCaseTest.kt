@@ -271,6 +271,19 @@ class RecordVendorObligationUseCaseTest {
     }
 
     @Test
+    fun `given an AP control Account belonging to another Company, when executed, then it returns ApControlAccountNotFound`() {
+        val period = openPeriod()
+        val expense = account("5000", AccountType.EXPENSE)
+        val otherCompanysAp = Account.create(CompanyId.generate(), AccountType.LIABILITY, AccountClassification.CURRENT, "2000", "Test Account")
+        accountRepository.save(otherCompanysAp)
+        val vat = account("2150", AccountType.LIABILITY)
+
+        val result = useCase.execute(request(period.id, expense.id, otherCompanysAp.id, vat.id))
+
+        result.shouldBeInstanceOf<RecordVendorObligationResult.ApControlAccountNotFound>()
+    }
+
+    @Test
     fun `given a custom VatRateSchedule passed via the Request, when executed, then it uses that schedule instead of IRELAND`() {
         val customSchedule = VatRateSchedule(
             mapOf(VatCategory.STANDARD to listOf(com.theprodeogroup.fish.domain.tax.VatRateEntry(BigDecimal("0.50"), LocalDate.of(2000, 1, 1))))

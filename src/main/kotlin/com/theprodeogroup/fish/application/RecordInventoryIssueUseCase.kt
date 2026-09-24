@@ -73,9 +73,15 @@ class RecordInventoryIssueUseCase(
             return RecordInventoryIssueResult.PeriodNotOpen
         }
 
+        // Cross-tenant isolation fix (2026-09-23, same gap/fix as PostJournalEntryUseCase):
+        // each Account must belong to this Period's own Company, or it's treated as
+        // AccountNotFound - never a distinct "forbidden" case, so this never confirms
+        // another Company's Account exists.
         val contraAccount = accountRepository.findById(request.contraAccountId)
+            ?.takeIf { it.companyId == period.companyId }
             ?: return RecordInventoryIssueResult.ContraAccountNotFound(request.contraAccountId)
         val inventoryAssetAccount = accountRepository.findById(request.inventoryAssetAccountId)
+            ?.takeIf { it.companyId == period.companyId }
             ?: return RecordInventoryIssueResult.InventoryAssetAccountNotFound(request.inventoryAssetAccountId)
 
         val lines = listOf(
