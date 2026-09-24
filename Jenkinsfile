@@ -14,6 +14,19 @@ pipeline {
     options {
         timeout(time: 30, unit: 'MINUTES')
         disableConcurrentBuilds() // avoids two builds racing for the same host Docker daemon / Gradle cache on this single-node setup
+        // Joins the 'fish-family' throttle category (defined once, globally,
+        // via JCasC - Infrastructure/jenkins.tf) capping TOTAL concurrent
+        // builds across all 8 repos sharing this one Jenkins box -
+        // disableConcurrentBuilds() above only stops this one repo racing
+        // itself, it does nothing for cross-repo contention, which is what
+        // actually broke Jenkins 2026-09-24. Same block added to every
+        // sibling Jenkinsfile.
+        throttleJobProperty(
+            categories: ['fish-family'],
+            throttleEnabled: true,
+            throttleOption: 'category',
+            limitOneJobWithMatchingParams: false
+        )
     }
 
     environment {
@@ -107,7 +120,14 @@ pipeline {
                     steps {
                         // Build validation only, not pushed - matches
                         // pipeline.yml's own docker-build job exactly.
-                        sh 'docker build -t fish-gl-engine:ci .'
+                        // BUILDKIT_INLINE_CACHE=1 embeds cache metadata in
+                        // this image's layers so the deploy stage's own
+                        // rebuild of the identical commit (below) can reuse
+                        // them via --cache-from instead of rebuilding from
+                        // scratch - halves real docker-build cost per
+                        // pipeline run on a Jenkins box that's memory/CPU
+                        // constrained (Jenkins capacity fix, 2026-09-24).
+                        sh 'DOCKER_BUILDKIT=1 docker build --build-arg BUILDKIT_INLINE_CACHE=1 -t fish-gl-engine:ci .'
                     }
                 }
             }
@@ -140,7 +160,7 @@ pipeline {
                     sh """
                         aws ecr get-login-password --region ${AWS_REGION} | \\
                           docker login --username AWS --password-stdin ${ecrHost}
-                        docker build -t ${ECR_REPOSITORY}:${imageTag} .
+                        DOCKER_BUILDKIT=1 docker build --cache-from fish-gl-engine:ci -t ${ECR_REPOSITORY}:${imageTag} .
                         docker push ${ECR_REPOSITORY}:${imageTag}
                     """
 
