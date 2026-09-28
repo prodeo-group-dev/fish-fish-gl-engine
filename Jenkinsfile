@@ -75,7 +75,16 @@ pipeline {
                             // port (-p 0:5432), not fixed, so a second
                             // concurrent build can't collide on it if
                             // disableConcurrentBuilds is ever relaxed.
-                            def pgName = "pg-${env.BUILD_TAG}"
+                            // env.BUILD_TAG for a multibranch job embeds the
+                            // branch name URL-encoded (e.g. feature%2Ffoo for
+                            // feature/foo) - Docker rejects '%' in container
+                            // names outright ("Invalid container name"),
+                            // breaking every branch build whose name contains
+                            // a slash. Found 2026-09-28 chasing GL's own
+                            // feature-branch build failure, recurred the same
+                            // day on SchoolAdmissions' PR #3 - same bug,
+                            // shared Jenkinsfile pattern across every sibling.
+                            def pgName = "pg-${env.BUILD_TAG}".replaceAll('[^a-zA-Z0-9_.-]', '-')
                             sh """
                                 docker run -d --name ${pgName} \\
                                   -e POSTGRES_USER=fish_ci \\
