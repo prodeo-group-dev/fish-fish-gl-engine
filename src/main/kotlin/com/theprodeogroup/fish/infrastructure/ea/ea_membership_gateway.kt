@@ -54,16 +54,32 @@ data class CallerMembership(
     /**
      * The [AccessLevel] this Membership holds at [companyId] - an
      * explicit per-Company assignment when one exists; otherwise
-     * [AccessLevel.READ] for the Owner-Admin's intrinsic floor (present
-     * in [companies] with a null `accessLevel`, per [CompanyAccess]'s own
-     * KDoc), or [AccessLevel.NONE] for anyone else with no assignment
-     * there - including a `companyId` this Membership's `companies` list
-     * doesn't contain at all (a company outside this Tenant, or one an
-     * ordinary staff Membership simply has no standing at).
+     * [AccessLevel.READ] for the Owner-Admin's intrinsic floor, or
+     * [AccessLevel.NONE] for anyone else with no assignment there.
+     *
+     * **Bug fixed 2026-09-28**: this used to return [AccessLevel.NONE]
+     * immediately whenever `companyId` wasn't found in [companies] at
+     * all, *before* ever checking [isOwnerAdmin] - contradicting this
+     * function's own original contract ("the Owner-Admin's intrinsic
+     * Tenant-wide READ floor... passes for the Owner-Admin at any
+     * Company") and this class's own header KDoc. It relied on EA's
+     * `GET /me` always including every Tenant-owned Company in the
+     * Owner-Admin's list - true when a Company's name record exists,
+     * but EA's own `MeRoutes.kt` documents silently *omitting* a
+     * Company from that list when it has no matching name record (a
+     * `RegisterCompanyUseCase` bypass). That combination broke
+     * `GET /companies/{companyId}/sales-invoices` for the Owner-Admin
+     * against a real, GL-known Company EA happened to have no name
+     * record for - a 403 that surfaced in WEB as a generic "Couldn't
+     * load sales" error with no indication of the real cause. Now the
+     * Owner-Admin's intrinsic floor applies regardless of whether
+     * `companyId` appears in [companies] at all - the correct
+     * independent-of-EA fallback this function was always meant to be,
+     * not just a defense for one code path.
      */
     fun accessLevelAt(companyId: CompanyId): AccessLevel {
-        val company = companies.firstOrNull { it.companyId == companyId } ?: return AccessLevel.NONE
-        return company.accessLevel ?: if (isOwnerAdmin) AccessLevel.READ else AccessLevel.NONE
+        val explicit = companies.firstOrNull { it.companyId == companyId }?.accessLevel
+        return explicit ?: if (isOwnerAdmin) AccessLevel.READ else AccessLevel.NONE
     }
 
     /** The modules granted at [companyId] - empty if no explicit assignment, including for the Owner-Admin's own intrinsic floor (read-only oversight, not module access). */
