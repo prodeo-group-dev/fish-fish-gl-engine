@@ -174,7 +174,27 @@ pipeline {
                     // session. The previous stage has already confirmed
                     // this previous revision's env/secrets match ecs.tf,
                     // so carrying them forward here is safe.
+                    //
+                    // task-definition.json itself was never fetched here -
+                    // this jq step always failed with "No such file or
+                    // directory" on every real Jenkins-triggered master
+                    // deploy (found 2026-09-28 chasing an unrelated auth
+                    // fix's deploy). Every GL deploy up to this point
+                    // actually happened via manual aws ecs register-task-
+                    // definition/update-service, bypassing this pipeline
+                    // entirely - the automated path had never actually run
+                    // successfully.
                     sh """
+                        CURRENT_TASK_DEF_ARN=\$(aws ecs describe-services \\
+                          --cluster ${ECS_CLUSTER} \\
+                          --services ${ECS_SERVICE} \\
+                          --query 'services[0].taskDefinition' --output text)
+
+                        aws ecs describe-task-definition \\
+                          --task-definition "\$CURRENT_TASK_DEF_ARN" \\
+                          --query taskDefinition --output json \\
+                          > task-definition.json
+
                         jq --arg IMAGE "${ECR_REPOSITORY}:${imageTag}" \\
                           '.containerDefinitions[0].image = \$IMAGE
                            | del(.taskDefinitionArn, .revision, .status,
