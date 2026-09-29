@@ -75,6 +75,8 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.serialization.kotlinx.json.json as clientJson
 import kotlinx.serialization.json.Json
 import io.ktor.server.application.Application
+import io.ktor.server.application.ApplicationCallPipeline
+import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.application.log
 import io.ktor.server.engine.embeddedServer
@@ -88,6 +90,7 @@ import io.ktor.server.plugins.statuspages.StatusPages
 import java.net.URI
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
+import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
@@ -321,6 +324,20 @@ fun Application.fishModule(
     computeFixedAssetRegisterUseCase: ComputeFixedAssetRegisterUseCase
 ) {
     install(ContentNegotiation) { json() }
+    // Defense-in-depth against any caching-capable intermediary between
+    // a client and this service (a corporate/ISP proxy, a misconfigured
+    // CDN) - every response here is either a personalized, authenticated
+    // JSON payload (Ledger/financial data) or an error, never something
+    // safe to cache and replay to a different caller. Surfaced 2026-09-29
+    // investigating a reported cross-tenant data exposure - not confirmed
+    // as the mechanism, but the total absence of any Cache-Control header
+    // anywhere in this codebase (confirmed by grep) was a real, independent
+    // gap regardless. Plain intercept, not the `DefaultHeaders` plugin -
+    // this project doesn't depend on `ktor-server-default-headers`, and
+    // adding it for one header isn't worth a new dependency.
+    intercept(ApplicationCallPipeline.Plugins) {
+        call.response.header(HttpHeaders.CacheControl, "no-store, private")
+    }
     // CallId first, CallLogging second - callIdMdc puts the id CallId
     // generates/retrieves into MDC's "requestId" key, which logback.xml's
     // LogstashEncoder then includes in every JSON log line for this
