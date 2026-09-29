@@ -4,7 +4,7 @@
     {
       "name": "fish-gl-web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "../WEB"],
+      "runtimeArgs": ["run", "dev", "--prefix", "C:/Users/femif/Claude/Projects/FiSH/WEB"],
       "port": 5173
     }
   ]
