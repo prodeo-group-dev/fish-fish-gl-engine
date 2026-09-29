@@ -52,11 +52,27 @@ data class EaTenantMembershipDto(
  * purely so deserialization succeeds against EA's real response shape -
  * this field's absence is exactly what crashed every authorized GL
  * request (`KtorEaMembershipGateway.lookupCaller`) until this was added.
+ *
+ * [userId] added 2026-09-29 - EA's own `MyProfileResponseDto` gained this
+ * field 2026-09-28 (commit `cf1cef69`, for a message-thread UI to tell
+ * "did I send this"). **This did not actually crash GL** the way it
+ * crashed SOP's copy of this DTO: unlike SOP, GL already configures
+ * `ignoreUnknownKeys = true` on its `eaHttpClient` (`Application.kt`,
+ * fixed 2026-09-21 after this exact class of incident happened here
+ * first over the now-removed `role`/`accessLevel` fields - see
+ * `KtorEaMembershipGatewayTest`'s own regression test). Declared here
+ * anyway purely to keep this DTO an accurate mirror of EA's real wire
+ * shape, matching this file's own stated purpose - GL never reads the
+ * value. Left `ignoreUnknownKeys` as-is rather than removing it to force
+ * strict declaration platform-wide (SOP's own preference per direct
+ * feedback) - that's a real policy inconsistency across GL/SOP worth a
+ * deliberate decision, not something to flip unilaterally here.
  */
 @Serializable
 data class EaMyProfileResponseDto(
     val email: String,
     val name: String,
     val kycStatus: String,
+    val userId: String,
     val tenants: List<EaTenantMembershipDto>
 )
