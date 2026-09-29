@@ -184,15 +184,24 @@ fun Application.productionModule() {
     // human caller without this configured.
     val eaApiBaseUrl = System.getenv("EA_API_BASE_URL")
         ?: error("EA_API_BASE_URL environment variable is required - no default for a security-relevant value")
-    // ignoreUnknownKeys = true (2026-09-21, incident) - EA's own GET /me
-    // response shape has already drifted out from under EaMyProfileResponseDto's
-    // strict mirror twice now (first kycStatus, then userId), each time
-    // hard-crashing every GL route that calls out to EA for a membership
-    // check (AddCompanyToTenantUseCase among them) with an unhandled
-    // JsonConvertException rather than a clean Failure result. A field GL
-    // never reads shouldn't be able to take down company creation - see
-    // EaMyProfileResponseDto's own KDoc for the first occurrence of this.
-    val eaHttpClient = HttpClient(CIO) { install(ClientContentNegotiation) { clientJson(Json { ignoreUnknownKeys = true }) } }
+    // Strict decoding (reverted 2026-09-29, direct user instruction: "This
+    // is a Multi-Tenanted Cloud-Native Project. Security is paramount and
+    // sacrosanct. There should not be a case where there exists unknown
+    // keys being processed."). Previously ignoreUnknownKeys = true
+    // (2026-09-21) after EA's GET /me response shape drifted out from
+    // under EaMyProfileResponseDto's strict mirror twice (kycStatus, then
+    // userId) and hard-crashed every GL route calling out to EA for a
+    // membership check. That was a resilience trade-off, but the wrong one
+    // for an authentication/authorization payload specifically - a future
+    // EA field could be security-relevant (a revoked/suspended flag, a
+    // tightened permission), and GL would silently never see it while
+    // still proceeding as authorized. A loud, immediately-visible crash on
+    // a shape change is the correct trade-off here, matching SOP's own
+    // fix for the identical class of incident. GL's EA DTOs
+    // (EaMyProfileResponseDto/EaTenantMembershipDto/EaCompanySummaryDto)
+    // were re-verified field-for-field against EA's current Dtos.kt before
+    // this reverted, including schoolId, which GL's mirror had also missed.
+    val eaHttpClient = HttpClient(CIO) { install(ClientContentNegotiation) { clientJson(Json) } }
     val eaMembershipGateway = KtorEaMembershipGateway(eaHttpClient, eaApiBaseUrl)
 
     fishModule(

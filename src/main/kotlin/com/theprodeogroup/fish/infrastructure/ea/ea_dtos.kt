@@ -26,6 +26,7 @@ import kotlinx.serialization.Serializable
 data class EaCompanySummaryDto(
     val id: String,
     val name: String,
+    val schoolId: String? = null,
     val role: String? = null,
     val accessLevel: String? = null,
     val grantedModules: List<String> = emptyList()
@@ -55,18 +56,18 @@ data class EaTenantMembershipDto(
  *
  * [userId] added 2026-09-29 - EA's own `MyProfileResponseDto` gained this
  * field 2026-09-28 (commit `cf1cef69`, for a message-thread UI to tell
- * "did I send this"). **This did not actually crash GL** the way it
- * crashed SOP's copy of this DTO: unlike SOP, GL already configures
- * `ignoreUnknownKeys = true` on its `eaHttpClient` (`Application.kt`,
- * fixed 2026-09-21 after this exact class of incident happened here
- * first over the now-removed `role`/`accessLevel` fields - see
- * `KtorEaMembershipGatewayTest`'s own regression test). Declared here
- * anyway purely to keep this DTO an accurate mirror of EA's real wire
- * shape, matching this file's own stated purpose - GL never reads the
- * value. Left `ignoreUnknownKeys` as-is rather than removing it to force
- * strict declaration platform-wide (SOP's own preference per direct
- * feedback) - that's a real policy inconsistency across GL/SOP worth a
- * deliberate decision, not something to flip unilaterally here.
+ * "did I send this"). At the time this was added, GL's `eaHttpClient`
+ * still configured `ignoreUnknownKeys = true`, so this specific field
+ * never actually crashed GL the way it crashed SOP's copy of this DTO -
+ * but that leniency was reverted the same day (`Application.kt`, direct
+ * user instruction on unknown-key handling platform-wide) precisely
+ * because a future field like this one could be security-relevant, not
+ * just a UI convenience. Declared here to keep this DTO an accurate
+ * mirror of EA's real wire shape - GL never reads the value itself.
+ * [EaCompanySummaryDto.schoolId] was found missing from this mirror in
+ * the same pass, re-verified field-for-field against EA's current
+ * `Dtos.kt` before `ignoreUnknownKeys` was removed, so the revert to
+ * strict decoding didn't immediately break anything it was meant to fix.
  */
 @Serializable
 data class EaMyProfileResponseDto(
