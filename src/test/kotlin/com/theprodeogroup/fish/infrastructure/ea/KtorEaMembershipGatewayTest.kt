@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.ea
 
+import com.theprodeogroup.fish.domain.tenancy.ManagedModule
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -85,6 +86,51 @@ class KtorEaMembershipGatewayTest {
             shouldThrow<JsonConvertException> {
                 gateway.lookupCaller("test-token")
             }
+        }
+    }
+
+    @Test
+    fun `EDUCATION_RUNTIME in a Company's grantedModules maps correctly, not an enum-gap crash`() {
+        runBlocking {
+            val client = clientReturning(
+                """
+                {
+                  "email": "owner@school.test",
+                  "name": "School Owner",
+                  "kycStatus": "VERIFIED",
+                  "userId": "51657c7d-743b-4f32-9f00-000000000000",
+                  "tenants": [
+                    {
+                      "tenantId": "9fa2198b-2a6f-467d-97ac-6f6fbce6a9fd",
+                      "tenantName": "Test Tenant",
+                      "isOwnerAdmin": true,
+                      "tenantStatus": "ACTIVE",
+                      "kybStatus": "VERIFIED",
+                      "adminPhoneNumber": null,
+                      "adminPhoneVerificationStatus": "VERIFIED",
+                      "phoneVerificationDeadline": null,
+                      "companies": [
+                        {
+                          "id": "ea2846a5-76f7-4f1f-9a5a-15baff987290",
+                          "name": "Test School",
+                          "schoolId": "some-school-id",
+                          "role": null,
+                          "accessLevel": null,
+                          "grantedModules": ["EDUCATION_RUNTIME"]
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """.trimIndent()
+            )
+            val gateway = KtorEaMembershipGateway(client, "http://ea.test")
+
+            val result = gateway.lookupCaller("test-token")
+
+            val success = result.shouldBeInstanceOf<EaCallerLookupResult.Success>()
+            val company = success.memberships.single().companies.single()
+            company.grantedModules shouldBe setOf(ManagedModule.EDUCATION_RUNTIME)
         }
     }
 }
