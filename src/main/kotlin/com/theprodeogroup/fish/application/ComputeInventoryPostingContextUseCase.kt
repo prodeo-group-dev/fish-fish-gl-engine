@@ -21,16 +21,29 @@ import java.util.Currency
  * Accounts Payable control account [ComputePurchasePostingContextUseCase]
  * already resolves for POP - a receipt is still, ultimately, a
  * liability to a vendor until settled).
+ *
+ * **[suspenseAccountId] added 2026-10-01** - a real gap IM found while
+ * scoping `RecordOpeningStockUseCase` (docs/Opening_Figures_CSV_Upload_DDD_Design.md
+ * Section 4.1): posting an opening stock figure needs Dr Inventory /
+ * Cr Suspense, but IM has no way to resolve "the" Suspense Account
+ * (code [com.theprodeogroup.fish.domain.ledger.ChartOfAccountsTemplate.SUSPENSE_ACCOUNT_CODE])
+ * itself - unlike GL's own importers, which call [AccountRepository]
+ * directly, IM only ever gets account ids handed to it through this
+ * endpoint. Required, same hard-failure shape as [apControlAccountId] -
+ * every business template seeds a Suspense Account, so a missing one is
+ * a real configuration gap, not an expected absence.
  */
 sealed class InventoryPostingContextResult {
     data class Success(
         val periodId: PeriodId,
         val apControlAccountId: AccountId,
+        val suspenseAccountId: AccountId,
         val currency: Currency
     ) : InventoryPostingContextResult()
     data object CompanyNotFound : InventoryPostingContextResult()
     data object NoOpenPeriod : InventoryPostingContextResult()
     data object ApControlAccountNotConfigured : InventoryPostingContextResult()
+    data object SuspenseAccountNotConfigured : InventoryPostingContextResult()
 }
 
 class ComputeInventoryPostingContextUseCase(
@@ -45,6 +58,9 @@ class ComputeInventoryPostingContextUseCase(
         val accounts = accountRepository.findAllByCompany(companyId)
         val apAccount = accounts.firstOrNull { it.type == AccountType.LIABILITY && it.code == "2000" }
             ?: return InventoryPostingContextResult.ApControlAccountNotConfigured
-        return InventoryPostingContextResult.Success(period.id, apAccount.id, company.baseCurrency)
+        val suspenseAccount = accounts.firstOrNull {
+            it.type == AccountType.EQUITY && it.code == com.theprodeogroup.fish.domain.ledger.ChartOfAccountsTemplate.SUSPENSE_ACCOUNT_CODE
+        } ?: return InventoryPostingContextResult.SuspenseAccountNotConfigured
+        return InventoryPostingContextResult.Success(period.id, apAccount.id, suspenseAccount.id, company.baseCurrency)
     }
 }

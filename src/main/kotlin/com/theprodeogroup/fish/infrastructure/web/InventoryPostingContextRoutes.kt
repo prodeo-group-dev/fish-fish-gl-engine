@@ -41,6 +41,7 @@ fun Route.inventoryPostingContextRoutes(
                 InventoryPostingContextResponseDto(
                     periodId = result.periodId.value.toString(),
                     apControlAccountId = result.apControlAccountId.value.toString(),
+                    suspenseAccountId = result.suspenseAccountId.value.toString(),
                     currency = result.currency.currencyCode
                 )
             )
@@ -50,6 +51,8 @@ fun Route.inventoryPostingContextRoutes(
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("no_open_period", "This Company has no open Period"))
             InventoryPostingContextResult.ApControlAccountNotConfigured ->
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("ap_control_account_not_configured", "This Company's Chart of Accounts has no Accounts Payable control account (code 2000)"))
+            InventoryPostingContextResult.SuspenseAccountNotConfigured ->
+                call.respond(HttpStatusCode.Conflict, ErrorResponseDto("suspense_account_not_configured", "This Company's Chart of Accounts has no Suspense Account (code 3910)"))
         }
     }
 }

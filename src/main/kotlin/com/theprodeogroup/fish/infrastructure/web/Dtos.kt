@@ -89,6 +89,7 @@ data class LeaveAccrualResponseDto(
 data class InventoryPostingContextResponseDto(
     val periodId: String,
     val apControlAccountId: String,
+    val suspenseAccountId: String,
     val currency: String
 )
 

@@ -77,7 +77,7 @@ private val TODAY: LocalDate = LocalDate.now()
 /** `GET /companies/{companyId}/inventory-posting-context` - see InventoryPostingContextRoutes.kt's own KDoc. */
 class InventoryPostingContextRoutesTest {
 
-    private class Fixture(configureAccounts: Boolean = true, openPeriod: Boolean = true) {
+    private class Fixture(configureAccounts: Boolean = true, openPeriod: Boolean = true, configureSuspenseAccount: Boolean = true) {
         val userRepository = FakeUserRepository()
         val membershipRepository = FakeMembershipRepository()
         val companyRepository = FakeCompanyRepository()
@@ -143,6 +143,9 @@ class InventoryPostingContextRoutesTest {
         val apAccount = if (configureAccounts) {
             Account.create(company.id, AccountType.LIABILITY, com.theprodeogroup.fish.domain.ledger.AccountClassification.CURRENT, "2000", "Accounts Payable").also { accountRepository.save(it) }
         } else null
+        val suspenseAccount = if (configureAccounts && configureSuspenseAccount) {
+            Account.create(company.id, AccountType.EQUITY, null, com.theprodeogroup.fish.domain.ledger.ChartOfAccountsTemplate.SUSPENSE_ACCOUNT_CODE, "Suspense Account").also { accountRepository.save(it) }
+        } else null
 
         fun installInto(app: Application) {
             app.fishModule(
@@ -206,6 +209,7 @@ class InventoryPostingContextRoutesTest {
         val body: InventoryPostingContextResponseDto = response.body()
         body.periodId shouldBe fixture.period!!.id.value.toString()
         body.apControlAccountId shouldBe fixture.apAccount!!.id.value.toString()
+        body.suspenseAccountId shouldBe fixture.suspenseAccount!!.id.value.toString()
         body.currency shouldBe "GBP"
     }
 
@@ -262,5 +266,21 @@ class InventoryPostingContextRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.Conflict
+    }
+
+    @Test
+    fun `given an AP account but no Suspense Account, when GET inventory-posting-context is called, then it returns 409`() = testApplication {
+        val fixture = Fixture(configureSuspenseAccount = false)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/inventory-posting-context") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.Conflict
+        val body: ErrorResponseDto = response.body()
+        body.error shouldBe "suspense_account_not_configured"
     }
 }
