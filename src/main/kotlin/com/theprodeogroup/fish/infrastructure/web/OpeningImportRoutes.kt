@@ -34,16 +34,15 @@ import java.time.format.DateTimeParseException
  * `ListPurchaseOrdersForFulfillmentUseCase`'s own KDoc in the POP
  * sibling repo for the same "dedicated path, not a mode switch" reasoning).
  *
- * **Not yet wired into [fishModule]'s production instantiation** - this
- * route function exists and is fully tested, but
- * [ImportGlBalancesUseCase] needs real `OpeningImportBatchRepository`/
- * `OpeningImportRowResultRepository` implementations to construct in
- * `productionModule()`, and only test `Fake`s exist for those so far
- * (see `ImportGlBalancesUseCase`'s own KDoc). Mirrors the exact
- * "optional, nullable, conditionally registered" precedent
- * `vatReturnRepository`/`vatReturnRoutes` already established in
- * [fishModule] for the same reason (additive capability, avoid touching
- * every existing route-test fixture before its own backing store exists).
+ * **Wired into [fishModule]'s production instantiation (2026-10-01)** -
+ * `productionModule()` now constructs real `ExposedOpeningImportBatchRepository`/
+ * `ExposedOpeningImportRowResultRepository` implementations (`V26__opening_import_tables.sql`)
+ * and passes a real [ImportGlBalancesUseCase] through. The parameter
+ * itself stays nullable in [fishModule] - the same "optional,
+ * conditionally registered" shape `vatReturnRepository`/`vatReturnRoutes`
+ * already established there - purely so the ~20 existing route-test
+ * fixtures that don't exercise this capability keep compiling without
+ * every one of them being forced to wire it up too.
  */
 fun Route.openingImportRoutes(importGlBalancesUseCase: ImportGlBalancesUseCase, companyRepository: CompanyRepository) {
     post("/companies/{companyId}/opening-imports/gl-balances/validate") {

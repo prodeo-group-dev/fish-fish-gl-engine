@@ -58,6 +58,8 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedFixedAssetRepos
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedSalesInvoiceRecordRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedIdempotencyKeyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedJournalEntryRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedOpeningImportBatchRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedOpeningImportRowResultRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedLeaveAccrualRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedPeriodRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTaxComputationRepository
@@ -151,6 +153,11 @@ fun Application.productionModule() {
     val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
     val createAccountUseCase = CreateAccountUseCase(companyRepository, accountRepository)
     val recordOpeningBalanceUseCase = RecordOpeningBalanceUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
+    val openingImportBatchRepository = ExposedOpeningImportBatchRepository()
+    val openingImportRowResultRepository = ExposedOpeningImportRowResultRepository()
+    val importGlBalancesUseCase = ImportGlBalancesUseCase(
+        companyRepository, accountRepository, recordOpeningBalanceUseCase, openingImportBatchRepository, openingImportRowResultRepository
+    )
     val remeasureLeaveAccrualUseCase = RemeasureLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
     val utilizeLeaveAccrualUseCase = UtilizeLeaveAccrualUseCase(leaveAccrualRepository, periodRepository, accountRepository, journalEntryRepository)
     val recordSaleUseCase = RecordSaleUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -221,6 +228,7 @@ fun Application.productionModule() {
         taxRuleRepository = taxRuleRepository,
         taxComputationRepository = taxComputationRepository,
         vatReturnRepository = vatReturnRepository,
+        importGlBalancesUseCase = importGlBalancesUseCase,
         periodRepository = periodRepository,
         accountRepository = accountRepository,
         journalEntryRepository = journalEntryRepository,
@@ -289,12 +297,12 @@ fun Application.fishModule(
     // the same optional-with-fallback treatment `serviceVerifier`/
     // `imServiceVerifier`/etc. already get above, not a new pattern.
     vatReturnRepository: VatReturnRepository? = null,
-    // Same nullable, conditionally-registered shape as [vatReturnRepository]
-    // above, for the same reason - docs/Opening_Figures_CSV_Upload_DDD_Design.md's
-    // GL-balances importer is real, tested application+domain-layer code
-    // (ImportGlBalancesUseCase), but its two new repositories only have
-    // test Fakes so far, not an Exposed implementation - see that use
-    // case's own KDoc. Not yet constructed in `productionModule()`.
+    // Nullable for the same reason vatReturnRepository is/was - keeps every
+    // existing route-test fixture that doesn't care about this capability
+    // compiling unchanged. Now genuinely wired in `productionModule()`
+    // (Exposed persistence for OpeningImportBatch/RowResult, V26 migration) -
+    // unlike vatReturnRepository's own history, this one went from Fakes to
+    // a real backing store before this parameter's default was ever live.
     importGlBalancesUseCase: ImportGlBalancesUseCase? = null,
     periodRepository: PeriodRepository,
     accountRepository: AccountRepository,
