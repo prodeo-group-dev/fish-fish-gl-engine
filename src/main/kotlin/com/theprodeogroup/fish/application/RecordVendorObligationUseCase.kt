@@ -87,7 +87,9 @@ class RecordVendorObligationUseCase(
         val lines: List<PurchaseLine>,
         val vendorId: CreditorId,
         val vatRateSchedule: VatRateSchedule,
-        val description: String? = null
+        val description: String? = null,
+        /** Caller-supplied, defaulting to [JournalSource.INTEGRATION] (2026-10-01) - same generalization already applied to [RecordOpeningBalanceUseCase.Request.journalSource]/[CreateFixedAssetUseCase.Request.journalSource]/[RecordInventoryReceiptUseCase.Request.journalSource], needed so docs/Opening_Figures_CSV_Upload_DDD_Design.md's AP importer (POP) can tag its postings [JournalSource.IMPORT]. Added last, not interleaved, so every existing positional-argument call site keeps compiling unchanged. */
+        val journalSource: JournalSource = JournalSource.INTEGRATION
     )
 
     fun execute(request: Request): RecordVendorObligationResult {
@@ -148,7 +150,7 @@ class RecordVendorObligationUseCase(
         )
 
         val entry = JournalEntry.create(
-            request.periodId, request.date, lines, JournalSource.INTEGRATION, request.description
+            request.periodId, request.date, lines, request.journalSource, request.description
         )
         val posting = entry.post()
         check(posting.isValid) {

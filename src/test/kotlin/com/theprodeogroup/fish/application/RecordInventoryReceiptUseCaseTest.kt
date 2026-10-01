@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.fish.domain.common.DimensionType
+import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.PeriodType
 import com.theprodeogroup.fish.domain.common.PostingStatus
 import com.theprodeogroup.fish.domain.inventory.StockItemId
@@ -80,6 +81,30 @@ class RecordInventoryReceiptUseCaseTest {
         inventoryLine.amount shouldBe Money(BigDecimal("500.00"), GBP)
         contraLine.amount shouldBe Money(BigDecimal("500.00"), GBP)
         inventoryLine.dimensions[DimensionType.ITEM] shouldBe itemId.value.toString()
+    }
+
+    @Test
+    fun `given no journalSource specified, when executed, then it defaults to INTEGRATION - preserving every existing caller's behavior`() {
+        val period = openPeriod()
+        val inventoryAsset = account("1300", AccountType.ASSET)
+        val contra = account("2100", AccountType.LIABILITY)
+
+        val result = useCase.execute(request(period.id, inventoryAsset.id, contra.id))
+
+        val success = result.shouldBeInstanceOf<RecordInventoryReceiptResult.Success>()
+        success.journalEntry.source shouldBe JournalSource.INTEGRATION
+    }
+
+    @Test
+    fun `given a caller-supplied journalSource, when executed, then the posted entry carries it instead of INTEGRATION`() {
+        val period = openPeriod()
+        val inventoryAsset = account("1300", AccountType.ASSET)
+        val contra = account("2100", AccountType.LIABILITY)
+
+        val result = useCase.execute(request(period.id, inventoryAsset.id, contra.id).copy(journalSource = JournalSource.IMPORT))
+
+        val success = result.shouldBeInstanceOf<RecordInventoryReceiptResult.Success>()
+        success.journalEntry.source shouldBe JournalSource.IMPORT
     }
 
     @Test
