@@ -22,6 +22,7 @@ import com.theprodeogroup.fish.application.ComputeSalesPostingContextUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
+import com.theprodeogroup.fish.application.ImportGlBalancesUseCase
 import com.theprodeogroup.fish.application.CreateAccountUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.RecordOpeningBalanceUseCase
@@ -288,6 +289,13 @@ fun Application.fishModule(
     // the same optional-with-fallback treatment `serviceVerifier`/
     // `imServiceVerifier`/etc. already get above, not a new pattern.
     vatReturnRepository: VatReturnRepository? = null,
+    // Same nullable, conditionally-registered shape as [vatReturnRepository]
+    // above, for the same reason - docs/Opening_Figures_CSV_Upload_DDD_Design.md's
+    // GL-balances importer is real, tested application+domain-layer code
+    // (ImportGlBalancesUseCase), but its two new repositories only have
+    // test Fakes so far, not an Exposed implementation - see that use
+    // case's own KDoc. Not yet constructed in `productionModule()`.
+    importGlBalancesUseCase: ImportGlBalancesUseCase? = null,
     periodRepository: PeriodRepository,
     accountRepository: AccountRepository,
     journalEntryRepository: JournalEntryRepository,
@@ -467,6 +475,9 @@ fun Application.fishModule(
                     vatReturnRoutes(
                         ComputeVatReturnUseCase(accountRepository, journalEntryRepository, vatReturnRepository), companyRepository
                     )
+                }
+                if (importGlBalancesUseCase != null) {
+                    openingImportRoutes(importGlBalancesUseCase, companyRepository)
                 }
                 fixedAssetRoutes(
                     createFixedAssetUseCase, recordFixedAssetDepreciationUseCase, assessFixedAssetImpairmentUseCase,
