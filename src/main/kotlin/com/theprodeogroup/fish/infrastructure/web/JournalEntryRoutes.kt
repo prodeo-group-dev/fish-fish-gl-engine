@@ -329,6 +329,30 @@ internal suspend fun ApplicationCall.parseUuid(value: String): UUID? =
     }
 
 /**
+ * Parses an optional [com.theprodeogroup.fish.domain.common.JournalSource] name
+ * (2026-10-01) - `null`/absent resolves to [default] (every existing caller's
+ * current behavior), an unrecognized non-null value responds 400 and returns
+ * `null`. Shared by every route whose use case accepts a caller-supplied
+ * `journalSource` (`RecordInventoryReceiptAndIssueRoutes.kt`,
+ * `RecordVendorObligationAndPaymentRoutes.kt`).
+ */
+internal suspend fun ApplicationCall.parseJournalSource(
+    value: String?,
+    default: com.theprodeogroup.fish.domain.common.JournalSource = com.theprodeogroup.fish.domain.common.JournalSource.INTEGRATION
+): com.theprodeogroup.fish.domain.common.JournalSource? {
+    if (value == null) return default
+    return try {
+        com.theprodeogroup.fish.domain.common.JournalSource.valueOf(value)
+    } catch (e: IllegalArgumentException) {
+        respond(
+            HttpStatusCode.BadRequest,
+            ErrorResponseDto("bad_request", "journalSource must be one of ${com.theprodeogroup.fish.domain.common.JournalSource.entries.joinToString()}")
+        )
+        null
+    }
+}
+
+/**
  * Parses every [JournalLineDto] into a domain [JournalLine], responding
  * 400 with the specific reason and returning `null` on the *first*
  * invalid line - deliberately not accumulating every line's errors into

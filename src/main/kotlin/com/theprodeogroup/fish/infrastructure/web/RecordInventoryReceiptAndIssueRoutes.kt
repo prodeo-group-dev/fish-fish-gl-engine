@@ -4,6 +4,7 @@ import com.theprodeogroup.fish.application.RecordInventoryIssueResult
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptResult
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
+import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.inventory.StockItemId
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.common.Money
@@ -65,6 +66,7 @@ fun Route.recordInventoryReceiptAndIssueRoutes(
         val itemUuid = call.parseUuid(request.itemId) ?: return@post
         val committedCost = call.parseInventoryMoney(request.committedCost, request.committedCostCurrency) ?: return@post
         val date = call.parseInventoryRecordDate(request.date) ?: return@post
+        val journalSource = call.parseJournalSource(request.journalSource) ?: return@post
 
         call.respondIdempotently(
             idempotencyKeyRepository, tenantId, "record-inventory-receipt",
@@ -73,7 +75,7 @@ fun Route.recordInventoryReceiptAndIssueRoutes(
             val result = recordInventoryReceiptUseCase.execute(
                 RecordInventoryReceiptUseCase.Request(
                     PeriodId(periodUuid), date, AccountId(inventoryAssetAccountUuid), AccountId(contraAccountUuid),
-                    committedCost, StockItemId(itemUuid), request.description
+                    committedCost, StockItemId(itemUuid), request.description, journalSource
                 )
             )
 
@@ -108,6 +110,7 @@ fun Route.recordInventoryReceiptAndIssueRoutes(
         val itemUuid = call.parseUuid(request.itemId) ?: return@post
         val committedCost = call.parseInventoryMoney(request.committedCost, request.committedCostCurrency) ?: return@post
         val date = call.parseInventoryRecordDate(request.date) ?: return@post
+        val journalSource = call.parseJournalSource(request.journalSource) ?: return@post
 
         call.respondIdempotently(
             idempotencyKeyRepository, tenantId, "record-inventory-issue",
@@ -116,7 +119,7 @@ fun Route.recordInventoryReceiptAndIssueRoutes(
             val result = recordInventoryIssueUseCase.execute(
                 RecordInventoryIssueUseCase.Request(
                     PeriodId(periodUuid), date, AccountId(contraAccountUuid), AccountId(inventoryAssetAccountUuid),
-                    committedCost, StockItemId(itemUuid), request.description
+                    committedCost, StockItemId(itemUuid), request.description, journalSource
                 )
             )
 

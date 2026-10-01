@@ -448,4 +448,50 @@ class RecordVendorObligationAndPaymentRoutesTest {
 
         response.status shouldBe HttpStatusCode.NotFound
     }
+
+    @Test
+    fun `given a journalSource of IMPORT, when record-obligation is posted, then the posted entry carries it instead of the INTEGRATION default`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/purchasing/record-obligation") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
+                    |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "12500.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
+                    |"vendorId": "${UUID.randomUUID()}", "journalSource": "IMPORT"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val posted = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).single()
+        posted.source shouldBe com.theprodeogroup.fish.domain.common.JournalSource.IMPORT
+    }
+
+    @Test
+    fun `given an invalid journalSource, when record-obligation is posted, then it returns 400`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/purchasing/record-obligation") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
+                    |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "12500.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
+                    |"vendorId": "${UUID.randomUUID()}", "journalSource": "NOT_A_REAL_SOURCE"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.BadRequest
+    }
 }

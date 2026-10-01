@@ -361,7 +361,9 @@ data class RecordVendorObligationRequestDto(
     val lines: List<PurchaseLineDto>,
     val currency: String,
     val vendorId: String,
-    val description: String? = null
+    val description: String? = null,
+    /** A [com.theprodeogroup.fish.domain.common.JournalSource] name, e.g. "IMPORT" - omitted/`null` keeps the use case's own default (`INTEGRATION`), preserving every caller that predates this field (2026-10-01). */
+    val journalSource: String? = null
 )
 
 @Serializable
@@ -414,7 +416,9 @@ data class RecordInventoryReceiptRequestDto(
     val committedCost: String,
     val committedCostCurrency: String,
     val itemId: String,
-    val description: String? = null
+    val description: String? = null,
+    /** A [com.theprodeogroup.fish.domain.common.JournalSource] name, e.g. "IMPORT" - omitted/`null` keeps the use case's own default (`INTEGRATION`), preserving every caller that predates this field (2026-10-01). */
+    val journalSource: String? = null
 )
 
 @Serializable
@@ -433,7 +437,9 @@ data class RecordInventoryIssueRequestDto(
     val committedCost: String,
     val committedCostCurrency: String,
     val itemId: String,
-    val description: String? = null
+    val description: String? = null,
+    /** A [com.theprodeogroup.fish.domain.common.JournalSource] name, e.g. "IMPORT" - omitted/`null` keeps the use case's own default (`INTEGRATION`), preserving every caller that predates this field (2026-10-01). */
+    val journalSource: String? = null
 )
 
 @Serializable

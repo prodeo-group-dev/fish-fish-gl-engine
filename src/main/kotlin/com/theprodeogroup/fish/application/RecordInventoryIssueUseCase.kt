@@ -59,7 +59,9 @@ class RecordInventoryIssueUseCase(
         val inventoryAssetAccountId: AccountId,
         val committedCost: Money,
         val itemId: StockItemId,
-        val description: String? = null
+        val description: String? = null,
+        /** Caller-supplied, defaulting to [JournalSource.INTEGRATION] (2026-10-01) - same generalization as [RecordInventoryReceiptUseCase.Request.journalSource], for consistency even though Opening Figures' Stock importer only needs the receipt side today. Added last, not interleaved, so every existing positional-argument call site keeps compiling unchanged. */
+        val journalSource: JournalSource = JournalSource.INTEGRATION
     )
 
     fun execute(request: Request): RecordInventoryIssueResult {
@@ -92,7 +94,7 @@ class RecordInventoryIssueUseCase(
             )
         )
         val entry = JournalEntry.create(
-            request.periodId, request.date, lines, JournalSource.INTEGRATION, request.description
+            request.periodId, request.date, lines, request.journalSource, request.description
         )
         val posting = entry.post()
         check(posting.isValid) {

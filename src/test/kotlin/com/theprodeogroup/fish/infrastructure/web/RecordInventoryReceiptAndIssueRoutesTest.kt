@@ -369,4 +369,48 @@ class RecordInventoryReceiptAndIssueRoutesTest {
 
         response.status shouldBe HttpStatusCode.NotFound
     }
+
+    @Test
+    fun `given a journalSource of IMPORT, when record-receipt is posted, then the posted entry carries it instead of the INTEGRATION default`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/inventory/record-receipt") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}",
+                    |"contraAccountId": "${fixture.apControlAccount.id.value}", "committedCost": "18500.00",
+                    |"committedCostCurrency": "GBP", "itemId": "${UUID.randomUUID()}", "journalSource": "IMPORT"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val posted = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).single()
+        posted.source shouldBe com.theprodeogroup.fish.domain.common.JournalSource.IMPORT
+    }
+
+    @Test
+    fun `given an invalid journalSource, when record-receipt is posted, then it returns 400`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/inventory/record-receipt") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "inventoryAssetAccountId": "${fixture.inventoryAssetAccount.id.value}",
+                    |"contraAccountId": "${fixture.apControlAccount.id.value}", "committedCost": "18500.00",
+                    |"committedCostCurrency": "GBP", "itemId": "${UUID.randomUUID()}", "journalSource": "NOT_A_REAL_SOURCE"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.BadRequest
+    }
 }

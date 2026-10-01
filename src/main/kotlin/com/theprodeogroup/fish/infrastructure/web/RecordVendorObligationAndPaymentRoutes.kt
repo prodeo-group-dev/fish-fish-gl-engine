@@ -76,6 +76,7 @@ fun Route.recordVendorObligationAndPaymentRoutes(
         val currency = call.parseCurrency(request.currency) ?: return@post
         val date = call.parseLocalDate(request.date) ?: return@post
         val lines = call.parsePurchaseLines(request.lines, currency) ?: return@post
+        val journalSource = call.parseJournalSource(request.journalSource) ?: return@post
 
         call.respondIdempotently(
             idempotencyKeyRepository, company.tenantId, "record-vendor-obligation",
@@ -84,7 +85,7 @@ fun Route.recordVendorObligationAndPaymentRoutes(
             val result = recordVendorObligationUseCase.execute(
                 RecordVendorObligationUseCase.Request(
                     PeriodId(periodUuid), date, AccountId(expenseOrAssetAccountUuid), AccountId(apControlAccountUuid),
-                    AccountId(vatControlAccountUuid), lines, CreditorId(vendorUuid), vatRateSchedule, request.description
+                    AccountId(vatControlAccountUuid), lines, CreditorId(vendorUuid), vatRateSchedule, request.description, journalSource
                 )
             )
 
