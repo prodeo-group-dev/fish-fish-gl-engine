@@ -61,6 +61,15 @@ import java.time.LocalDate
  * open Period covering [date]. Restricting this further wasn't asked
  * for, and this codebase's own "park, don't guess" discipline argues
  * against picking a boundary the user didn't actually state.
+ *
+ * **[Request.journalSource] is caller-supplied, defaulting to [JournalSource.MANUAL]
+ * (2026-10-01)** - previously hardcoded, the one remaining spot this use
+ * case didn't follow the "caller supplies every detail explicitly"
+ * convention [contraAccountId] was already generalized to. Needed so
+ * `docs/Opening_Figures_CSV_Upload_DDD_Design.md`'s GL-balances importer
+ * can tag its own postings [JournalSource.IMPORT] instead of silently
+ * looking like a human typed them in - every existing caller is
+ * unaffected, since the default preserves today's behavior exactly.
  */
 class RecordOpeningBalanceUseCase(
     private val companyRepository: CompanyRepository,
@@ -73,7 +82,8 @@ class RecordOpeningBalanceUseCase(
         val accountId: AccountId,
         val contraAccountId: AccountId,
         val amount: BigDecimal,
-        val date: LocalDate
+        val date: LocalDate,
+        val journalSource: JournalSource = JournalSource.MANUAL
     )
 
     sealed class Result {
@@ -116,7 +126,7 @@ class RecordOpeningBalanceUseCase(
                 JournalLine(account.id, amount, accountSide),
                 JournalLine(contraAccount.id, amount, contraSide)
             ),
-            JournalSource.MANUAL,
+            request.journalSource,
             "Opening balance - ${account.name}"
         )
         val posting = entry.post()

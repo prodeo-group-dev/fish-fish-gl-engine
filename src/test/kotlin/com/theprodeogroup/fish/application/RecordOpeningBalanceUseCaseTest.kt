@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.fish.domain.common.ClientType
+import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.common.PeriodType
 import com.theprodeogroup.fish.domain.common.TransactionSide
@@ -164,5 +165,32 @@ class RecordOpeningBalanceUseCaseTest {
 
         result.shouldBeInstanceOf<RecordOpeningBalanceUseCase.Result.Success>()
         fixture.journalEntryRepository.findAllByCompany(fixture.company.id).size shouldBe 2
+    }
+
+    @Test
+    fun `given no journalSource specified, when executed, then it defaults to MANUAL - preserving every existing caller's behavior`() {
+        val fixture = Fixture()
+
+        val result = fixture.useCase.execute(
+            RecordOpeningBalanceUseCase.Request(fixture.company.id, fixture.fixedAssetAccount.id, fixture.openingBalanceEquityAccount!!.id, BigDecimal("100.00"), TODAY)
+        )
+
+        val success = result.shouldBeInstanceOf<RecordOpeningBalanceUseCase.Result.Success>()
+        success.journalEntry.source shouldBe JournalSource.MANUAL
+    }
+
+    @Test
+    fun `given a caller-supplied journalSource, when executed, then the posted entry carries it instead of MANUAL`() {
+        val fixture = Fixture()
+
+        val result = fixture.useCase.execute(
+            RecordOpeningBalanceUseCase.Request(
+                fixture.company.id, fixture.fixedAssetAccount.id, fixture.openingBalanceEquityAccount!!.id, BigDecimal("100.00"), TODAY,
+                journalSource = JournalSource.IMPORT
+            )
+        )
+
+        val success = result.shouldBeInstanceOf<RecordOpeningBalanceUseCase.Result.Success>()
+        success.journalEntry.source shouldBe JournalSource.IMPORT
     }
 }
