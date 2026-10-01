@@ -99,6 +99,35 @@ class CreateFixedAssetUseCaseTest {
     }
 
     @Test
+    fun `given no journalSource specified, when executed, then the posted entry defaults to MANUAL - preserving every existing caller's behavior`() {
+        val company = company()
+        val period = openPeriod(company.id)
+        val fixedAssetAccount = account(company.id, "1200", AccountType.ASSET)
+        val cashAccount = account(company.id, "1000", AccountType.ASSET)
+
+        val result = useCase.execute(cashRequest(company, period.id, fixedAssetAccount.id, cashAccount.id))
+
+        val success = result.shouldBeInstanceOf<CreateFixedAssetUseCase.Result.Success>()
+        success.journalEntry.source shouldBe com.theprodeogroup.fish.domain.common.JournalSource.MANUAL
+    }
+
+    @Test
+    fun `given a caller-supplied journalSource, when executed, then the posted entry carries it instead of MANUAL`() {
+        val company = company()
+        val period = openPeriod(company.id)
+        val fixedAssetAccount = account(company.id, "1200", AccountType.ASSET)
+        val cashAccount = account(company.id, "1000", AccountType.ASSET)
+
+        val result = useCase.execute(
+            cashRequest(company, period.id, fixedAssetAccount.id, cashAccount.id)
+                .copy(journalSource = com.theprodeogroup.fish.domain.common.JournalSource.IMPORT)
+        )
+
+        val success = result.shouldBeInstanceOf<CreateFixedAssetUseCase.Result.Success>()
+        success.journalEntry.source shouldBe com.theprodeogroup.fish.domain.common.JournalSource.IMPORT
+    }
+
+    @Test
     fun `given an on-account acquisition, when executed, then it posts Dr Fixed Asset Cr AP Control tagged with the vendor reference`() {
         val company = company()
         val period = openPeriod(company.id)

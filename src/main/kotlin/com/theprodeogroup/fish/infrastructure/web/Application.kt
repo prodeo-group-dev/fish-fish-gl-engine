@@ -22,6 +22,7 @@ import com.theprodeogroup.fish.application.ComputeSalesPostingContextUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
+import com.theprodeogroup.fish.application.ImportFixedAssetsUseCase
 import com.theprodeogroup.fish.application.ImportGlBalancesUseCase
 import com.theprodeogroup.fish.application.CreateAccountUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
@@ -186,6 +187,10 @@ fun Application.productionModule() {
     val assessFixedAssetImpairmentUseCase = AssessFixedAssetImpairmentUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
     val disposeFixedAssetUseCase = DisposeFixedAssetUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
     val computeFixedAssetRegisterUseCase = ComputeFixedAssetRegisterUseCase(companyRepository, fixedAssetRepository)
+    val importFixedAssetsUseCase = ImportFixedAssetsUseCase(
+        companyRepository, periodRepository, accountRepository, fixedAssetRepository, createFixedAssetUseCase,
+        openingImportBatchRepository, openingImportRowResultRepository
+    )
 
     // EA (Enterprise Administration) - the human-facing half of
     // docs/Tenancy_Administration_Extraction_DDD_Design.md's rewiring.
@@ -229,6 +234,7 @@ fun Application.productionModule() {
         taxComputationRepository = taxComputationRepository,
         vatReturnRepository = vatReturnRepository,
         importGlBalancesUseCase = importGlBalancesUseCase,
+        importFixedAssetsUseCase = importFixedAssetsUseCase,
         periodRepository = periodRepository,
         accountRepository = accountRepository,
         journalEntryRepository = journalEntryRepository,
@@ -304,6 +310,9 @@ fun Application.fishModule(
     // unlike vatReturnRepository's own history, this one went from Fakes to
     // a real backing store before this parameter's default was ever live.
     importGlBalancesUseCase: ImportGlBalancesUseCase? = null,
+    // Same nullable shape, added the same day - Fixed Assets is step 2
+    // of docs/Opening_Figures_CSV_Upload_DDD_Design.md's build order.
+    importFixedAssetsUseCase: ImportFixedAssetsUseCase? = null,
     periodRepository: PeriodRepository,
     accountRepository: AccountRepository,
     journalEntryRepository: JournalEntryRepository,
@@ -484,8 +493,8 @@ fun Application.fishModule(
                         ComputeVatReturnUseCase(accountRepository, journalEntryRepository, vatReturnRepository), companyRepository
                     )
                 }
-                if (importGlBalancesUseCase != null) {
-                    openingImportRoutes(importGlBalancesUseCase, companyRepository)
+                if (importGlBalancesUseCase != null && importFixedAssetsUseCase != null) {
+                    openingImportRoutes(importGlBalancesUseCase, importFixedAssetsUseCase, companyRepository)
                 }
                 fixedAssetRoutes(
                     createFixedAssetUseCase, recordFixedAssetDepreciationUseCase, assessFixedAssetImpairmentUseCase,

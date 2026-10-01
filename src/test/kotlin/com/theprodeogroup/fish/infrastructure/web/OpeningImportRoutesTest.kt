@@ -32,6 +32,7 @@ import com.theprodeogroup.fish.application.FakeTaxRuleRepository
 import com.theprodeogroup.fish.application.FakeEaMembershipGateway
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
+import com.theprodeogroup.fish.application.ImportFixedAssetsUseCase
 import com.theprodeogroup.fish.application.ImportGlBalancesUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.Membership
@@ -133,6 +134,8 @@ class OpeningImportRoutesTest {
             .also { accountRepository.save(it) }
         val suspenseAccount = Account.create(company.id, AccountType.EQUITY, null, ChartOfAccountsTemplate.SUSPENSE_ACCOUNT_CODE, "Suspense Account")
             .also { accountRepository.save(it) }
+        val fixedAssetAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.NON_CURRENT, "1200", "Fixed Assets")
+            .also { accountRepository.save(it) }
 
         val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
@@ -151,6 +154,10 @@ class OpeningImportRoutesTest {
         val openingImportRowResultRepository = FakeOpeningImportRowResultRepository()
         val importGlBalancesUseCase = ImportGlBalancesUseCase(
             companyRepository, accountRepository, recordOpeningBalanceUseCase, openingImportBatchRepository, openingImportRowResultRepository
+        )
+        val importFixedAssetsUseCase = ImportFixedAssetsUseCase(
+            companyRepository, periodRepository, accountRepository, fixedAssetRepository, createFixedAssetUseCase,
+            openingImportBatchRepository, openingImportRowResultRepository
         )
 
         fun installInto(app: Application) {
@@ -196,7 +203,8 @@ class OpeningImportRoutesTest {
                 assessFixedAssetImpairmentUseCase = assessFixedAssetImpairmentUseCase,
                 disposeFixedAssetUseCase = disposeFixedAssetUseCase,
                 computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase,
-                importGlBalancesUseCase = importGlBalancesUseCase
+                importGlBalancesUseCase = importGlBalancesUseCase,
+                importFixedAssetsUseCase = importFixedAssetsUseCase
             )
         }
     }
@@ -300,5 +308,62 @@ class OpeningImportRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.Unauthorized
+    }
+
+    private fun fixedAssetCsvBody(csv: String, anchorDate: String) = MultiPartFormDataContent(
+        formData {
+            append("anchor_date", anchorDate)
+            append("file", csv.toByteArray(Charsets.UTF_8), Headers.build {
+                append(HttpHeaders.ContentDisposition, "filename=\"fixed-assets.csv\"")
+            })
+        }
+    )
+
+    @Test
+    fun `given a valid Fixed Assets CSV, when posted to commit, then it posts Dr Fixed Asset Cr Suspense and returns COMMITTED`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/companies/${fixture.company.id.value}/opening-imports/fixed-assets") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            setBody(
+                fixedAssetCsvBody(
+                    "asset_name,category,acquisition_date,cost,currency,useful_life_years,identifier,fixed_asset_account_code\n" +
+                        "Delivery Van,VEHICLES,${TODAY.minusDays(5)},18000.00,GBP,5,REG-123,${fixture.fixedAssetAccount.code}\n",
+                    TODAY.toString()
+                )
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body = response.body<OpeningImportBatchResponseDto>()
+        body.status shouldBe "COMMITTED"
+        body.acceptedCount shouldBe 1
+        fixture.fixedAssetRepository.findAllByCompany(fixture.company.id).size shouldBe 1
+    }
+
+    @Test
+    fun `given a Fixed Assets CSV with Land and a useful_life_years, when posted to validate, then the row is rejected`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/companies/${fixture.company.id.value}/opening-imports/fixed-assets/validate") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            setBody(
+                fixedAssetCsvBody(
+                    "asset_name,category,acquisition_date,cost,currency,useful_life_years,identifier,fixed_asset_account_code\n" +
+                        "HQ Plot,LAND,${TODAY.minusDays(5)},500000.00,GBP,20,,${fixture.fixedAssetAccount.code}\n",
+                    TODAY.toString()
+                )
+            )
+        }
+
+        val body = response.body<OpeningImportBatchResponseDto>()
+        body.rejectedCount shouldBe 1
+        body.rows.single().errors.single() shouldBe "Land cannot have a useful_life_years"
     }
 }

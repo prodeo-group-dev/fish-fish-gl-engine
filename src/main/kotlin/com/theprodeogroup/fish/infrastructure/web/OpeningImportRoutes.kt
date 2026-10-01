@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import com.theprodeogroup.fish.application.ImportFixedAssetsUseCase
 import com.theprodeogroup.fish.application.ImportGlBalancesUseCase
 import com.theprodeogroup.fish.domain.opening.OpeningImportBatch
 import com.theprodeogroup.fish.domain.opening.OpeningImportRowResult
@@ -12,57 +13,58 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.respond
-import io.ktor.utils.io.core.readText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.post
+import io.ktor.utils.io.core.readText
 import kotlinx.serialization.Serializable
-import java.math.BigDecimal
 import java.security.MessageDigest
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 
 /**
  * `docs/Opening_Figures_CSV_Upload_DDD_Design.md`/`...Requirements_Specification.md`
- * (FR-UP1-UP7) - the HTTP layer for the first opening-figures importer,
- * GL balances. Multipart upload (FR-UP1): one file part named `file`
- * (the CSV) and one form field named `anchor_date` (FR-UP3, ISO-8601).
+ * (FR-UP1-UP7) - the HTTP layer for the opening-figures importers. Each
+ * domain gets its own `POST /companies/{companyId}/opening-imports/{domain}[/validate]`
+ * pair, sharing one multipart-upload-and-CSV-parse helper
+ * ([readMultipartCsvUpload]) since FR-UP1-UP3 (multipart file + an
+ * `anchor_date` form field, CSV grammar) are identical across every
+ * domain - only the per-row column shape and the use case called differ.
  *
  * **`/validate` is the dry run (FR-UP4), the plain route is commit
  * (FR-UP5)** - two separate endpoints rather than a `?dryRun=true` query
  * param, matching this codebase's own precedent (no existing route in
- * this file set uses a mode-switching query param - see
- * `ListPurchaseOrdersForFulfillmentUseCase`'s own KDoc in the POP
- * sibling repo for the same "dedicated path, not a mode switch" reasoning).
+ * this file set uses a mode-switching query param).
  *
- * **Wired into [fishModule]'s production instantiation (2026-10-01)** -
- * `productionModule()` now constructs real `ExposedOpeningImportBatchRepository`/
- * `ExposedOpeningImportRowResultRepository` implementations (`V26__opening_import_tables.sql`)
- * and passes a real [ImportGlBalancesUseCase] through. The parameter
- * itself stays nullable in [fishModule] - the same "optional,
- * conditionally registered" shape `vatReturnRepository`/`vatReturnRoutes`
- * already established there - purely so the ~20 existing route-test
- * fixtures that don't exercise this capability keep compiling without
- * every one of them being forced to wire it up too.
+ * **GL balances wired into [fishModule]'s production instantiation
+ * (2026-10-01)**; **Fixed Assets added the same day** - both share the
+ * same nullable, conditionally-registered `fishModule` shape
+ * `vatReturnRepository`/`vatReturnRoutes` already established, so the
+ * ~20 existing route-test fixtures that don't exercise this capability
+ * keep compiling unchanged.
  */
-fun Route.openingImportRoutes(importGlBalancesUseCase: ImportGlBalancesUseCase, companyRepository: CompanyRepository) {
+fun Route.openingImportRoutes(
+    importGlBalancesUseCase: ImportGlBalancesUseCase,
+    importFixedAssetsUseCase: ImportFixedAssetsUseCase,
+    companyRepository: CompanyRepository
+) {
     post("/companies/{companyId}/opening-imports/gl-balances/validate") {
         call.handleGlBalancesImport(importGlBalancesUseCase, companyRepository, commit = false)
     }
     post("/companies/{companyId}/opening-imports/gl-balances") {
         call.handleGlBalancesImport(importGlBalancesUseCase, companyRepository, commit = true)
     }
+    post("/companies/{companyId}/opening-imports/fixed-assets/validate") {
+        call.handleFixedAssetsImport(importFixedAssetsUseCase, companyRepository, commit = false)
+    }
+    post("/companies/{companyId}/opening-imports/fixed-assets") {
+        call.handleFixedAssetsImport(importFixedAssetsUseCase, companyRepository, commit = true)
+    }
 }
 
-private suspend fun ApplicationCall.handleGlBalancesImport(
-    importGlBalancesUseCase: ImportGlBalancesUseCase,
-    companyRepository: CompanyRepository,
-    commit: Boolean
-) {
-    val companyId = parseOpeningImportCompanyId() ?: return
-    val tenantId = resolveTenantForCompany(companyId, companyRepository) ?: return
-    if (!verifyClaimedTenant(tenantId)) return
-    val authorizedCaller = authorizeTenantForWrite(tenantId, companyId) ?: return
+/** One parsed multipart upload: the batch-level `anchor_date` (FR-UP3) and the CSV's data rows, already header-mapped. Responds and returns `null` itself on any failure, so callers just need to bail on `null`. */
+private class MultipartCsvUpload(val anchorDate: LocalDate, val filenameHash: String, val csvRows: List<Map<String, String>>)
 
+private suspend fun ApplicationCall.readMultipartCsvUpload(): MultipartCsvUpload? {
     var anchorDateRaw: String? = null
     var filename: String? = null
     var fileContent: String? = null
@@ -81,21 +83,43 @@ private suspend fun ApplicationCall.handleGlBalancesImport(
 
     if (anchorDateRaw == null) {
         respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "anchor_date form field is required"))
-        return
+        return null
     }
     val anchorDate = try {
         LocalDate.parse(anchorDateRaw)
     } catch (e: DateTimeParseException) {
         respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "anchor_date must be ISO-8601 (YYYY-MM-DD)"))
-        return
+        return null
     }
-    if (fileContent == null) {
+    val content = fileContent
+    if (content == null) {
         respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "a 'file' part containing the CSV is required"))
-        return
+        return null
     }
 
+    val csvRows = try {
+        CsvParser.parseCsv(content)
+    } catch (e: CsvParseException) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_csv", e.message))
+        return null
+    }
+
+    return MultipartCsvUpload(anchorDate, sha256Hex(filename ?: "unknown"), csvRows)
+}
+
+private suspend fun ApplicationCall.handleGlBalancesImport(
+    importGlBalancesUseCase: ImportGlBalancesUseCase,
+    companyRepository: CompanyRepository,
+    commit: Boolean
+) {
+    val companyId = parseOpeningImportCompanyId() ?: return
+    val tenantId = resolveTenantForCompany(companyId, companyRepository) ?: return
+    if (!verifyClaimedTenant(tenantId)) return
+    val authorizedCaller = authorizeTenantForWrite(tenantId, companyId) ?: return
+    val upload = readMultipartCsvUpload() ?: return
+
     val rows = try {
-        CsvParser.parseCsv(fileContent!!).mapIndexed { index, columns ->
+        upload.csvRows.mapIndexed { index, columns ->
             val rowNumber = index + 2 // row 1 is the header
             val accountCode = columns["account_code"]
                 ?: throw CsvParseException("row $rowNumber is missing required column 'account_code'")
@@ -117,8 +141,8 @@ private suspend fun ApplicationCall.handleGlBalancesImport(
 
     val request = ImportGlBalancesUseCase.Request(
         companyId = companyId,
-        anchorDate = anchorDate,
-        filenameHash = sha256Hex(filename ?: "unknown"),
+        anchorDate = upload.anchorDate,
+        filenameHash = upload.filenameHash,
         createdByEmail = authorizedCaller.email,
         rows = rows
     )
@@ -128,7 +152,69 @@ private suspend fun ApplicationCall.handleGlBalancesImport(
         is ImportGlBalancesUseCase.Result.CompanyNotFound ->
             respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
         is ImportGlBalancesUseCase.Result.Success ->
-            respond(HttpStatusCode.OK, result.toDto())
+            respond(HttpStatusCode.OK, result.batch.toDto(result.rowResults))
+    }
+}
+
+private suspend fun ApplicationCall.handleFixedAssetsImport(
+    importFixedAssetsUseCase: ImportFixedAssetsUseCase,
+    companyRepository: CompanyRepository,
+    commit: Boolean
+) {
+    val companyId = parseOpeningImportCompanyId() ?: return
+    val tenantId = resolveTenantForCompany(companyId, companyRepository) ?: return
+    if (!verifyClaimedTenant(tenantId)) return
+    val authorizedCaller = authorizeTenantForWrite(tenantId, companyId) ?: return
+    val upload = readMultipartCsvUpload() ?: return
+
+    val rows = try {
+        upload.csvRows.mapIndexed { index, columns ->
+            val rowNumber = index + 2 // row 1 is the header
+            fun required(column: String) = columns[column]?.takeIf { it.isNotBlank() }
+                ?: throw CsvParseException("row $rowNumber is missing required column '$column'")
+            val cost = required("cost").toBigDecimalOrNull()
+                ?: throw CsvParseException("row $rowNumber has an invalid cost: '${columns["cost"]}'")
+            val acquisitionDate = try {
+                LocalDate.parse(required("acquisition_date"))
+            } catch (e: DateTimeParseException) {
+                throw CsvParseException("row $rowNumber has an invalid acquisition_date: '${columns["acquisition_date"]}'")
+            }
+            val usefulLifeYears = columns["useful_life_years"]?.takeIf { it.isNotBlank() }?.let {
+                it.toIntOrNull() ?: throw CsvParseException("row $rowNumber has an invalid useful_life_years: '$it'")
+            }
+            ImportFixedAssetsUseCase.Row(
+                rowNumber = rowNumber,
+                assetName = required("asset_name"),
+                category = required("category"),
+                acquisitionDate = acquisitionDate,
+                cost = cost,
+                currency = required("currency"),
+                usefulLifeYears = usefulLifeYears,
+                identifier = columns["identifier"]?.takeIf { it.isNotBlank() },
+                fixedAssetAccountCode = required("fixed_asset_account_code")
+            )
+        }
+    } catch (e: CsvParseException) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_csv", e.message))
+        return
+    }
+
+    val request = ImportFixedAssetsUseCase.Request(
+        companyId = companyId,
+        anchorDate = upload.anchorDate,
+        filenameHash = upload.filenameHash,
+        createdByEmail = authorizedCaller.email,
+        rows = rows
+    )
+
+    val result = if (commit) importFixedAssetsUseCase.commit(request) else importFixedAssetsUseCase.validate(request)
+    when (result) {
+        is ImportFixedAssetsUseCase.Result.CompanyNotFound ->
+            respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
+        is ImportFixedAssetsUseCase.Result.NoOpenPeriod ->
+            respond(HttpStatusCode.Conflict, ErrorResponseDto("no_open_period", "No open Period covers the anchor_date"))
+        is ImportFixedAssetsUseCase.Result.Success ->
+            respond(HttpStatusCode.OK, result.batch.toDto(result.rowResults))
     }
 }
 
@@ -145,14 +231,14 @@ private suspend fun ApplicationCall.parseOpeningImportCompanyId(): CompanyId? {
 private fun sha256Hex(value: String): String =
     MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 
-private fun ImportGlBalancesUseCase.Result.Success.toDto() = OpeningImportBatchResponseDto(
-    batchId = batch.id.value.toString(),
-    domain = batch.domain.name,
-    status = batch.status.name,
-    rowCount = batch.rowCount,
-    acceptedCount = batch.acceptedCount,
-    rejectedCount = batch.rejectedCount,
-    needsItemizationCount = batch.needsItemizationCount,
+private fun OpeningImportBatch.toDto(rowResults: List<OpeningImportRowResult>) = OpeningImportBatchResponseDto(
+    batchId = id.value.toString(),
+    domain = domain.name,
+    status = status.name,
+    rowCount = rowCount,
+    acceptedCount = acceptedCount,
+    rejectedCount = rejectedCount,
+    needsItemizationCount = needsItemizationCount,
     rows = rowResults.map { it.toDto() }
 )
 

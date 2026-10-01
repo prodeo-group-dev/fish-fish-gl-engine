@@ -87,7 +87,9 @@ class CreateFixedAssetUseCase(
         val identifier: String? = null,
         val periodId: PeriodId,
         val fixedAssetAccountId: AccountId,
-        val funding: FixedAssetFundingMethod
+        val funding: FixedAssetFundingMethod,
+        /** Caller-supplied, defaulting to [JournalSource.MANUAL] (2026-10-01) - same generalization as [RecordOpeningBalanceUseCase.Request.journalSource], needed so docs/Opening_Figures_CSV_Upload_DDD_Design.md's Fixed Assets importer can tag its postings [JournalSource.IMPORT]. Added last, not interleaved, so every existing positional-argument call site keeps compiling unchanged. */
+        val journalSource: JournalSource = JournalSource.MANUAL
     )
 
     sealed class Result {
@@ -140,7 +142,7 @@ class CreateFixedAssetUseCase(
                 periodId = request.periodId,
                 date = request.acquisitionDate,
                 lines = lines,
-                source = JournalSource.MANUAL,
+                source = request.journalSource,
                 description = "Acquisition - ${request.name}"
             )
         )
