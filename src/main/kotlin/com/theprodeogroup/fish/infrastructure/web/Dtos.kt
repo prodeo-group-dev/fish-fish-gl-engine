@@ -629,6 +629,24 @@ data class VendorBalanceDto(val creditorId: String, val balance: String, val cur
 @Serializable
 data class ComputeVendorBalancesResponseDto(val balances: List<VendorBalanceDto>)
 
+/**
+ * Wire shapes for `POST /companies/{companyId}/accounts-receivable-aging` -
+ * the bucketed counterpart to [ComputeCustomerBalancesRequestDto]/
+ * [ComputeCustomerBalancesResponseDto], which only ever surfaces the
+ * scalar total. Same caller-supplied-id-list constraint.
+ */
+@Serializable
+data class ComputeAccountsReceivableAgingRequestDto(val customerIds: List<String>)
+
+@Serializable
+data class AgingBucketAmountDto(val label: String, val amount: String, val currency: String)
+
+@Serializable
+data class CustomerAgingDto(val customerId: String, val buckets: List<AgingBucketAmountDto>)
+
+@Serializable
+data class ComputeAccountsReceivableAgingResponseDto(val aging: List<CustomerAgingDto>)
+
 @Serializable
 data class MoneyVelocityResponseDto(
     val periodId: String,
