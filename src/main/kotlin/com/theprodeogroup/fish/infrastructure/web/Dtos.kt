@@ -647,6 +647,19 @@ data class CustomerAgingDto(val customerId: String, val buckets: List<AgingBucke
 @Serializable
 data class ComputeAccountsReceivableAgingResponseDto(val aging: List<CustomerAgingDto>)
 
+/**
+ * Wire shapes for `POST /companies/{companyId}/accounts-payable-aging` -
+ * the AP mirror of [ComputeAccountsReceivableAgingRequestDto]/[ComputeAccountsReceivableAgingResponseDto].
+ */
+@Serializable
+data class ComputeAccountsPayableAgingRequestDto(val creditorIds: List<String>)
+
+@Serializable
+data class VendorAgingDto(val creditorId: String, val buckets: List<AgingBucketAmountDto>)
+
+@Serializable
+data class ComputeAccountsPayableAgingResponseDto(val aging: List<VendorAgingDto>)
+
 @Serializable
 data class MoneyVelocityResponseDto(
     val periodId: String,
