@@ -318,4 +318,50 @@ class ReportsRoutesTest {
 
         response.status shouldBe HttpStatusCode.Unauthorized
     }
+
+    @Test
+    fun `given the sample activity, when GET reports working-capital is called, then it returns current assets minus current liabilities`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleActivity()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/reports/working-capital") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: WorkingCapitalResponseDto = response.body()
+        body.totalCurrentAssets shouldBe "1300.00"
+        body.totalCurrentLiabilities shouldBe "100.00"
+        body.workingCapital shouldBe "1200.00"
+    }
+
+    @Test
+    fun `given no bearer token, when GET reports working-capital is called, then it returns 401`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/reports/working-capital") {
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.Unauthorized
+    }
+
+    @Test
+    fun `given a nonexistent Company, when GET reports working-capital is called, then it returns 404`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${java.util.UUID.randomUUID()}/reports/working-capital") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.NotFound
+    }
 }

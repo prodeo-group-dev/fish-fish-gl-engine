@@ -3,6 +3,7 @@ package com.theprodeogroup.fish.infrastructure.web
 import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
 import com.theprodeogroup.fish.application.ComputeCashFlowUseCase
 import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
+import com.theprodeogroup.fish.application.ComputeWorkingCapitalUseCase
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import io.ktor.http.HttpStatusCode
@@ -12,7 +13,7 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 
 /**
- * `GET /companies/{companyId}/reports/{balance-sheet,profit-and-loss,cash-flow}` -
+ * `GET /companies/{companyId}/reports/{balance-sheet,profit-and-loss,cash-flow,working-capital}` -
  * the GL page's "Reports" sub-page (2026-08-29, "the GL should also have
  * a reports subpage ... along with a journal Posting subpage and its
  * Dashboard"). Same read-only, Company-scoped shape as
@@ -23,6 +24,7 @@ fun Route.reportsRoutes(
     computeBalanceSheetUseCase: ComputeBalanceSheetUseCase,
     computeProfitAndLossUseCase: ComputeProfitAndLossUseCase,
     computeCashFlowUseCase: ComputeCashFlowUseCase,
+    computeWorkingCapitalUseCase: ComputeWorkingCapitalUseCase,
     companyRepository: CompanyRepository
 ) {
     get("/companies/{companyId}/reports/balance-sheet") {
@@ -113,6 +115,31 @@ fun Route.reportsRoutes(
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("no_open_period", "This Company has no open Period"))
             ComputeCashFlowUseCase.Result.NoCashAccount ->
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("no_cash_account", "This Company has no Cash account"))
+        }
+    }
+
+    get("/companies/{companyId}/reports/working-capital") {
+        val companyId = call.parseCompanyId() ?: return@get
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
+        if (!call.verifyClaimedTenant(tenantId)) return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
+
+        when (val result = computeWorkingCapitalUseCase.execute(companyId)) {
+            is ComputeWorkingCapitalUseCase.Result.Success -> {
+                val wc = result.workingCapital
+                call.respond(
+                    WorkingCapitalResponseDto(
+                        currency = wc.currency.currencyCode,
+                        totalCurrentAssets = wc.totalCurrentAssets.amount.toPlainString(),
+                        totalCurrentLiabilities = wc.totalCurrentLiabilities.amount.toPlainString(),
+                        workingCapital = wc.workingCapital.amount.toPlainString()
+                    )
+                )
+            }
+            ComputeWorkingCapitalUseCase.Result.CompanyNotFound ->
+                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
+            ComputeWorkingCapitalUseCase.Result.NoAccountsForCompany ->
+                call.respond(HttpStatusCode.Conflict, ErrorResponseDto("no_accounts", "This Company has no Chart of Accounts"))
         }
     }
 }
