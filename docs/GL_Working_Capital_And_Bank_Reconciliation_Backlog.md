@@ -17,12 +17,12 @@ starts, same judgment call as the Audit Trail backlog's own note.
 | 1.2 | ~~`GET /companies/{companyId}/reports/working-capital`~~ | 1.1 | **Done** - added to `reportsRoutes()` alongside its three siblings, `WorkingCapitalResponseDto` in `Dtos.kt`. |
 | 1.3 | ~~Wire into `Application.kt`~~ | 1.2 | **Done** - `computeWorkingCapitalUseCase` is a defaulted `fishModule` param (constructed from repos already in scope), not a new required one, so none of the ~25 existing test fixtures needed touching. 3 new tests in `ReportsRoutesTest.kt`, full suite green. |
 | 2.0 | ~~**Decision gate**~~ | — | **Resolved 2026-10-03** - bulk synchronous statement ingestion, deletable persisted match pairs (SRS §2.2). |
-| 2.1 | `BankReconciliation.unmatch()` (new domain method - `match()` already existed, undo didn't) + `internal reconstitute()` | 2.0 | Not started |
-| 2.2 | Migration + Exposed tables (`bank_reconciliations`, `bank_statement_lines`, `bank_reconciliation_matches` with a unique constraint on `statement_line_id` per NFR-BANKREC-01) + `BankReconciliationRepository`/`ExposedBankReconciliationRepository` + `FakeBankReconciliationRepository` | 2.1 | Not started |
-| 2.3 | `StartBankReconciliationUseCase` (bulk, synchronous, per UC-BANKREC-01) | 2.2 | Not started |
-| 2.4 | `MatchBankReconciliationLineUseCase`/`UnmatchBankReconciliationLineUseCase` wrapping `match()`/`unmatch()` against persisted state (UC-BANKREC-02/04) | 2.2 | Not started |
-| 2.5 | `ComputeBankReconciliationUseCase` (or equivalent read) + `GET` route(s) for reconciliation state (UC-BANKREC-03) | 2.2 | Not started |
-| 2.6 | Routes wired into `Application.kt`'s `fishModule`/`productionModule`, DTOs in `Dtos.kt` | 2.3, 2.4, 2.5 | Not started |
+| 2.1 | ~~`BankReconciliation.unmatch()` + `internal reconstitute()`~~ | 2.0 | **Done** (GL `e6631bf`). Found and fixed a real gap while scoping this: the existing model tracked two *independent* matched-id Sets, not the actual pairing - couldn't know which entry a line was matched to, which `unmatch()` needs. Replaced with one `Set<Pair<...>>`, same public behavior otherwise. |
+| 2.2 | ~~Migration + Exposed tables + repositories~~ | 2.1 | **Done** - `V28__bank_reconciliation_tables.sql`, `ExposedBankReconciliationRepository`, `FakeBankReconciliationRepository`. `statement_line_id` PRIMARY KEY + `journal_entry_id` UNIQUE enforce NFR-BANKREC-01 at the DB level. |
+| 2.3 | ~~`StartBankReconciliationUseCase`~~ | 2.2 | **Done**. |
+| 2.4 | ~~`MatchBankReconciliationLineUseCase`/`UnmatchBankReconciliationLineUseCase`~~ | 2.2 | **Done**. |
+| 2.5 | ~~`ComputeBankReconciliationUseCase` + `GET` route~~ | 2.2 | **Done**. |
+| 2.6 | ~~Routes wired into `Application.kt`~~ | 2.3, 2.4, 2.5 | **Done** - four nullable `fishModule` params (no "free" default, unlike Working Capital's), conditionally registered. 4 new `BankReconciliationTest` cases + 9 `BankReconciliationRoutesTest` cases + 4 `BankReconciliationRepositoryIntegrationTest` cases (written, compiles, not run live - same local-DB-credentials gap as Audit Trail Wave 1, flagged for CM). Full unit suite green. |
 
 ## Change log
 
