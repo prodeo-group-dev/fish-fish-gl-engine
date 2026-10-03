@@ -203,7 +203,7 @@ class FixedAsset private constructor(
      * 3. Debit [cashAccountId], credit [saleOfFixedAssetAccountId] for
      *    [proceeds]. The cash line is tagged `CashFlowActivity.INVESTING`
      *    (IAS 7, confirmed 2026-08-12) - unlike `Customer.receivePayment()`/
-     *    `Creditor.makePayment()`'s Operating tag, proceeds from selling
+     *    `Supplier.makePayment()`'s Operating tag, proceeds from selling
      *    a capital asset are always Investing, regardless of
      *    [saleOfFixedAssetAccountId]'s own Revenue account type.
      *
@@ -297,7 +297,7 @@ class FixedAsset private constructor(
             return FixedAsset(id, companyId, name, category, cost, acquisitionDate, usefulLifeYears, identifier?.trim()?.ifBlank { null })
         }
 
-        /** Rebuilds a [FixedAsset] from persisted state, bypassing [create]'s validation - same "reconstitute" precedent as `Creditor`/`Customer`. */
+        /** Rebuilds a [FixedAsset] from persisted state, bypassing [create]'s validation - same "reconstitute" precedent as `Supplier`/`Customer`. */
         internal fun reconstitute(
             id: FixedAssetId,
             companyId: CompanyId,

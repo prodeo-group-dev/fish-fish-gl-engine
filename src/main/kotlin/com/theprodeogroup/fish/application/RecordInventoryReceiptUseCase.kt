@@ -18,7 +18,7 @@ import java.time.LocalDate
 
 /**
  * Outcome of [RecordInventoryReceiptUseCase.execute] - a sealed
- * `Result`, mirroring [RecordSaleResult]/[RecordVendorObligationResult]
+ * `Result`, mirroring [RecordSaleResult]/[RecordSupplierObligationResult]
  * exactly.
  */
 sealed class RecordInventoryReceiptResult {
@@ -35,7 +35,7 @@ sealed class RecordInventoryReceiptResult {
 
 /**
  * The *Record inventory receipt* thin posting interface - Inventory's
- * counterpart to [RecordSaleUseCase]/[RecordVendorObligationUseCase],
+ * counterpart to [RecordSaleUseCase]/[RecordSupplierObligationUseCase],
  * built once the Option A/B fork
  * (`docs/Ecosystem_Extraction_DDD_Design.md` Section 1.3) resolved as
  * **Option B**: the whole IAS 2 costing engine moved to `fish-
@@ -46,8 +46,8 @@ sealed class RecordInventoryReceiptResult {
  * blend, no `StockItem` lookup, no persisted inventory-valuation state
  * read on this side at all. Tagged `DimensionType.ITEM` with a
  * caller-supplied [StockItemId], reused purely as a non-authoritative
- * tag value (the same treatment [CustomerId]/[CreditorId] get on
- * [RecordSaleUseCase]/[RecordVendorObligationUseCase]) - IM computes
+ * tag value (the same treatment [CustomerId]/[SupplierId] get on
+ * [RecordSaleUseCase]/[RecordSupplierObligationUseCase]) - IM computes
  * and owns the real item identity; this repo's `StockItemId` just gives
  * the tag type safety.
  *
@@ -58,7 +58,7 @@ sealed class RecordInventoryReceiptResult {
  * Section 2's coupling problem, not yet resolved). This use case is
  * what IM is expected to call once its own application layer exists;
  * nothing in `fish-fish-gl-engine` is deleted by adding it, matching
- * the precedent [RecordSaleUseCase]/[RecordVendorObligationUseCase]
+ * the precedent [RecordSaleUseCase]/[RecordSupplierObligationUseCase]
  * already set for SOP/POP.
  *
  * **No quantity field at all** - unlike [PostInventoryReceiptUseCase.Request],

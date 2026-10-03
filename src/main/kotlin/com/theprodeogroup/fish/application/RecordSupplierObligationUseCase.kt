@@ -13,33 +13,33 @@ import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
-import com.theprodeogroup.fish.domain.purchasing.CreditorId
+import com.theprodeogroup.fish.domain.purchasing.SupplierId
 import com.theprodeogroup.fish.domain.tax.VatCategory
 import com.theprodeogroup.fish.domain.tax.VatRateSchedule
 import java.math.BigDecimal
 import java.time.LocalDate
 
 /**
- * Outcome of [RecordVendorObligationUseCase.execute] - a sealed
+ * Outcome of [RecordSupplierObligationUseCase.execute] - a sealed
  * `Result`, same reasoning as every other multi-reason posting use case
  * this codebase has built, mirroring [RecordSaleResult] exactly.
  */
-sealed class RecordVendorObligationResult {
+sealed class RecordSupplierObligationResult {
     data class Success(
         val journalEntry: JournalEntry,
         val events: List<DomainEvent>
-    ) : RecordVendorObligationResult()
-    data object InvalidAmount : RecordVendorObligationResult()
-    data object PeriodNotFound : RecordVendorObligationResult()
-    data object PeriodNotOpen : RecordVendorObligationResult()
-    data class ExpenseOrAssetAccountNotFound(val accountId: AccountId) : RecordVendorObligationResult()
-    data class ApControlAccountNotFound(val accountId: AccountId) : RecordVendorObligationResult()
-    data class VatControlAccountNotFound(val accountId: AccountId) : RecordVendorObligationResult()
-    data class VatCategoryNotSupported(val category: VatCategory) : RecordVendorObligationResult()
+    ) : RecordSupplierObligationResult()
+    data object InvalidAmount : RecordSupplierObligationResult()
+    data object PeriodNotFound : RecordSupplierObligationResult()
+    data object PeriodNotOpen : RecordSupplierObligationResult()
+    data class ExpenseOrAssetAccountNotFound(val accountId: AccountId) : RecordSupplierObligationResult()
+    data class ApControlAccountNotFound(val accountId: AccountId) : RecordSupplierObligationResult()
+    data class VatControlAccountNotFound(val accountId: AccountId) : RecordSupplierObligationResult()
+    data class VatCategoryNotSupported(val category: VatCategory) : RecordSupplierObligationResult()
 }
 
 /**
- * The *Record vendor obligation* thin posting interface
+ * The *Record supplier obligation* thin posting interface
  * (docs/Purchase_Order_Processing_DDD_Design.md Section 0/4) - the
  * Purchasing mirror of [RecordSaleUseCase], input VAT instead of output
  * VAT. Dr caller-specified Expense/Asset (net), Dr VAT Control per
@@ -66,7 +66,7 @@ sealed class RecordVendorObligationResult {
  * `VatRateSchedule.forJurisdiction(company.jurisdiction)` and supplies
  * it per call.
  */
-class RecordVendorObligationUseCase(
+class RecordSupplierObligationUseCase(
     private val periodRepository: PeriodRepository,
     private val accountRepository: AccountRepository,
     private val journalEntryRepository: JournalEntryRepository
@@ -85,22 +85,22 @@ class RecordVendorObligationUseCase(
         val apControlAccountId: AccountId,
         val vatControlAccountId: AccountId,
         val lines: List<PurchaseLine>,
-        val vendorId: CreditorId,
+        val supplierId: SupplierId,
         val vatRateSchedule: VatRateSchedule,
         val description: String? = null,
         /** Caller-supplied, defaulting to [JournalSource.INTEGRATION] (2026-10-01) - same generalization already applied to [RecordOpeningBalanceUseCase.Request.journalSource]/[CreateFixedAssetUseCase.Request.journalSource]/[RecordInventoryReceiptUseCase.Request.journalSource], needed so docs/Opening_Figures_CSV_Upload_DDD_Design.md's AP importer (POP) can tag its postings [JournalSource.IMPORT]. Added last, not interleaved, so every existing positional-argument call site keeps compiling unchanged. */
         val journalSource: JournalSource = JournalSource.INTEGRATION
     )
 
-    fun execute(request: Request): RecordVendorObligationResult {
+    fun execute(request: Request): RecordSupplierObligationResult {
         if (request.lines.isEmpty()) {
-            return RecordVendorObligationResult.InvalidAmount
+            return RecordSupplierObligationResult.InvalidAmount
         }
 
         val period = periodRepository.findById(request.periodId)
-            ?: return RecordVendorObligationResult.PeriodNotFound
+            ?: return RecordSupplierObligationResult.PeriodNotFound
         if (!period.allowsPosting()) {
-            return RecordVendorObligationResult.PeriodNotOpen
+            return RecordSupplierObligationResult.PeriodNotOpen
         }
 
         // Cross-tenant isolation fix (2026-09-23, same gap/fix as PostJournalEntryUseCase):
@@ -109,17 +109,17 @@ class RecordVendorObligationUseCase(
         // another Company's Account exists.
         val expenseOrAssetAccount = accountRepository.findById(request.expenseOrAssetAccountId)
             ?.takeIf { it.companyId == period.companyId }
-            ?: return RecordVendorObligationResult.ExpenseOrAssetAccountNotFound(request.expenseOrAssetAccountId)
+            ?: return RecordSupplierObligationResult.ExpenseOrAssetAccountNotFound(request.expenseOrAssetAccountId)
         val apControlAccount = accountRepository.findById(request.apControlAccountId)
             ?.takeIf { it.companyId == period.companyId }
-            ?: return RecordVendorObligationResult.ApControlAccountNotFound(request.apControlAccountId)
+            ?: return RecordSupplierObligationResult.ApControlAccountNotFound(request.apControlAccountId)
         val vatAccount = accountRepository.findById(request.vatControlAccountId)
             ?.takeIf { it.companyId == period.companyId }
-            ?: return RecordVendorObligationResult.VatControlAccountNotFound(request.vatControlAccountId)
+            ?: return RecordSupplierObligationResult.VatControlAccountNotFound(request.vatControlAccountId)
 
         val unsupportedCategory = request.lines.map { it.vatCategory }.firstOrNull { !request.vatRateSchedule.supports(it) }
         if (unsupportedCategory != null) {
-            return RecordVendorObligationResult.VatCategoryNotSupported(unsupportedCategory)
+            return RecordSupplierObligationResult.VatCategoryNotSupported(unsupportedCategory)
         }
 
         val currency = request.lines.first().netAmount.currency
@@ -145,7 +145,7 @@ class RecordVendorObligationUseCase(
         ) + vatLines + listOf(
             JournalLine(
                 apControlAccount.id, grossTotal, TransactionSide.CREDIT,
-                mapOf(DimensionType.VENDOR to request.vendorId.value.toString())
+                mapOf(DimensionType.VENDOR to request.supplierId.value.toString())
             )
         )
 
@@ -154,7 +154,7 @@ class RecordVendorObligationUseCase(
         )
         val posting = entry.post()
         check(posting.isValid) {
-            "RecordVendorObligationUseCase built a JournalEntry that failed its own post() precondition: " +
+            "RecordSupplierObligationUseCase built a JournalEntry that failed its own post() precondition: " +
                 posting.errors.joinToString()
         }
 
@@ -166,6 +166,6 @@ class RecordVendorObligationUseCase(
 
         journalEntryRepository.save(entry)
 
-        return RecordVendorObligationResult.Success(entry, entry.pullDomainEvents())
+        return RecordSupplierObligationResult.Success(entry, entry.pullDomainEvents())
     }
 }

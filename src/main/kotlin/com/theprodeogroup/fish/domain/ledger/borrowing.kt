@@ -23,13 +23,13 @@ import java.time.LocalDate
  * This is the mirror direction: the Company itself as the borrower, from
  * a bank or other funder - ordinary corporate liability accounting every
  * GL Engine tenant needs, not Purse-specific, and squarely in Ledger
- * scope like `Creditor`/`FixedAsset`.
+ * scope like `Supplier`/`FixedAsset`.
  *
  * Deliberately mirrors `FixedAsset`'s shape for the recurring charge
  * ([recordInterestAccrual] : one call = one year's interest at
  * [annualInterestRate], not a day-count-convention proration - same
  * "callers decide their own cadence" discipline as
- * `FixedAsset.recordDepreciation()`), and `Creditor`'s shape for
+ * `FixedAsset.recordDepreciation()`), and `Supplier`'s shape for
  * settlement (`recordInterestPayment`/[recordPrincipalRepayment] cap at
  * the outstanding balance and post directly, no calling
  * `JournalEntry.reverse()` on a stored entry).

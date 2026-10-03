@@ -2,7 +2,7 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeCompanyRepository
-import com.theprodeogroup.fish.application.FakeCreditorRepository
+import com.theprodeogroup.fish.application.FakeSupplierRepository
 import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.FakeCustomerRepository
@@ -40,8 +40,8 @@ import com.theprodeogroup.fish.application.RecordFixedAssetDepreciationUseCase
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.RecordPayRunUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
-import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
-import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
+import com.theprodeogroup.fish.application.RecordSupplierObligationUseCase
+import com.theprodeogroup.fish.application.RecordSupplierPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
@@ -86,7 +86,7 @@ private const val TEST_EMAIL = "pop-caller@example.com"
  * No owning aggregate to derive tenant scoping from, so every request body
  * carries `companyId` directly.
  */
-class RecordVendorObligationAndPaymentRoutesTest {
+class RecordSupplierObligationAndPaymentRoutesTest {
 
     private class Fixture(role: Role = Role.ACCOUNTANT, jurisdiction: Jurisdiction = Jurisdiction.UK, accessLevel: AccessLevel = Membership.defaultAccessLevelFor(role)) {
         val userRepository = FakeUserRepository()
@@ -110,8 +110,8 @@ class RecordVendorObligationAndPaymentRoutesTest {
         val listSalesInvoicesUseCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
         val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordSalesReturnUseCase = RecordSalesReturnUseCase(periodRepository, accountRepository, journalEntryRepository)
-        val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
-        val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordSupplierObligationUseCase = RecordSupplierObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordSupplierPaymentUseCase = RecordSupplierPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
         val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
@@ -170,8 +170,8 @@ class RecordVendorObligationAndPaymentRoutesTest {
                 customerRepository = customerRepository,
                 recordCollectionUseCase = recordCollectionUseCase,
                 recordSalesReturnUseCase = recordSalesReturnUseCase,
-                recordVendorObligationUseCase = recordVendorObligationUseCase,
-                recordVendorPaymentUseCase = recordVendorPaymentUseCase,
+                recordSupplierObligationUseCase = recordSupplierObligationUseCase,
+                recordSupplierPaymentUseCase = recordSupplierPaymentUseCase,
                 recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,
                 recordInventoryIssueUseCase = recordInventoryIssueUseCase,
                 recordPayRunUseCase = recordPayRunUseCase,
@@ -212,12 +212,12 @@ class RecordVendorObligationAndPaymentRoutesTest {
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
                     |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
                     |"lines": [{"netAmount": "12500.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
-                    |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
+                    |"supplierId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
 
         response.status shouldBe HttpStatusCode.OK
-        val body: RecordVendorObligationResponseDto = response.body()
+        val body: RecordSupplierObligationResponseDto = response.body()
         body.status shouldBe "POSTED"
     }
 
@@ -235,7 +235,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
                     |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
                     |"lines": [{"netAmount": "12500.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
-                    |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
+                    |"supplierId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
 
@@ -257,7 +257,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
                     |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
                     |"lines": [{"netAmount": "12500.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
-                    |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
+                    |"supplierId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
 
@@ -279,7 +279,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
                     |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
                     |"lines": [{"netAmount": "12500.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
-                    |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
+                    |"supplierId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
 
@@ -301,7 +301,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
                     |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
                     |"lines": [{"netAmount": "12500.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
-                    |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
+                    |"supplierId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
 
@@ -323,7 +323,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
                     |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
                     |"lines": [{"netAmount": "0.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
-                    |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
+                    |"supplierId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
 
@@ -347,7 +347,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
                     |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
                     |"lines": [{"netAmount": "12500.00", "vatCategory": "STANDARD"}], "currency": "GBP",
-                    |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
+                    |"supplierId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
 
@@ -371,7 +371,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
                     |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
                     |"lines": [{"netAmount": "1000.00", "vatCategory": "STANDARD"}], "currency": "GBP",
-                    |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
+                    |"supplierId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
 
@@ -396,7 +396,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
                     |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
                     |"lines": [{"netAmount": "100.00", "vatCategory": "SECOND_REDUCED"}], "currency": "GBP",
-                    |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
+                    |"supplierId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
 
@@ -419,12 +419,12 @@ class RecordVendorObligationAndPaymentRoutesTest {
                 """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
                     |"date": "$TODAY", "apControlAccountId": "${fixture.apControlAccount.id.value}",
                     |"settlementAccountId": "${fixture.cashAccount.id.value}", "amount": "12500.00", "currency": "GBP",
-                    |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
+                    |"supplierId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
 
         response.status shouldBe HttpStatusCode.OK
-        val body: RecordVendorPaymentResponseDto = response.body()
+        val body: RecordSupplierPaymentResponseDto = response.body()
         body.status shouldBe "POSTED"
     }
 
@@ -442,7 +442,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
                 """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
                     |"date": "$TODAY", "apControlAccountId": "${fixture.apControlAccount.id.value}",
                     |"settlementAccountId": "${UUID.randomUUID()}", "amount": "12500.00", "currency": "GBP",
-                    |"vendorId": "${UUID.randomUUID()}"}""".trimMargin()
+                    |"supplierId": "${UUID.randomUUID()}"}""".trimMargin()
             )
         }
 
@@ -464,7 +464,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
                     |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
                     |"lines": [{"netAmount": "12500.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
-                    |"vendorId": "${UUID.randomUUID()}", "journalSource": "IMPORT"}""".trimMargin()
+                    |"supplierId": "${UUID.randomUUID()}", "journalSource": "IMPORT"}""".trimMargin()
             )
         }
 
@@ -488,7 +488,7 @@ class RecordVendorObligationAndPaymentRoutesTest {
                     |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
                     |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
                     |"lines": [{"netAmount": "12500.00", "vatCategory": "EXEMPT"}], "currency": "GBP",
-                    |"vendorId": "${UUID.randomUUID()}", "journalSource": "NOT_A_REAL_SOURCE"}""".trimMargin()
+                    |"supplierId": "${UUID.randomUUID()}", "journalSource": "NOT_A_REAL_SOURCE"}""".trimMargin()
             )
         }
 

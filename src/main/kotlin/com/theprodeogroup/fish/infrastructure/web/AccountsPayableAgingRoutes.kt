@@ -2,7 +2,7 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.application.ComputeAccountsPayableAgingResult
 import com.theprodeogroup.fish.application.ComputeAccountsPayableAgingUseCase
-import com.theprodeogroup.fish.domain.purchasing.CreditorId
+import com.theprodeogroup.fish.domain.purchasing.SupplierId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import io.ktor.http.HttpStatusCode
@@ -16,7 +16,7 @@ import io.ktor.server.routing.post
  * `POST /companies/{companyId}/accounts-payable-aging` -
  * [ComputeAccountsPayableAgingUseCase]'s inbound HTTP surface, the AP
  * mirror of [accountsReceivableAgingRoutes]. `POST`, not `GET`, for the
- * same reason - the caller-supplied `creditorIds` list can be long enough
+ * same reason - the caller-supplied `supplierIds` list can be long enough
  * to matter as a request body. Read-only, so [authorizeTenantForRead]
  * like every other posting-context/balances route.
  */
@@ -38,19 +38,19 @@ fun Route.accountsPayableAgingRoutes(
         call.authorizeTenantForRead(tenantId, companyId) ?: return@post
 
         val request = call.receive<ComputeAccountsPayableAgingRequestDto>()
-        val creditorIds = mutableListOf<CreditorId>()
-        for (raw in request.creditorIds) {
+        val supplierIds = mutableListOf<SupplierId>()
+        for (raw in request.supplierIds) {
             val uuid = call.parseUuid(raw) ?: return@post
-            creditorIds.add(CreditorId(uuid))
+            supplierIds.add(SupplierId(uuid))
         }
 
-        when (val result = computeAccountsPayableAgingUseCase.execute(companyId, creditorIds)) {
+        when (val result = computeAccountsPayableAgingUseCase.execute(companyId, supplierIds)) {
             is ComputeAccountsPayableAgingResult.Success -> call.respond(
                 ComputeAccountsPayableAgingResponseDto(
-                    result.aging.map { vendorAging ->
-                        VendorAgingDto(
-                            vendorAging.creditorId.value.toString(),
-                            vendorAging.buckets.map { AgingBucketAmountDto(it.label.name, it.amount.amount.toPlainString(), it.amount.currency.currencyCode) }
+                    result.aging.map { supplierAging ->
+                        SupplierAgingDto(
+                            supplierAging.supplierId.value.toString(),
+                            supplierAging.buckets.map { AgingBucketAmountDto(it.label.name, it.amount.amount.toPlainString(), it.amount.currency.currencyCode) }
                         )
                     }
                 )

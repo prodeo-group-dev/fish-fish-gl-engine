@@ -23,20 +23,20 @@ sealed class FixedAssetFundingMethod {
 
     /**
      * Credits the AP control account instead, tagged `VENDOR` with
-     * [vendorReference] - a free-text audit note, **not** a validated
-     * `Creditor` record. GL has no HTTP-exposed Creditor listing or
+     * [supplierReference] - a free-text audit note, **not** a validated
+     * `Supplier` record. GL has no HTTP-exposed Supplier listing or
      * creation route today, and this codebase's own convention is "POP
-     * owns Supplier/Creditor creation, never GL" - the same "opaque
-     * tag, no referential check" treatment `RecordVendorObligationUseCase`
-     * already gives its own `vendorId`. No cash-flow tag here - no cash
+     * owns Supplier/Supplier creation, never GL" - the same "opaque
+     * tag, no referential check" treatment `RecordSupplierObligationUseCase`
+     * already gives its own `supplierId`. No cash-flow tag here - no cash
      * moves until the obligation is later settled.
      */
-    data class OnAccount(val apControlAccountId: AccountId, val vendorReference: String) : FixedAssetFundingMethod()
+    data class OnAccount(val apControlAccountId: AccountId, val supplierReference: String) : FixedAssetFundingMethod()
 
     /**
      * For an asset the Company already owned before this register entry
      * was created - not a new transaction, so no cash moves and no
-     * vendor is involved. Credits [suspenseAccountId] with no dimension
+     * supplier is involved. Credits [suspenseAccountId] with no dimension
      * tag (2026-09-12, "This ... should be posted against a suspense
      * account which can be journalled out at end of year") - the same
      * catch-up treatment as [RecordOpeningBalanceUseCase], applied here
@@ -53,7 +53,7 @@ sealed class FixedAssetFundingMethod {
  * the balance sheet" / "There appears to be no process for fixed
  * asset Purchases"). Previously this use case only created the
  * register entry - acquiring the asset was deliberately left as "a
- * separate posting via `RecordVendorObligationUseCase` or
+ * separate posting via `RecordSupplierObligationUseCase` or
  * `PostJournalEntryUseCase`" (2026-09-03), but that second step was
  * never actually wired into any route or UI, so in production adding
  * an asset never touched Account balances or the Balance Sheet at all.
@@ -68,7 +68,7 @@ sealed class FixedAssetFundingMethod {
  * Reuses [PostJournalEntryUseCase] rather than re-deriving its own
  * period-open-check/account-existence-check/balance-validation/
  * `Account.recordActivity()` wiring - the same boilerplate
- * `RecordVendorObligationUseCase`/`DisposeFixedAssetUseCase` each
+ * `RecordSupplierObligationUseCase`/`DisposeFixedAssetUseCase` each
  * already repeat once more.
  */
 class CreateFixedAssetUseCase(
@@ -126,7 +126,7 @@ class CreateFixedAssetUseCase(
             )
             is FixedAssetFundingMethod.OnAccount -> JournalLine(
                 funding.apControlAccountId, request.cost, TransactionSide.CREDIT,
-                mapOf(DimensionType.VENDOR to funding.vendorReference)
+                mapOf(DimensionType.VENDOR to funding.supplierReference)
             )
             is FixedAssetFundingMethod.AlreadyOwned -> JournalLine(
                 funding.suspenseAccountId, request.cost, TransactionSide.CREDIT

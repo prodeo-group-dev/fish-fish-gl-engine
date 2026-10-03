@@ -16,7 +16,7 @@ import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
 import com.theprodeogroup.fish.application.DisposeFixedAssetUseCase
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeCompanyRepository
-import com.theprodeogroup.fish.application.FakeCreditorRepository
+import com.theprodeogroup.fish.application.FakeSupplierRepository
 import com.theprodeogroup.fish.application.FakeCustomerRepository
 import com.theprodeogroup.fish.application.FakeFixedAssetRepository
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
@@ -40,8 +40,8 @@ import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.RecordOpeningBalanceUseCase
 import com.theprodeogroup.fish.application.RecordPayRunUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
-import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
-import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
+import com.theprodeogroup.fish.application.RecordSupplierObligationUseCase
+import com.theprodeogroup.fish.application.RecordSupplierPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
@@ -108,8 +108,8 @@ class FixedAssetRoutesTest {
         val listSalesInvoicesUseCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
         val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordSalesReturnUseCase = RecordSalesReturnUseCase(periodRepository, accountRepository, journalEntryRepository)
-        val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
-        val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordSupplierObligationUseCase = RecordSupplierObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordSupplierPaymentUseCase = RecordSupplierPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
         val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
@@ -172,8 +172,8 @@ class FixedAssetRoutesTest {
                 customerRepository = customerRepository,
                 recordCollectionUseCase = recordCollectionUseCase,
                 recordSalesReturnUseCase = recordSalesReturnUseCase,
-                recordVendorObligationUseCase = recordVendorObligationUseCase,
-                recordVendorPaymentUseCase = recordVendorPaymentUseCase,
+                recordSupplierObligationUseCase = recordSupplierObligationUseCase,
+                recordSupplierPaymentUseCase = recordSupplierPaymentUseCase,
                 recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,
                 recordInventoryIssueUseCase = recordInventoryIssueUseCase,
                 recordPayRunUseCase = recordPayRunUseCase,
@@ -233,7 +233,7 @@ class FixedAssetRoutesTest {
     }
 
     @Test
-    fun `given an on-account request, when POST fixed-assets is called, then it credits the AP control account tagged with the vendor reference`() = testApplication {
+    fun `given an on-account request, when POST fixed-assets is called, then it credits the AP control account tagged with the supplier reference`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
@@ -249,7 +249,7 @@ class FixedAssetRoutesTest {
                     |"cost": "8000.00", "currency": "GBP", "acquisitionDate": "$TODAY", "usefulLifeYears": 8,
                     |"periodId": "${fixture.period.id.value}", "fixedAssetAccountId": "${fixture.fixedAssetAccount.id.value}",
                     |"fundingMethod": "ON_ACCOUNT", "apControlAccountId": "${apControlAccount.id.value}",
-                    |"vendorReference": "Acme Racking Ltd - Invoice 4471"}""".trimMargin()
+                    |"supplierReference": "Acme Racking Ltd - Invoice 4471"}""".trimMargin()
             )
         }
 

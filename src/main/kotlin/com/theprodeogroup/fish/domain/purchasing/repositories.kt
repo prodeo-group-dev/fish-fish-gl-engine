@@ -10,8 +10,8 @@ import com.theprodeogroup.fish.domain.tenancy.CompanyId
  * already-posted `JournalEntry` data (`domain.ledger`), the same
  * treatment as `TrialBalance`/`ProfitAndLoss`, not a persisted aggregate.
  */
-interface CreditorRepository {
-    fun save(creditor: Creditor)
-    fun findById(id: CreditorId): Creditor?
-    fun findAllByCompany(companyId: CompanyId): List<Creditor>
+interface SupplierRepository {
+    fun save(supplier: Supplier)
+    fun findById(id: SupplierId): Supplier?
+    fun findAllByCompany(companyId: CompanyId): List<Supplier>
 }

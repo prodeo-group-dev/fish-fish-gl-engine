@@ -18,7 +18,7 @@ import com.theprodeogroup.fish.application.FakeFixedAssetRepository
 import com.theprodeogroup.fish.application.RecordFixedAssetDepreciationUseCase
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeCompanyRepository
-import com.theprodeogroup.fish.application.FakeCreditorRepository
+import com.theprodeogroup.fish.application.FakeSupplierRepository
 import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.FakeCustomerRepository
@@ -40,8 +40,8 @@ import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.RecordPayRunUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
-import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
-import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
+import com.theprodeogroup.fish.application.RecordSupplierObligationUseCase
+import com.theprodeogroup.fish.application.RecordSupplierPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
@@ -57,7 +57,7 @@ import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Period
-import com.theprodeogroup.fish.domain.purchasing.CreditorId
+import com.theprodeogroup.fish.domain.purchasing.SupplierId
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.application.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
@@ -86,8 +86,8 @@ private val GBP: Currency = Currency.getInstance("GBP")
 private const val ADMIN_EMAIL = "founder@example.com"
 private val TODAY: LocalDate = LocalDate.now()
 
-/** `POST /companies/{companyId}/vendor-balances` (UC-BO13) - mirrors `CustomerBalancesRoutesTest.kt` exactly. */
-class VendorBalancesRoutesTest {
+/** `POST /companies/{companyId}/supplier-balances` (UC-BO13) - mirrors `CustomerBalancesRoutesTest.kt` exactly. */
+class SupplierBalancesRoutesTest {
 
     private class Fixture(configureAccounts: Boolean = true) {
         val userRepository = FakeUserRepository()
@@ -96,7 +96,7 @@ class VendorBalancesRoutesTest {
         val periodRepository = FakePeriodRepository()
         val accountRepository = FakeAccountRepository()
         val journalEntryRepository = FakeJournalEntryRepository()
-        val creditorRepository = FakeCreditorRepository()
+        val supplierRepository = FakeSupplierRepository()
         val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository)
         val taxRuleRepository = FakeTaxRuleRepository()
         val taxComputationRepository = FakeTaxComputationRepository()
@@ -116,8 +116,8 @@ class VendorBalancesRoutesTest {
         val listSalesInvoicesUseCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
         val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordSalesReturnUseCase = RecordSalesReturnUseCase(periodRepository, accountRepository, journalEntryRepository)
-        val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
-        val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordSupplierObligationUseCase = RecordSupplierObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordSupplierPaymentUseCase = RecordSupplierPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
         val idempotencyKeyRepository = FakeIdempotencyKeyRepository()
@@ -157,10 +157,10 @@ class VendorBalancesRoutesTest {
             Account.create(company.id, AccountType.EXPENSE, null, "5000", "Expense").also { accountRepository.save(it) }
         } else null
 
-        fun postCharge(creditorId: CreditorId, amount: String) {
+        fun postCharge(supplierId: SupplierId, amount: String) {
             val lines = listOf(
                 JournalLine(expenseAccount!!.id, Money(BigDecimal(amount), GBP), TransactionSide.DEBIT),
-                JournalLine(apAccount!!.id, Money(BigDecimal(amount), GBP), TransactionSide.CREDIT, mapOf(DimensionType.VENDOR to creditorId.value.toString()))
+                JournalLine(apAccount!!.id, Money(BigDecimal(amount), GBP), TransactionSide.CREDIT, mapOf(DimensionType.VENDOR to supplierId.value.toString()))
             )
             val entry = JournalEntry.create(period.id, TODAY, lines, JournalSource.INTEGRATION, "Purchase")
             entry.post()
@@ -191,8 +191,8 @@ class VendorBalancesRoutesTest {
                 customerRepository = customerRepository,
                 recordCollectionUseCase = recordCollectionUseCase,
                 recordSalesReturnUseCase = recordSalesReturnUseCase,
-                recordVendorObligationUseCase = recordVendorObligationUseCase,
-                recordVendorPaymentUseCase = recordVendorPaymentUseCase,
+                recordSupplierObligationUseCase = recordSupplierObligationUseCase,
+                recordSupplierPaymentUseCase = recordSupplierPaymentUseCase,
                 recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,
                 recordInventoryIssueUseCase = recordInventoryIssueUseCase,
                 recordPayRunUseCase = recordPayRunUseCase,
@@ -215,70 +215,70 @@ class VendorBalancesRoutesTest {
     }
 
     @Test
-    fun `given a creditor with a posted charge and one with none, when computed, then both come back including a zero balance`() = testApplication {
+    fun `given a supplier with a posted charge and one with none, when computed, then both come back including a zero balance`() = testApplication {
         val fixture = Fixture()
-        val paidOffCreditor = CreditorId.generate()
-        val owedCreditor = CreditorId.generate()
-        fixture.postCharge(owedCreditor, "450.00")
+        val paidOffSupplier = SupplierId.generate()
+        val owedSupplier = SupplierId.generate()
+        fixture.postCharge(owedSupplier, "450.00")
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/api/companies/${fixture.company.id.value}/vendor-balances") {
+        val response = client.post("/api/companies/${fixture.company.id.value}/supplier-balances") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
             header("X-Tenant-Id", fixture.tenant.value.toString())
             contentType(ContentType.Application.Json)
-            setBody("""{"creditorIds": ["${paidOffCreditor.value}", "${owedCreditor.value}"]}""")
+            setBody("""{"supplierIds": ["${paidOffSupplier.value}", "${owedSupplier.value}"]}""")
         }
 
         response.status shouldBe HttpStatusCode.OK
-        val body: ComputeVendorBalancesResponseDto = response.body()
+        val body: ComputeSupplierBalancesResponseDto = response.body()
         body.balances.size shouldBe 2
-        body.balances.first { it.creditorId == paidOffCreditor.value.toString() }.balance shouldBe "0.00"
-        body.balances.first { it.creditorId == owedCreditor.value.toString() }.balance shouldBe "450.00"
+        body.balances.first { it.supplierId == paidOffSupplier.value.toString() }.balance shouldBe "0.00"
+        body.balances.first { it.supplierId == owedSupplier.value.toString() }.balance shouldBe "450.00"
     }
 
     @Test
-    fun `given no bearer token, when POST vendor-balances is called, then it returns 401`() = testApplication {
+    fun `given no bearer token, when POST supplier-balances is called, then it returns 401`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/api/companies/${fixture.company.id.value}/vendor-balances") {
+        val response = client.post("/api/companies/${fixture.company.id.value}/supplier-balances") {
             header("X-Tenant-Id", fixture.tenant.value.toString())
             contentType(ContentType.Application.Json)
-            setBody("""{"creditorIds": []}""")
+            setBody("""{"supplierIds": []}""")
         }
 
         response.status shouldBe HttpStatusCode.Unauthorized
     }
 
     @Test
-    fun `given a nonexistent Company, when POST vendor-balances is called, then it returns 404`() = testApplication {
+    fun `given a nonexistent Company, when POST supplier-balances is called, then it returns 404`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/api/companies/${UUID.randomUUID()}/vendor-balances") {
+        val response = client.post("/api/companies/${UUID.randomUUID()}/supplier-balances") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
             header("X-Tenant-Id", fixture.tenant.value.toString())
             contentType(ContentType.Application.Json)
-            setBody("""{"creditorIds": []}""")
+            setBody("""{"supplierIds": []}""")
         }
 
         response.status shouldBe HttpStatusCode.NotFound
     }
 
     @Test
-    fun `given no Chart of Accounts, when POST vendor-balances is called, then it returns 409`() = testApplication {
+    fun `given no Chart of Accounts, when POST supplier-balances is called, then it returns 409`() = testApplication {
         val fixture = Fixture(configureAccounts = false)
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/api/companies/${fixture.company.id.value}/vendor-balances") {
+        val response = client.post("/api/companies/${fixture.company.id.value}/supplier-balances") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
             header("X-Tenant-Id", fixture.tenant.value.toString())
             contentType(ContentType.Application.Json)
-            setBody("""{"creditorIds": ["${UUID.randomUUID()}"]}""")
+            setBody("""{"supplierIds": ["${UUID.randomUUID()}"]}""")
         }
 
         response.status shouldBe HttpStatusCode.Conflict

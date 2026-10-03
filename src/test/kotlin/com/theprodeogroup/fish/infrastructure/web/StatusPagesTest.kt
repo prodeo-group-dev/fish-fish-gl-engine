@@ -2,7 +2,7 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeCompanyRepository
-import com.theprodeogroup.fish.application.FakeCreditorRepository
+import com.theprodeogroup.fish.application.FakeSupplierRepository
 import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.FakeCustomerRepository
@@ -40,8 +40,8 @@ import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.RecordPayRunUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
-import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
-import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
+import com.theprodeogroup.fish.application.RecordSupplierObligationUseCase
+import com.theprodeogroup.fish.application.RecordSupplierPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import io.kotest.matchers.shouldBe
@@ -96,8 +96,8 @@ class StatusPagesTest {
         val taxRuleRepository = FakeTaxRuleRepository()
         val taxComputationRepository = FakeTaxComputationRepository()
         val computeTaxUseCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
-        val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
-        val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordSupplierObligationUseCase = RecordSupplierObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val recordSupplierPaymentUseCase = RecordSupplierPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
         val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
 
@@ -156,8 +156,8 @@ class StatusPagesTest {
                 computeTaxUseCase = computeTaxUseCase,
                 taxRuleRepository = taxRuleRepository,
                 taxComputationRepository = taxComputationRepository,
-                recordVendorObligationUseCase = recordVendorObligationUseCase,
-                recordVendorPaymentUseCase = recordVendorPaymentUseCase,
+                recordSupplierObligationUseCase = recordSupplierObligationUseCase,
+                recordSupplierPaymentUseCase = recordSupplierPaymentUseCase,
                 recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,
                 recordInventoryIssueUseCase = recordInventoryIssueUseCase
             )

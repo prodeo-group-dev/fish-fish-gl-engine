@@ -12,7 +12,7 @@ import com.theprodeogroup.fish.domain.ledger.AgingBucketLabel
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.common.Money
-import com.theprodeogroup.fish.domain.purchasing.Creditor
+import com.theprodeogroup.fish.domain.purchasing.Supplier
 import com.theprodeogroup.fish.domain.sales.AccountsReceivableAging
 import com.theprodeogroup.fish.domain.sales.Customer
 import com.theprodeogroup.fish.domain.tenancy.Company
@@ -30,7 +30,7 @@ private val TODAY = LocalDate.of(2026, 8, 19)
 
 /**
  * Verifies the "ecosystem" repositories still owned by GL directly -
- * `Creditor`/`Customer` (docs/DDD_Design.md Section 10.4) - genuinely
+ * `Supplier`/`Customer` (docs/DDD_Design.md Section 10.4) - genuinely
  * round-trip through a real Postgres database, same discipline as
  * `CoreLedgerRepositoriesIntegrationTest`/`TenancyRepositoriesIntegrationTest`.
  * Skips (not fails) if `FISH_DB_USER`/`FISH_DB_PASSWORD` aren't set.
@@ -48,7 +48,7 @@ class EcosystemRepositoriesIntegrationTest {
 
     private val companyRepository = ExposedCompanyRepository()
     private val accountRepository = ExposedAccountRepository()
-    private val creditorRepository = ExposedCreditorRepository()
+    private val supplierRepository = ExposedSupplierRepository()
     private val customerRepository = ExposedCustomerRepository()
 
     @BeforeEach
@@ -71,19 +71,19 @@ class EcosystemRepositoriesIntegrationTest {
     }
 
     @Test
-    fun `given a Creditor with a non-zero balance, when saved and reloaded, then the balance round-trips`() {
+    fun `given a Supplier with a non-zero balance, when saved and reloaded, then the balance round-trips`() {
         val companyId = newCompany()
-        val creditor = Creditor.create(companyId, "Acme Supplies", GBP)
-        creditor.recordCharge(Money(BigDecimal("250.00"), GBP))
+        val supplier = Supplier.create(companyId, "Acme Supplies", GBP)
+        supplier.recordCharge(Money(BigDecimal("250.00"), GBP))
 
-        creditorRepository.save(creditor)
-        val reloaded = requireNotNull(creditorRepository.findById(creditor.id))
+        supplierRepository.save(supplier)
+        val reloaded = requireNotNull(supplierRepository.findById(supplier.id))
 
-        reloaded.id shouldBe creditor.id
+        reloaded.id shouldBe supplier.id
         reloaded.companyId shouldBe companyId
         reloaded.name shouldBe "Acme Supplies"
         reloaded.currency shouldBe GBP
-        reloaded.balance shouldBe creditor.balance
+        reloaded.balance shouldBe supplier.balance
     }
 
     @Test
@@ -138,15 +138,15 @@ class EcosystemRepositoriesIntegrationTest {
     }
 
     @Test
-    fun `given two Creditors under one Company, when found by company, then both are returned`() {
+    fun `given two Suppliers under one Company, when found by company, then both are returned`() {
         val companyId = newCompany()
-        val creditorA = Creditor.create(companyId, "Supplier A", GBP)
-        val creditorB = Creditor.create(companyId, "Supplier B", GBP)
-        creditorRepository.save(creditorA)
-        creditorRepository.save(creditorB)
+        val supplierA = Supplier.create(companyId, "Supplier A", GBP)
+        val supplierB = Supplier.create(companyId, "Supplier B", GBP)
+        supplierRepository.save(supplierA)
+        supplierRepository.save(supplierB)
 
-        val found = creditorRepository.findAllByCompany(companyId)
+        val found = supplierRepository.findAllByCompany(companyId)
 
-        found.map { it.id }.toSet() shouldBe setOf(creditorA.id, creditorB.id)
+        found.map { it.id }.toSet() shouldBe setOf(supplierA.id, supplierB.id)
     }
 }

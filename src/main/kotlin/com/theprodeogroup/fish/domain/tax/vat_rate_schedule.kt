@@ -59,7 +59,7 @@ class VatRateSchedule(private val entriesByCategory: Map<VatCategory, List<VatRa
      * Combines rate resolution with the actual multiplication against
      * [netAmount] - the VAT-specific counterpart to
      * [RateStructure.computeTaxDue], kept as one call so a caller (the
-     * eventual `RecordSaleUseCase`/`RecordVendorObligationUseCase`
+     * eventual `RecordSaleUseCase`/`RecordSupplierObligationUseCase`
      * reshape) never has to special-case [VatCategory.EXEMPT] itself;
      * this is the one place that branch lives.
      */
@@ -143,7 +143,7 @@ class VatRateSchedule(private val entriesByCategory: Map<VatCategory, List<VatRa
         /**
          * The jurisdiction-routing fix (2026-09-21) - resolves which
          * schedule applies to a Company, closing the gap where
-         * `RecordSaleUseCase`/`RecordVendorObligationUseCase` used to
+         * `RecordSaleUseCase`/`RecordSupplierObligationUseCase` used to
          * default every posting to [IRELAND] regardless of the
          * Company's actual [Jurisdiction]. Returns `null`, not a
          * silent fallback, for a jurisdiction with no configured VAT

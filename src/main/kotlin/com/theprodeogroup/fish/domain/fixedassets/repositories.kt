@@ -5,7 +5,7 @@ import com.theprodeogroup.fish.domain.tenancy.CompanyId
 /**
  * Persistence contract for [FixedAsset] (docs/DDD_Design.md Section 2.8) -
  * same minimal `save()`/`findById()`/`findAllByCompany()` shape as
- * [com.theprodeogroup.fish.domain.purchasing.CreditorRepository].
+ * [com.theprodeogroup.fish.domain.purchasing.SupplierRepository].
  */
 interface FixedAssetRepository {
     fun save(fixedAsset: FixedAsset)

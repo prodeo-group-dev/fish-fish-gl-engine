@@ -20,7 +20,7 @@ import java.util.Currency
 /**
  * A party the Company sells to - the subsidiary-ledger side of the
  * Accounts Receivable control account (docs/DDD_Design.md Section 2.5).
- * Structurally the mirror of `Creditor` (`domain.purchasing`), same
+ * Structurally the mirror of `Supplier` (`domain.purchasing`), same
  * shape, different direction: [recordSale] increases [balance] (a debit
  * to AR, per the control-account mechanism), [recordReceipt] decreases
  * it.

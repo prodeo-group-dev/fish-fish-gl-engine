@@ -329,7 +329,7 @@ data class CreateSalesInvoiceResponseDto(
 )
 
 /**
- * Wire shapes for `RecordVendorObligationUseCase`/`RecordVendorPaymentUseCase`
+ * Wire shapes for `RecordSupplierObligationUseCase`/`RecordSupplierPaymentUseCase`
  * (docs/Purchase_Order_Processing_DDD_Design.md Section 0) - the
  * Purchasing mirror of `RecordSaleRequestDto`/`RecordCollectionRequestDto`
  * above, for the separate, not-built-here `fish-purchase-order-
@@ -341,7 +341,7 @@ data class CreateSalesInvoiceResponseDto(
  * One line of a purchase - net amount plus its VAT category
  * (2026-09-19, docs/IE/IE_VAT_MVP_Design.md), the Purchasing mirror of
  * [SaleLineDto]. GL resolves the rate and computes the VAT amount
- * itself, atomically, not POP - see [RecordVendorObligationUseCase]'s
+ * itself, atomically, not POP - see [RecordSupplierObligationUseCase]'s
  * own KDoc.
  */
 @Serializable
@@ -351,7 +351,7 @@ data class PurchaseLineDto(
 )
 
 @Serializable
-data class RecordVendorObligationRequestDto(
+data class RecordSupplierObligationRequestDto(
     val companyId: String,
     val periodId: String,
     val date: String,
@@ -360,20 +360,20 @@ data class RecordVendorObligationRequestDto(
     val vatControlAccountId: String,
     val lines: List<PurchaseLineDto>,
     val currency: String,
-    val vendorId: String,
+    val supplierId: String,
     val description: String? = null,
     /** A [com.theprodeogroup.fish.domain.common.JournalSource] name, e.g. "IMPORT" - omitted/`null` keeps the use case's own default (`INTEGRATION`), preserving every caller that predates this field (2026-10-01). */
     val journalSource: String? = null
 )
 
 @Serializable
-data class RecordVendorObligationResponseDto(
+data class RecordSupplierObligationResponseDto(
     val journalEntryId: String,
     val status: String
 )
 
 @Serializable
-data class RecordVendorPaymentRequestDto(
+data class RecordSupplierPaymentRequestDto(
     val companyId: String,
     val periodId: String,
     val date: String,
@@ -381,12 +381,12 @@ data class RecordVendorPaymentRequestDto(
     val settlementAccountId: String,
     val amount: String,
     val currency: String,
-    val vendorId: String,
+    val supplierId: String,
     val description: String? = null
 )
 
 @Serializable
-data class RecordVendorPaymentResponseDto(
+data class RecordSupplierPaymentResponseDto(
     val journalEntryId: String,
     val status: String
 )
@@ -619,15 +619,15 @@ data class CustomerBalanceDto(val customerId: String, val balance: String, val c
 @Serializable
 data class ComputeCustomerBalancesResponseDto(val balances: List<CustomerBalanceDto>)
 
-/** `POST /companies/{companyId}/vendor-balances` (UC-BO13) - the AP mirror of [ComputeCustomerBalancesRequestDto]. */
+/** `POST /companies/{companyId}/supplier-balances` (UC-BO13) - the AP mirror of [ComputeCustomerBalancesRequestDto]. */
 @Serializable
-data class ComputeVendorBalancesRequestDto(val creditorIds: List<String>)
+data class ComputeSupplierBalancesRequestDto(val supplierIds: List<String>)
 
 @Serializable
-data class VendorBalanceDto(val creditorId: String, val balance: String, val currency: String)
+data class SupplierBalanceDto(val supplierId: String, val balance: String, val currency: String)
 
 @Serializable
-data class ComputeVendorBalancesResponseDto(val balances: List<VendorBalanceDto>)
+data class ComputeSupplierBalancesResponseDto(val balances: List<SupplierBalanceDto>)
 
 /**
  * Wire shapes for `POST /companies/{companyId}/accounts-receivable-aging` -
@@ -652,13 +652,13 @@ data class ComputeAccountsReceivableAgingResponseDto(val aging: List<CustomerAgi
  * the AP mirror of [ComputeAccountsReceivableAgingRequestDto]/[ComputeAccountsReceivableAgingResponseDto].
  */
 @Serializable
-data class ComputeAccountsPayableAgingRequestDto(val creditorIds: List<String>)
+data class ComputeAccountsPayableAgingRequestDto(val supplierIds: List<String>)
 
 @Serializable
-data class VendorAgingDto(val creditorId: String, val buckets: List<AgingBucketAmountDto>)
+data class SupplierAgingDto(val supplierId: String, val buckets: List<AgingBucketAmountDto>)
 
 @Serializable
-data class ComputeAccountsPayableAgingResponseDto(val aging: List<VendorAgingDto>)
+data class ComputeAccountsPayableAgingResponseDto(val aging: List<SupplierAgingDto>)
 
 @Serializable
 data class MoneyVelocityResponseDto(
@@ -749,7 +749,7 @@ data class CashFlowResponseDto(
  * acquiring a Fixed Asset now posts to the Ledger in the same call, see
  * `CreateFixedAssetUseCase`'s own KDoc. [fundingMethod] is `"CASH"`
  * (requires [cashAccountId]), `"ON_ACCOUNT"` (requires
- * [apControlAccountId] and [vendorReference]), or `"ALREADY_OWNED"`
+ * [apControlAccountId] and [supplierReference]), or `"ALREADY_OWNED"`
  * (requires [suspenseAccountId]) - the last for an asset the Company
  * already owned before this register entry was created, e.g. a
  * historical asset entered as a catch-up correction rather than a new
@@ -770,7 +770,7 @@ data class CreateFixedAssetRequestDto(
     val fundingMethod: String,
     val cashAccountId: String? = null,
     val apControlAccountId: String? = null,
-    val vendorReference: String? = null,
+    val supplierReference: String? = null,
     val suspenseAccountId: String? = null
 )
 

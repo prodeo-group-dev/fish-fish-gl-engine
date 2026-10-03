@@ -17,10 +17,10 @@ import java.util.Currency
  * `docs/Ecosystem_Extraction_DDD_Design.md` Section 1.3's Option B
  * resolution), so this only ever needs to resolve what IM has no way
  * to know itself: the open Period and the contra account a goods
- * receipt credits before it's matched to a vendor invoice (the same
+ * receipt credits before it's matched to a supplier invoice (the same
  * Accounts Payable control account [ComputePurchasePostingContextUseCase]
  * already resolves for POP - a receipt is still, ultimately, a
- * liability to a vendor until settled).
+ * liability to a supplier until settled).
  *
  * **[suspenseAccountId] added 2026-10-01** - a real gap IM found while
  * scoping `RecordOpeningStockUseCase` (docs/Opening_Figures_CSV_Upload_DDD_Design.md

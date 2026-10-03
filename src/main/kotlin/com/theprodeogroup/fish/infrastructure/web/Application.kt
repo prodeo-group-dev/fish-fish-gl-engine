@@ -19,7 +19,7 @@ import com.theprodeogroup.fish.application.ComputePurchasePostingContextUseCase
 import com.theprodeogroup.fish.application.ComputeAccountsPayableAgingUseCase
 import com.theprodeogroup.fish.application.ComputeAccountsReceivableAgingUseCase
 import com.theprodeogroup.fish.application.ComputeCustomerBalancesUseCase
-import com.theprodeogroup.fish.application.ComputeVendorBalancesUseCase
+import com.theprodeogroup.fish.application.ComputeSupplierBalancesUseCase
 import com.theprodeogroup.fish.application.ComputeSalesPostingContextUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
@@ -36,8 +36,8 @@ import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.RecordPayRunUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
 import com.theprodeogroup.fish.application.RecordSalesReturnUseCase
-import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
-import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
+import com.theprodeogroup.fish.application.RecordSupplierObligationUseCase
+import com.theprodeogroup.fish.application.RecordSupplierPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.fixedassets.FixedAssetRepository
@@ -55,7 +55,7 @@ import com.theprodeogroup.fish.infrastructure.persistence.DatabaseConfig
 import com.theprodeogroup.fish.infrastructure.persistence.DatabaseMigrator
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedAccountRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCompanyRepository
-import com.theprodeogroup.fish.infrastructure.persistence.ExposedCreditorRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedSupplierRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedCustomerRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedFixedAssetRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedSalesInvoiceRecordRepository
@@ -140,7 +140,7 @@ fun Application.productionModule() {
     val periodRepository = ExposedPeriodRepository()
     val journalEntryRepository = ExposedJournalEntryRepository()
     val companyRepository = ExposedCompanyRepository()
-    val creditorRepository = ExposedCreditorRepository()
+    val supplierRepository = ExposedSupplierRepository()
     val leaveAccrualRepository = ExposedLeaveAccrualRepository()
     val customerRepository = ExposedCustomerRepository()
     val idempotencyKeyRepository = ExposedIdempotencyKeyRepository()
@@ -171,8 +171,8 @@ fun Application.productionModule() {
     val listSalesInvoicesUseCase = ListSalesInvoicesUseCase(companyRepository, salesInvoiceRecordRepository)
     val recordCollectionUseCase = RecordCollectionUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordSalesReturnUseCase = RecordSalesReturnUseCase(periodRepository, accountRepository, journalEntryRepository)
-    val recordVendorObligationUseCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
-    val recordVendorPaymentUseCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
+    val recordSupplierObligationUseCase = RecordSupplierObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
+    val recordSupplierPaymentUseCase = RecordSupplierPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordInventoryReceiptUseCase = RecordInventoryReceiptUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordInventoryIssueUseCase = RecordInventoryIssueUseCase(periodRepository, accountRepository, journalEntryRepository)
     val recordPayRunUseCase = RecordPayRunUseCase(periodRepository, accountRepository, journalEntryRepository)
@@ -252,8 +252,8 @@ fun Application.productionModule() {
         customerRepository = customerRepository,
         recordCollectionUseCase = recordCollectionUseCase,
         recordSalesReturnUseCase = recordSalesReturnUseCase,
-        recordVendorObligationUseCase = recordVendorObligationUseCase,
-        recordVendorPaymentUseCase = recordVendorPaymentUseCase,
+        recordSupplierObligationUseCase = recordSupplierObligationUseCase,
+        recordSupplierPaymentUseCase = recordSupplierPaymentUseCase,
         recordInventoryReceiptUseCase = recordInventoryReceiptUseCase,
         recordInventoryIssueUseCase = recordInventoryIssueUseCase,
         recordPayRunUseCase = recordPayRunUseCase,
@@ -330,8 +330,8 @@ fun Application.fishModule(
     customerRepository: CustomerRepository,
     recordCollectionUseCase: RecordCollectionUseCase,
     recordSalesReturnUseCase: RecordSalesReturnUseCase,
-    recordVendorObligationUseCase: RecordVendorObligationUseCase,
-    recordVendorPaymentUseCase: RecordVendorPaymentUseCase,
+    recordSupplierObligationUseCase: RecordSupplierObligationUseCase,
+    recordSupplierPaymentUseCase: RecordSupplierPaymentUseCase,
     recordInventoryReceiptUseCase: RecordInventoryReceiptUseCase,
     recordInventoryIssueUseCase: RecordInventoryIssueUseCase,
     recordPayRunUseCase: RecordPayRunUseCase,
@@ -464,7 +464,7 @@ fun Application.fishModule(
                 recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, idempotencyKeyRepository)
                 recordSalesReturnRoutes(recordSalesReturnUseCase, companyRepository, idempotencyKeyRepository)
                 createSalesInvoiceRoutes(createSalesInvoiceUseCase, listSalesInvoicesUseCase, companyRepository, customerRepository, idempotencyKeyRepository)
-                recordVendorObligationAndPaymentRoutes(recordVendorObligationUseCase, recordVendorPaymentUseCase, companyRepository, idempotencyKeyRepository)
+                recordSupplierObligationAndPaymentRoutes(recordSupplierObligationUseCase, recordSupplierPaymentUseCase, companyRepository, idempotencyKeyRepository)
                 recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
                 meRoutes()
                 moneyVelocityRoutes(computeMoneyVelocityUseCase, companyRepository)
@@ -477,8 +477,8 @@ fun Application.fishModule(
                 accountsReceivableAgingRoutes(
                     ComputeAccountsReceivableAgingUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository
                 )
-                vendorBalancesRoutes(
-                    ComputeVendorBalancesUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository
+                supplierBalancesRoutes(
+                    ComputeSupplierBalancesUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository
                 )
                 accountsPayableAgingRoutes(
                     ComputeAccountsPayableAgingUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository

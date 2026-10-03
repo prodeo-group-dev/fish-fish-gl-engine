@@ -59,7 +59,7 @@ class ArrearsCase private constructor(
      * stage is [ArrearsStage.FINAL_RESOLUTION] - the actual `Company`
      * object is needed (not just its ID) to call
      * [Company.flagSubstantialDoubt] on it, same pattern as
-     * `PurchaseOrder.send(creditor)` taking the `Creditor` object itself.
+     * `PurchaseOrder.send(supplier)` taking the `Supplier` object itself.
      *
      * A `Company` already in `SUBSTANTIAL_DOUBT` (e.g. from a different,
      * earlier `ArrearsCase` against the same business) failing to

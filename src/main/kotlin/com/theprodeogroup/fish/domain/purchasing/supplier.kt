@@ -19,18 +19,18 @@ import java.util.Currency
 /**
  * A supplier the Company owes money to - the subsidiary-ledger side of
  * the Accounts Payable control account (docs/DDD_Design.md Section 2.5).
- * Its [balance] must always tally with the sum of every Creditor's
+ * Its [balance] must always tally with the sum of every Supplier's
  * balance against the `AccountsPayable` control `Account` in Ledger -
  * that reconciliation is a reporting concern (like the Trial Balance,
  * Section 3.1), not enforced here; this just keeps its own side correct.
  *
  * Registration is unconditional here (unlike Debtors, Section 2.5's
  * "only customers with outstanding payments need to be registered"
- * rule) - creditors don't have the cash-supplier/loyalty-scheme
+ * rule) - suppliers don't have the cash-supplier/loyalty-scheme
  * asymmetry that motivated that rule on the Debtor side.
  */
-class Creditor private constructor(
-    val id: CreditorId,
+class Supplier private constructor(
+    val id: SupplierId,
     val companyId: CompanyId,
     val name: String,
     val currency: Currency
@@ -47,7 +47,7 @@ class Creditor private constructor(
         return ValidationResult.success()
     }
 
-    /** Called when this Creditor is paid. */
+    /** Called when this Supplier is paid. */
     fun recordPayment(amount: Money): ValidationResult {
         if (amount.amount.signum() <= 0) {
             return ValidationResult.failure("Payment amount must be positive")
@@ -57,7 +57,7 @@ class Creditor private constructor(
     }
 
     /**
-     * Records a payment to this Creditor AND posts the corresponding
+     * Records a payment to this Supplier AND posts the corresponding
      * `JournalEntry` (debit the AP control account, credit Cash) in the
      * same call - mirrors `Customer.receivePayment()`'s fix for the
      * identical gap on the AR side (2026-08-12): [recordPayment] existed
@@ -105,25 +105,25 @@ class Creditor private constructor(
             companyId: CompanyId,
             name: String,
             currency: Currency,
-            id: CreditorId = CreditorId.generate()
-        ): Creditor = Creditor(id, companyId, name, currency)
+            id: SupplierId = SupplierId.generate()
+        ): Supplier = Supplier(id, companyId, name, currency)
 
         /**
-         * Rebuilds an already-valid Creditor from persisted state
+         * Rebuilds an already-valid Supplier from persisted state
          * (docs/DDD_Design.md Section 10.4) - `internal`, matches the
          * repository-only visibility of every other aggregate's
          * `reconstitute()`.
          */
         internal fun reconstitute(
-            id: CreditorId,
+            id: SupplierId,
             companyId: CompanyId,
             name: String,
             currency: Currency,
             balance: Money
-        ): Creditor {
-            val creditor = Creditor(id, companyId, name, currency)
-            creditor.balance = balance
-            return creditor
+        ): Supplier {
+            val supplier = Supplier(id, companyId, name, currency)
+            supplier.balance = balance
+            return supplier
         }
     }
 }

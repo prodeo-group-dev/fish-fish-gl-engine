@@ -1,8 +1,8 @@
 package com.theprodeogroup.fish.infrastructure.web
 
-import com.theprodeogroup.fish.application.ComputeVendorBalancesResult
-import com.theprodeogroup.fish.application.ComputeVendorBalancesUseCase
-import com.theprodeogroup.fish.domain.purchasing.CreditorId
+import com.theprodeogroup.fish.application.ComputeSupplierBalancesResult
+import com.theprodeogroup.fish.application.ComputeSupplierBalancesUseCase
+import com.theprodeogroup.fish.domain.purchasing.SupplierId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import io.ktor.http.HttpStatusCode
@@ -13,17 +13,17 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.post
 
 /**
- * `POST /companies/{companyId}/vendor-balances` (UC-BO13 "View Cashflow
- * Position") - [ComputeVendorBalancesUseCase]'s inbound HTTP surface,
+ * `POST /companies/{companyId}/supplier-balances` (UC-BO13 "View Cashflow
+ * Position") - [ComputeSupplierBalancesUseCase]'s inbound HTTP surface,
  * mirroring `customerBalancesRoutes` exactly. `POST`, not `GET`, since
- * the caller-supplied `creditorIds` list can be long enough to matter as
+ * the caller-supplied `supplierIds` list can be long enough to matter as
  * a request body rather than a query string.
  */
-fun Route.vendorBalancesRoutes(
-    computeVendorBalancesUseCase: ComputeVendorBalancesUseCase,
+fun Route.supplierBalancesRoutes(
+    computeSupplierBalancesUseCase: ComputeSupplierBalancesUseCase,
     companyRepository: CompanyRepository
 ) {
-    post("/companies/{companyId}/vendor-balances") {
+    post("/companies/{companyId}/supplier-balances") {
         val companyIdRaw = call.parameters["companyId"]
         if (companyIdRaw == null) {
             call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "companyId path parameter is required"))
@@ -36,22 +36,22 @@ fun Route.vendorBalancesRoutes(
         if (!call.verifyClaimedTenant(tenantId)) return@post
         call.authorizeTenantForRead(tenantId, companyId) ?: return@post
 
-        val request = call.receive<ComputeVendorBalancesRequestDto>()
-        val creditorIds = mutableListOf<CreditorId>()
-        for (raw in request.creditorIds) {
+        val request = call.receive<ComputeSupplierBalancesRequestDto>()
+        val supplierIds = mutableListOf<SupplierId>()
+        for (raw in request.supplierIds) {
             val uuid = call.parseUuid(raw) ?: return@post
-            creditorIds.add(CreditorId(uuid))
+            supplierIds.add(SupplierId(uuid))
         }
 
-        when (val result = computeVendorBalancesUseCase.execute(companyId, creditorIds)) {
-            is ComputeVendorBalancesResult.Success -> call.respond(
-                ComputeVendorBalancesResponseDto(
-                    result.balances.map { VendorBalanceDto(it.creditorId.value.toString(), it.balance.amount.toPlainString(), it.balance.currency.currencyCode) }
+        when (val result = computeSupplierBalancesUseCase.execute(companyId, supplierIds)) {
+            is ComputeSupplierBalancesResult.Success -> call.respond(
+                ComputeSupplierBalancesResponseDto(
+                    result.balances.map { SupplierBalanceDto(it.supplierId.value.toString(), it.balance.amount.toPlainString(), it.balance.currency.currencyCode) }
                 )
             )
-            ComputeVendorBalancesResult.CompanyNotFound ->
+            ComputeSupplierBalancesResult.CompanyNotFound ->
                 call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
-            ComputeVendorBalancesResult.ApControlAccountNotConfigured ->
+            ComputeSupplierBalancesResult.ApControlAccountNotConfigured ->
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("ap_control_account_not_configured", "This Company's Chart of Accounts has no Accounts Payable control account (code 2000)"))
         }
     }

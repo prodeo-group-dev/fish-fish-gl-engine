@@ -128,7 +128,7 @@ class CreateFixedAssetUseCaseTest {
     }
 
     @Test
-    fun `given an on-account acquisition, when executed, then it posts Dr Fixed Asset Cr AP Control tagged with the vendor reference`() {
+    fun `given an on-account acquisition, when executed, then it posts Dr Fixed Asset Cr AP Control tagged with the supplier reference`() {
         val company = company()
         val period = openPeriod(company.id)
         val fixedAssetAccount = account(company.id, "1200", AccountType.ASSET)

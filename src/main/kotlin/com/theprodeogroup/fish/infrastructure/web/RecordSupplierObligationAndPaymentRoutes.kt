@@ -1,13 +1,13 @@
 package com.theprodeogroup.fish.infrastructure.web
 
-import com.theprodeogroup.fish.application.RecordVendorObligationResult
-import com.theprodeogroup.fish.application.RecordVendorObligationUseCase
-import com.theprodeogroup.fish.application.RecordVendorPaymentResult
-import com.theprodeogroup.fish.application.RecordVendorPaymentUseCase
+import com.theprodeogroup.fish.application.RecordSupplierObligationResult
+import com.theprodeogroup.fish.application.RecordSupplierObligationUseCase
+import com.theprodeogroup.fish.application.RecordSupplierPaymentResult
+import com.theprodeogroup.fish.application.RecordSupplierPaymentUseCase
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.common.Money
-import com.theprodeogroup.fish.domain.purchasing.CreditorId
+import com.theprodeogroup.fish.domain.purchasing.SupplierId
 import com.theprodeogroup.fish.domain.tax.VatCategory
 import com.theprodeogroup.fish.domain.tax.VatRateSchedule
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
@@ -27,7 +27,7 @@ import java.util.Currency
 
 /**
  * `POST /purchasing/record-obligation` and `POST /purchasing/record-payment` -
- * HTTP routes for `RecordVendorObligationUseCase`/`RecordVendorPaymentUseCase`
+ * HTTP routes for `RecordSupplierObligationUseCase`/`RecordSupplierPaymentUseCase`
  * (docs/Purchase_Order_Processing_DDD_Design.md Section 0), the two thin
  * posting interfaces the separate `fish-purchase-order-processing`
  * (POP) system calls into. The Purchasing mirror of
@@ -42,14 +42,14 @@ import java.util.Currency
  * [respondIdempotently], the same treatment every other financial-
  * posting endpoint in this package now gets.
  */
-fun Route.recordVendorObligationAndPaymentRoutes(
-    recordVendorObligationUseCase: RecordVendorObligationUseCase,
-    recordVendorPaymentUseCase: RecordVendorPaymentUseCase,
+fun Route.recordSupplierObligationAndPaymentRoutes(
+    recordSupplierObligationUseCase: RecordSupplierObligationUseCase,
+    recordSupplierPaymentUseCase: RecordSupplierPaymentUseCase,
     companyRepository: CompanyRepository,
     idempotencyKeyRepository: IdempotencyKeyRepository
 ) {
     post("/purchasing/record-obligation") {
-        val request = call.receive<RecordVendorObligationRequestDto>()
+        val request = call.receive<RecordSupplierObligationRequestDto>()
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
         val company = companyRepository.findById(CompanyId(companyUuid))
         if (company == null) {
@@ -72,46 +72,46 @@ fun Route.recordVendorObligationAndPaymentRoutes(
         val expenseOrAssetAccountUuid = call.parseUuid(request.expenseOrAssetAccountId) ?: return@post
         val apControlAccountUuid = call.parseUuid(request.apControlAccountId) ?: return@post
         val vatControlAccountUuid = call.parseUuid(request.vatControlAccountId) ?: return@post
-        val vendorUuid = call.parseUuid(request.vendorId) ?: return@post
+        val supplierUuid = call.parseUuid(request.supplierId) ?: return@post
         val currency = call.parseCurrency(request.currency) ?: return@post
         val date = call.parseLocalDate(request.date) ?: return@post
         val lines = call.parsePurchaseLines(request.lines, currency) ?: return@post
         val journalSource = call.parseJournalSource(request.journalSource) ?: return@post
 
         call.respondIdempotently(
-            idempotencyKeyRepository, company.tenantId, "record-vendor-obligation",
-            Json.encodeToString(RecordVendorObligationRequestDto.serializer(), request)
+            idempotencyKeyRepository, company.tenantId, "record-supplier-obligation",
+            Json.encodeToString(RecordSupplierObligationRequestDto.serializer(), request)
         ) {
-            val result = recordVendorObligationUseCase.execute(
-                RecordVendorObligationUseCase.Request(
+            val result = recordSupplierObligationUseCase.execute(
+                RecordSupplierObligationUseCase.Request(
                     PeriodId(periodUuid), date, AccountId(expenseOrAssetAccountUuid), AccountId(apControlAccountUuid),
-                    AccountId(vatControlAccountUuid), lines, CreditorId(vendorUuid), vatRateSchedule, request.description, journalSource
+                    AccountId(vatControlAccountUuid), lines, SupplierId(supplierUuid), vatRateSchedule, request.description, journalSource
                 )
             )
 
             when (result) {
-                is RecordVendorObligationResult.Success ->
+                is RecordSupplierObligationResult.Success ->
                     HttpStatusCode.OK to Json.encodeToString(
-                        RecordVendorObligationResponseDto.serializer(),
-                        RecordVendorObligationResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+                        RecordSupplierObligationResponseDto.serializer(),
+                        RecordSupplierObligationResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
                     )
-                is RecordVendorObligationResult.InvalidAmount -> HttpStatusCode.BadRequest to errorResponseJson("invalid_amount")
-                is RecordVendorObligationResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
-                is RecordVendorObligationResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
-                is RecordVendorObligationResult.VatCategoryNotSupported ->
+                is RecordSupplierObligationResult.InvalidAmount -> HttpStatusCode.BadRequest to errorResponseJson("invalid_amount")
+                is RecordSupplierObligationResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
+                is RecordSupplierObligationResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
+                is RecordSupplierObligationResult.VatCategoryNotSupported ->
                     HttpStatusCode.BadRequest to errorResponseJson("vat_category_not_supported", result.category.name)
-                is RecordVendorObligationResult.ExpenseOrAssetAccountNotFound ->
+                is RecordSupplierObligationResult.ExpenseOrAssetAccountNotFound ->
                     HttpStatusCode.NotFound to errorResponseJson("expense_or_asset_account_not_found", result.accountId.value.toString())
-                is RecordVendorObligationResult.ApControlAccountNotFound ->
+                is RecordSupplierObligationResult.ApControlAccountNotFound ->
                     HttpStatusCode.NotFound to errorResponseJson("ap_control_account_not_found", result.accountId.value.toString())
-                is RecordVendorObligationResult.VatControlAccountNotFound ->
+                is RecordSupplierObligationResult.VatControlAccountNotFound ->
                     HttpStatusCode.NotFound to errorResponseJson("vat_control_account_not_found", result.accountId.value.toString())
             }
         }
     }
 
     post("/purchasing/record-payment") {
-        val request = call.receive<RecordVendorPaymentRequestDto>()
+        val request = call.receive<RecordSupplierPaymentRequestDto>()
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
         val companyId = CompanyId(companyUuid)
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
@@ -121,33 +121,33 @@ fun Route.recordVendorObligationAndPaymentRoutes(
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
         val apControlAccountUuid = call.parseUuid(request.apControlAccountId) ?: return@post
         val settlementAccountUuid = call.parseUuid(request.settlementAccountId) ?: return@post
-        val vendorUuid = call.parseUuid(request.vendorId) ?: return@post
+        val supplierUuid = call.parseUuid(request.supplierId) ?: return@post
         val amount = call.parseMoney(request.amount, request.currency) ?: return@post
         val date = call.parseLocalDate(request.date) ?: return@post
 
         call.respondIdempotently(
-            idempotencyKeyRepository, tenantId, "record-vendor-payment",
-            Json.encodeToString(RecordVendorPaymentRequestDto.serializer(), request)
+            idempotencyKeyRepository, tenantId, "record-supplier-payment",
+            Json.encodeToString(RecordSupplierPaymentRequestDto.serializer(), request)
         ) {
-            val result = recordVendorPaymentUseCase.execute(
-                RecordVendorPaymentUseCase.Request(
+            val result = recordSupplierPaymentUseCase.execute(
+                RecordSupplierPaymentUseCase.Request(
                     PeriodId(periodUuid), date, AccountId(apControlAccountUuid), AccountId(settlementAccountUuid),
-                    amount, CreditorId(vendorUuid), request.description
+                    amount, SupplierId(supplierUuid), request.description
                 )
             )
 
             when (result) {
-                is RecordVendorPaymentResult.Success ->
+                is RecordSupplierPaymentResult.Success ->
                     HttpStatusCode.OK to Json.encodeToString(
-                        RecordVendorPaymentResponseDto.serializer(),
-                        RecordVendorPaymentResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+                        RecordSupplierPaymentResponseDto.serializer(),
+                        RecordSupplierPaymentResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
                     )
-                is RecordVendorPaymentResult.InvalidAmount -> HttpStatusCode.BadRequest to errorResponseJson("invalid_amount")
-                is RecordVendorPaymentResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
-                is RecordVendorPaymentResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
-                is RecordVendorPaymentResult.ApControlAccountNotFound ->
+                is RecordSupplierPaymentResult.InvalidAmount -> HttpStatusCode.BadRequest to errorResponseJson("invalid_amount")
+                is RecordSupplierPaymentResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
+                is RecordSupplierPaymentResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
+                is RecordSupplierPaymentResult.ApControlAccountNotFound ->
                     HttpStatusCode.NotFound to errorResponseJson("ap_control_account_not_found", result.accountId.value.toString())
-                is RecordVendorPaymentResult.SettlementAccountNotFound ->
+                is RecordSupplierPaymentResult.SettlementAccountNotFound ->
                     HttpStatusCode.NotFound to errorResponseJson("settlement_account_not_found", result.accountId.value.toString())
             }
         }
@@ -189,16 +189,16 @@ private suspend fun ApplicationCall.parseCurrency(value: String): Currency? =
     }
 
 /**
- * Parses [PurchaseLineDto]s into [RecordVendorObligationUseCase.PurchaseLine]s -
+ * Parses [PurchaseLineDto]s into [RecordSupplierObligationUseCase.PurchaseLine]s -
  * the Purchasing mirror of `parseSaleLines`. Responds 400 and returns
  * `null` on a non-positive amount or an unrecognized category name.
  */
-private suspend fun ApplicationCall.parsePurchaseLines(lines: List<PurchaseLineDto>, currency: Currency): List<RecordVendorObligationUseCase.PurchaseLine>? {
+private suspend fun ApplicationCall.parsePurchaseLines(lines: List<PurchaseLineDto>, currency: Currency): List<RecordSupplierObligationUseCase.PurchaseLine>? {
     if (lines.isEmpty()) {
         respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "lines must not be empty"))
         return null
     }
-    val parsed = mutableListOf<RecordVendorObligationUseCase.PurchaseLine>()
+    val parsed = mutableListOf<RecordSupplierObligationUseCase.PurchaseLine>()
     for (line in lines) {
         val netAmountValue = line.netAmount.toBigDecimalOrNull()
         if (netAmountValue == null || netAmountValue.signum() <= 0) {
@@ -211,7 +211,7 @@ private suspend fun ApplicationCall.parsePurchaseLines(lines: List<PurchaseLineD
             respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "'${line.vatCategory}' is not a valid vatCategory"))
             return null
         }
-        parsed.add(RecordVendorObligationUseCase.PurchaseLine(Money(netAmountValue, currency), category))
+        parsed.add(RecordSupplierObligationUseCase.PurchaseLine(Money(netAmountValue, currency), category))
     }
     return parsed
 }
