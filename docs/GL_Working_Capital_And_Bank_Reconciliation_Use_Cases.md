@@ -1,10 +1,8 @@
 # Working Capital & Bank Reconciliation — Use Cases
 
 Companion to `GL_Working_Capital_And_Bank_Reconciliation_Software_Requirements_Specification.md`.
-UC-BANKREC-* use cases are written against the SRS §2.2 decision points
-as placeholders for the *shape* of the workflow - their exact mechanics
-(how a statement is uploaded, how a match is persisted) depend on that
-still-open decision and will likely need revision once it's made.
+UC-BANKREC-* use cases reflect SRS §2.2's decided shape (bulk
+synchronous statement ingestion, deletable persisted match pairs).
 
 ## UC-WC-01: View a Company's Working Capital
 
@@ -33,17 +31,27 @@ of Accounts configured" case at build time).
 
 ---
 
-## UC-BANKREC-01: Start a Bank Reconciliation (shape depends on SRS §2.2)
+## UC-BANKREC-01: Start a Bank Reconciliation
 
 **Actor**: A Membership holder with write access to a Company.
 
-**Preconditions**: A Cash/Bank Account exists; a bank statement (date,
-ending balance, lines) is available to supply, however §2.2 decides
-statement ingestion works (manual entry vs. bulk upload).
+**Preconditions**: A Cash/Bank Account exists; the actor has the full
+bank statement (date, ending balance, every line) ready to supply in
+one request.
 
-**Main flow**: Actor supplies the Account, statement date, ending
-balance, and statement lines; system persists a new `BankReconciliation`
-with zero matches yet.
+**Main flow**:
+1. Actor supplies the Account, statement date, ending balance, currency,
+   and the complete list of statement lines in a single call.
+2. System creates and persists a new `BankReconciliation` with all its
+   statement lines, zero matches yet - synchronously, in the same call
+   (no batch-status workflow, per §2.2's decision).
+
+**Alternate flow — currency mismatch**: Same `require(statementLines.all
+{ it.amount.currency == currency })` check `BankReconciliation.create()`
+already enforces, surfaced as a 400.
+
+**Postconditions**: A reconciliation exists, retrievable by a later
+UC-BANKREC-03 call.
 
 **Traces to**: FR-BANKREC-01.
 
@@ -67,10 +75,32 @@ unmatched `JournalEntry` on it.
 `ValidationResult.failure(...)` messages `match()` already produces,
 surfaced as a 400/409, not silently accepted.
 
-**Postconditions**: The match persists - a later UC-BANKREC-03 call
-sees it without the caller resupplying anything.
+**Postconditions**: The match persists in `bank_reconciliation_matches`
+- a later UC-BANKREC-03 call sees it without the caller resupplying
+anything.
 
 **Traces to**: FR-BANKREC-02, NFR-BANKREC-01.
+
+---
+
+## UC-BANKREC-04: Undo a match
+
+**Actor**: Same as UC-BANKREC-02.
+
+**Preconditions**: An existing, currently-matched statement-line/
+`JournalEntry` pair.
+
+**Main flow**: Actor supplies the statement line id (or the match's own
+id); system deletes the persisted pair outright - per §2.2's decision,
+this is a deletion, not a correcting event appended alongside the
+original match.
+
+**Alternate flow — not currently matched**: 404/400, not a silent no-op.
+
+**Postconditions**: The statement line and `JournalEntry` both become
+unmatched again, eligible for UC-BANKREC-02 again.
+
+**Traces to**: FR-BANKREC-04.
 
 ---
 

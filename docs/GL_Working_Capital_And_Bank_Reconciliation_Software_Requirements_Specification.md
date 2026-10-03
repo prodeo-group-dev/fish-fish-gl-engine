@@ -71,38 +71,51 @@ journalEntryRepository)` wrapping `WorkingCapital.of()`, exposed as
 existing `reportsRoutes()` function alongside its three siblings rather
 than a new route file - it's the same report family.
 
-### 2.2 Architectural approach — Bank Reconciliation (open decision)
+### 2.2 Architectural approach — Bank Reconciliation (decided 2026-10-03)
 
-**Decision needed before Wave 2 of the backlog starts** - not picked
-here, per this project's "park, don't guess" convention:
+**Both sub-decisions resolved by Femi, relayed via WEB**, points 1/2
+(repository + statement-line persistence) following automatically from
+them rather than being separate decisions:
 
-A real Bank Reconciliation feature needs, at minimum:
-1. A `BankReconciliationRepository` (persisting the reconciliation's
-   own identity, Account, statement date/ending balance, currency, and
-   - critically - which statement-line/journal-entry pairs are already
-   matched).
-2. A `BankStatementLineRepository` (or the lines persisted as part of
-   the reconciliation aggregate itself) - statement lines need to exist
-   independently of any one HTTP request once uploaded.
-3. A decision on **how a statement enters the system at all** -
-   `BankStatementLine` today is a plain in-memory data class with no
-   creation/upload use case. Manual one-line-at-a-time entry (mirroring
-   `RecordOpeningBalanceUseCase`'s single-record shape) versus a CSV
-   bulk upload (mirroring `docs/Opening_Figures_CSV_Upload_DDD_Design.md`'s
-   established pattern) is a real scope choice, not an implementation
-   detail - a bank statement is naturally a bulk artifact (dozens to
-   hundreds of lines per period), closer to the CSV precedent than a
-   single manual entry.
-4. Whether `BankReconciliation.match()`'s own in-memory mutation model
-   survives this change, or whether matching becomes its own persisted
-   event (`BankReconciliationMatch` rows, append-only, mirroring
-   `AuditLogEntry`'s own just-built shape) rather than two `Set`s
-   recomputed from scratch on every load.
+**Statement ingestion (was point 3) - a lightweight bulk endpoint, not
+the full `OpeningImportBatch` machinery.** One request carries the
+whole statement's lines, created synchronously in one call - no
+batch-status tracking (`DRAFT`/`VALIDATING`/`VALIDATED`/`COMMITTING`/
+`COMMITTED`), no async path. Reasoning: a bank statement is naturally
+bulk, but the Opening Figures CSV pattern was built for a one-time,
+cross-domain, >2000-row-capable import - a monthly bank statement is
+smaller and single-purpose, so that full state machine is more than
+this needs. Manual one-line-at-a-time entry was also ruled out as too
+painful for real statement volume.
 
-None of this is picked here. Recommend a dedicated, focused design
-decision (a short follow-up note, not a full second SPUTO pass) before
-Wave 2 of the backlog below starts - Wave 1 (Working Capital) doesn't
-depend on it and can proceed immediately.
+**Match persistence (was point 4) - a simple persisted pairs table, not
+append-only events.** Statement-line/journal-entry matches are stored
+directly and deletable (unmatch = delete the row), not an
+`AuditLogEntry`-style immutable event log. Reasoning: `AuditLogEntry`'s
+immutability exists because compliance requires the record itself never
+be edited - a reconciliation match has no such requirement, and a
+fat-fingered match should be correctable by deleting the pairing, not by
+appending a correcting event. Event-sourcing this would solve a problem
+Bank Reconciliation doesn't have.
+
+**Resulting concrete shape**:
+- `BankReconciliationRepository` persists the reconciliation's own
+  identity/Account/statement date/ending balance/currency, plus its
+  statement lines (embedded, not a separate repository - they have no
+  independent lifecycle outside their parent reconciliation).
+- A `bank_reconciliation_matches` table pairs `statement_line_id`/
+  `journal_entry_id`, plain insert/delete - no append-only discipline.
+- `BankReconciliation` gains `internal reconstitute()` (loading
+  already-matched pairs back into its existing in-memory `Set`s, same
+  "pure in-memory until explicitly persisted" shape every other
+  aggregate in this codebase uses) and a new `unmatch()` method
+  (`match()` already existed; there was no way to undo one before this
+  decision).
+- `StartBankReconciliationUseCase` creates a reconciliation and all its
+  statement lines in one synchronous call, per the ingestion decision.
+- `MatchBankReconciliationLineUseCase`/`UnmatchBankReconciliationLineUseCase`
+  wrap `BankReconciliation.match()`/`unmatch()` against the now-persisted
+  state.
 
 ## 3. System Features
 
@@ -120,35 +133,40 @@ in `ReportsRoutes.kt`, not the stricter Owner-Admin level the Audit
 Trail's own route uses - Working Capital isn't sensitive the way an
 audit log is).
 
-### FR-BANKREC-01 (Must, blocked on §2.2's decision)
+### FR-BANKREC-01 (Must)
 
 A Bank Reconciliation can be created for a Cash/Bank Account, a
 statement date, an ending balance, and a set of statement lines,
 persisted durably.
 
-### FR-BANKREC-02 (Must, blocked on §2.2's decision)
+### FR-BANKREC-02 (Must)
 
 A statement line can be matched to a posted `JournalEntry`, with the
 match persisted - a second HTTP call later in the same reconciliation's
 lifecycle must see the match from the first call, not require it
 resupplied.
 
-### FR-BANKREC-03 (Must, blocked on §2.2's decision)
+### FR-BANKREC-03 (Must)
 
 A read route reports a reconciliation's current state: matched/
 unmatched statement lines, matched/unmatched entries, whether it's
 fully reconciled (`isFullyReconciled`).
 
+### FR-BANKREC-04 (Must)
+
+A match can be undone (unmatch) - deletes the persisted pair outright,
+per §2.2's decision, not a correcting event appended alongside it.
+
 ## 4. Data Requirements
 
 **Working Capital**: none - fully derived, no new table.
 
-**Bank Reconciliation**: genuinely open, see §2.2. At minimum a
-`bank_reconciliations` table (id, company_id, account_id, statement_date,
-statement_ending_balance, currency) and some persisted record of each
-match (either two join tables or one `bank_reconciliation_matches`
-table pairing a `statement_line_id`/`journal_entry_id`) - exact shape
-depends on §2.2's statement-ingestion decision.
+**Bank Reconciliation** (decided, §2.2): `bank_reconciliations` (id,
+company_id, account_id, statement_date, statement_ending_balance,
+currency), `bank_statement_lines` (id, reconciliation_id, amount, date,
+direction - embedded child of a reconciliation, no independent
+lifecycle), `bank_reconciliation_matches` (statement_line_id,
+journal_entry_id, plain insert/delete, no append-only discipline).
 
 ## 5. External Interfaces
 
@@ -159,13 +177,15 @@ depends on §2.2's statement-ingestion decision.
 
 - **NFR-WC-01**: Same tenancy isolation discipline as every other report
   route (`authorizeTenantForRead`).
-- **NFR-BANKREC-01**: Whatever persistence shape §2.2 lands on, matching
-  a statement line must be safe against double-matching under concurrent
-  requests (the existing `match()` method's own guard against an
-  already-matched line/entry must still hold once state is persisted,
-  not just in-memory for one request's lifetime).
+- **NFR-BANKREC-01**: Matching a statement line must be safe against
+  double-matching under concurrent requests - the existing `match()`
+  method's own guard against an already-matched line/entry must still
+  hold once state is persisted via `bank_reconciliation_matches`, not
+  just in-memory for one request's lifetime (a unique constraint on
+  `statement_line_id` in that table, not just the application-level
+  check, closes the real concurrent-request race `match()` alone can't).
 
 ## 7. Open Issues
 
-§2.2's four sub-decisions block all of Bank Reconciliation's build
-(Wave 2 in the backlog). Working Capital (Wave 1) is fully unblocked.
+§2.2 is now decided (2026-10-03) - nothing blocks Wave 2 of the backlog
+anymore. Working Capital (Wave 1) was already fully unblocked.
