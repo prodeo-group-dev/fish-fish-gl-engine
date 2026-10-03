@@ -5,6 +5,7 @@ import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.AssessFixedAssetImpairmentUseCase
 import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
 import com.theprodeogroup.fish.application.ComputeCashFlowUseCase
+import com.theprodeogroup.fish.application.ComputeWorkingCapitalUseCase
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeFixedAssetRegisterUseCase
 import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
@@ -343,6 +344,14 @@ fun Application.fishModule(
     computeBalanceSheetUseCase: ComputeBalanceSheetUseCase,
     computeProfitAndLossUseCase: ComputeProfitAndLossUseCase,
     computeCashFlowUseCase: ComputeCashFlowUseCase,
+    // Defaulted (not a new required param) rather than touching every
+    // one of the ~25 existing test fixtures that already call this
+    // function - same "new, additive, most tests don't exercise it"
+    // reasoning as vatReturnRepository/importGlBalancesUseCase above,
+    // but as a real default construction (not nullable) since
+    // reportsRoutes() registers this route unconditionally alongside
+    // its three siblings, unlike those two's conditional registration.
+    computeWorkingCapitalUseCase: ComputeWorkingCapitalUseCase = ComputeWorkingCapitalUseCase(companyRepository, accountRepository, journalEntryRepository),
     fixedAssetRepository: FixedAssetRepository,
     createFixedAssetUseCase: CreateFixedAssetUseCase,
     recordFixedAssetDepreciationUseCase: RecordFixedAssetDepreciationUseCase,
@@ -494,7 +503,7 @@ fun Application.fishModule(
                 )
                 expenseVelocityRoutes(computeExpenseVelocityUseCase, companyRepository)
                 salesToExpenseRatioRoutes(computeSalesToExpenseRatioUseCase, companyRepository)
-                reportsRoutes(computeBalanceSheetUseCase, computeProfitAndLossUseCase, computeCashFlowUseCase, companyRepository)
+                reportsRoutes(computeBalanceSheetUseCase, computeProfitAndLossUseCase, computeCashFlowUseCase, computeWorkingCapitalUseCase, companyRepository)
                 taxRoutes(computeTaxUseCase, companyRepository, taxRuleRepository, taxComputationRepository)
                 if (vatReturnRepository != null) {
                     vatReturnRoutes(

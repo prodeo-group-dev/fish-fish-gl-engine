@@ -714,6 +714,15 @@ data class BalanceSheetResponseDto(
     val isBalanced: Boolean
 )
 
+/** `GET /companies/{companyId}/reports/working-capital` - the "Reports" sub-page's Working Capital report. */
+@Serializable
+data class WorkingCapitalResponseDto(
+    val currency: String,
+    val totalCurrentAssets: String,
+    val totalCurrentLiabilities: String,
+    val workingCapital: String
+)
+
 /** `GET /companies/{companyId}/reports/profit-and-loss` - the "Reports" sub-page's Profit and loss report. */
 @Serializable
 data class ProfitAndLossResponseDto(
