@@ -14,22 +14,22 @@ import java.time.temporal.ChronoUnit
 import java.util.Currency
 
 /**
- * A Creditor's outstanding payables bucketed by age (docs/DDD_Design.md
+ * A Supplier's outstanding payables bucketed by age (docs/DDD_Design.md
  * Section 2.5) - the AP mirror of `AccountsReceivableAging` (`domain.sales`),
  * same derivation from already-posted `JournalEntry` data via the
- * `DimensionType.VENDOR` tag and `Creditor.makePayment()` actually
+ * `DimensionType.VENDOR` tag and `Supplier.makePayment()` actually
  * posting payments to the Ledger (both fixed 2026-08-12).
  *
  * **Sides are swapped from `AccountsReceivableAging`, not copy-pasted by
  * mistake.** AP is a liability: a charge (`PurchaseOrder.send()`)
- * *credits* the AP control account; a payment (`Creditor.makePayment()`)
+ * *credits* the AP control account; a payment (`Supplier.makePayment()`)
  * *debits* it - the exact mirror image of AR, where a sale debits and a
  * receipt credits. Same FIFO/oldest-first allocation caveat as
- * `AccountsReceivableAging` - `Creditor.balance` is "balance forward,"
+ * `AccountsReceivableAging` - `Supplier.balance` is "balance forward,"
  * not "open item," so payments aren't tied to specific charges.
  */
 class AccountsPayableAging private constructor(
-    val creditorId: CreditorId,
+    val supplierId: SupplierId,
     val asOfDate: LocalDate,
     val currency: Currency,
     val buckets: List<AgingBucketAmount>
@@ -39,13 +39,13 @@ class AccountsPayableAging private constructor(
 
     companion object {
         fun of(
-            creditorId: CreditorId,
+            supplierId: SupplierId,
             apControlAccountId: AccountId,
             postedEntries: List<JournalEntry>,
             asOfDate: LocalDate,
             currency: Currency
         ): AccountsPayableAging {
-            val creditorTag = creditorId.value.toString()
+            val supplierTag = supplierId.value.toString()
             val zero = Money(BigDecimal.ZERO, currency)
 
             val relevantEntries = postedEntries.filter { it.status.hasHistoricalEffect() }
@@ -55,7 +55,7 @@ class AccountsPayableAging private constructor(
                 .filter { (_, line) ->
                     line.accountId == apControlAccountId &&
                         line.side == TransactionSide.CREDIT &&
-                        line.dimensions[DimensionType.VENDOR] == creditorTag
+                        line.dimensions[DimensionType.VENDOR] == supplierTag
                 }
                 .sortedBy { (date, _) -> date }
 
@@ -64,7 +64,7 @@ class AccountsPayableAging private constructor(
                 .filter {
                     it.accountId == apControlAccountId &&
                         it.side == TransactionSide.DEBIT &&
-                        it.dimensions[DimensionType.VENDOR] == creditorTag
+                        it.dimensions[DimensionType.VENDOR] == supplierTag
                 }
                 .fold(zero) { sum, line -> sum + line.amount }
 
@@ -94,7 +94,7 @@ class AccountsPayableAging private constructor(
             }
 
             val buckets = AgingBucketLabel.entries.map { AgingBucketAmount(it, bucketTotals.getValue(it)) }
-            return AccountsPayableAging(creditorId, asOfDate, currency, buckets)
+            return AccountsPayableAging(supplierId, asOfDate, currency, buckets)
         }
     }
 }

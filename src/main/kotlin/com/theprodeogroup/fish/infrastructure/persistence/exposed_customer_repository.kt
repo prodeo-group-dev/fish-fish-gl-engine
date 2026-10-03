@@ -19,7 +19,7 @@ import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
 import java.util.Currency
 
-/** Exposed-backed `CustomerRepository` (docs/DDD_Design.md Section 10.4) - the AR mirror of `ExposedCreditorRepository`. */
+/** Exposed-backed `CustomerRepository` (docs/DDD_Design.md Section 10.4) - the AR mirror of `ExposedSupplierRepository`. */
 class ExposedCustomerRepository : CustomerRepository {
 
     override fun save(customer: Customer): Unit = transaction {

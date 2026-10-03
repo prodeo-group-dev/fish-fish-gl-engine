@@ -52,7 +52,12 @@ enum class DimensionType {
     CUSTOMER,
     
     /**
-     * Vendor or supplier
+     * Supplier - a party the Company owes money to. Enum member name
+     * stays `VENDOR` (2026-10-03, Creditor->Supplier domain rename) -
+     * this tags already-posted `JournalLine.dimensions` data, so
+     * renaming the constant itself would change the persisted dimension
+     * key for any journal line tagged before the rename, unlike the
+     * purely in-process `Supplier` class/DTO field renames.
      * Example: "AWS", "Office Supplies Inc"
      */
     VENDOR,
@@ -76,7 +81,7 @@ enum class DimensionType {
      * same control-account + dimension-tagging pattern already
      * established for CUSTOMER/VENDOR (`AccountsReceivableAging`/
      * `AccountsPayableAging`). Value is the raw `EmployeeId` UUID
-     * string, matching `creditorId.value.toString()`'s existing
+     * string, matching `supplierId.value.toString()`'s existing
      * convention - no `Employee` aggregate exists in this repo at all
      * (HR/Payroll owns that entirely, per Section 0's "no Employee
      * reference crosses into the GL Engine" contract for `PayRun`);
@@ -103,7 +108,7 @@ enum class DimensionType {
     /**
      * VAT category the line was computed under (2026-09-19,
      * docs/IE/IE_VAT_MVP_Design.md) - tagged on the VAT Control Account
-     * leg of a `RecordSaleUseCase`/`RecordVendorObligationUseCase`
+     * leg of a `RecordSaleUseCase`/`RecordSupplierObligationUseCase`
      * posting. Value is a `domain.tax.VatCategory` enum name. Same
      * "tag the control-account line so reporting can derive a breakdown
      * from already-posted JournalEntry data" reasoning already used for

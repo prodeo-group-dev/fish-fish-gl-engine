@@ -334,7 +334,7 @@ internal suspend fun ApplicationCall.parseUuid(value: String): UUID? =
  * current behavior), an unrecognized non-null value responds 400 and returns
  * `null`. Shared by every route whose use case accepts a caller-supplied
  * `journalSource` (`RecordInventoryReceiptAndIssueRoutes.kt`,
- * `RecordVendorObligationAndPaymentRoutes.kt`).
+ * `RecordSupplierObligationAndPaymentRoutes.kt`).
  */
 internal suspend fun ApplicationCall.parseJournalSource(
     value: String?,

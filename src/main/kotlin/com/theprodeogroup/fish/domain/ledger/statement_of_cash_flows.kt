@@ -30,7 +30,7 @@ data class CashFlowActivityAmount(
  * counter-account but is conceptually Investing, and compound multi-line
  * entries have no single well-defined "the counter-account." Tagging the
  * cash line directly, in the method that actually knows the transaction's
- * economic substance (`Customer.receivePayment()`/`Creditor.makePayment()`
+ * economic substance (`Customer.receivePayment()`/`Supplier.makePayment()`
  * → OPERATING, `FixedAsset.dispose()` → INVESTING,
  * `CashBookEntry.cashFlowActivity` → caller-supplied, defaulting to
  * OPERATING), sidesteps both problems entirely.

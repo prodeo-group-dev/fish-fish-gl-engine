@@ -84,7 +84,7 @@ object ChartOfAccountsTemplate {
      * Trade finance facility liability - closes the FR-PO06 gap
      * (docs/Purchase_Order_Processing_DDD_Design.md): when a Bank
      * executes a supplier payment on the financing structure's behalf
-     * ([com.theprodeogroup.fish.domain.purchasing.CreditorId] paid via
+     * ([com.theprodeogroup.fish.domain.purchasing.SupplierId] paid via
      * POP's `ExecutingParty.BANK`), the settlement side of that posting
      * is this liability, not Cash - the cash didn't come from the
      * Company's own account. Distinct from `Loans Payable` (2100,

@@ -154,13 +154,13 @@ fun Route.fixedAssetRoutes(
             }
             "ON_ACCOUNT" -> {
                 val apControlAccountIdRaw = request.apControlAccountId
-                val vendorReference = request.vendorReference
-                if (apControlAccountIdRaw == null || vendorReference.isNullOrBlank()) {
-                    call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "apControlAccountId and vendorReference are required when fundingMethod is ON_ACCOUNT"))
+                val supplierReference = request.supplierReference
+                if (apControlAccountIdRaw == null || supplierReference.isNullOrBlank()) {
+                    call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "apControlAccountId and supplierReference are required when fundingMethod is ON_ACCOUNT"))
                     return@post
                 }
                 val apControlAccountId = call.parseUuid(apControlAccountIdRaw) ?: return@post
-                FixedAssetFundingMethod.OnAccount(AccountId(apControlAccountId), vendorReference)
+                FixedAssetFundingMethod.OnAccount(AccountId(apControlAccountId), supplierReference)
             }
             "ALREADY_OWNED" -> {
                 val suspenseAccountIdRaw = request.suspenseAccountId

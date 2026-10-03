@@ -3,9 +3,9 @@ package com.theprodeogroup.fish.application
 import com.theprodeogroup.fish.domain.fixedassets.FixedAsset
 import com.theprodeogroup.fish.domain.fixedassets.FixedAssetId
 import com.theprodeogroup.fish.domain.fixedassets.FixedAssetRepository
-import com.theprodeogroup.fish.domain.purchasing.Creditor
-import com.theprodeogroup.fish.domain.purchasing.CreditorId
-import com.theprodeogroup.fish.domain.purchasing.CreditorRepository
+import com.theprodeogroup.fish.domain.purchasing.Supplier
+import com.theprodeogroup.fish.domain.purchasing.SupplierId
+import com.theprodeogroup.fish.domain.purchasing.SupplierRepository
 import com.theprodeogroup.fish.domain.sales.Customer
 import com.theprodeogroup.fish.domain.sales.CustomerId
 import com.theprodeogroup.fish.domain.sales.CustomerRepository
@@ -24,15 +24,15 @@ import com.theprodeogroup.fish.domain.tenancy.CompanyId
  * were removed from this file 2026-09-01 ("Retire GL's StockItem from
  * its legacy costing") alongside the domain interfaces they backed.
  */
-class FakeCreditorRepository : CreditorRepository {
-    val saveCalls = mutableListOf<CreditorId>()
-    private val store = mutableMapOf<CreditorId, Creditor>()
-    override fun save(creditor: Creditor) {
-        saveCalls.add(creditor.id)
-        store[creditor.id] = creditor
+class FakeSupplierRepository : SupplierRepository {
+    val saveCalls = mutableListOf<SupplierId>()
+    private val store = mutableMapOf<SupplierId, Supplier>()
+    override fun save(supplier: Supplier) {
+        saveCalls.add(supplier.id)
+        store[supplier.id] = supplier
     }
-    override fun findById(id: CreditorId): Creditor? = store[id]
-    override fun findAllByCompany(companyId: CompanyId): List<Creditor> = store.values.filter { it.companyId == companyId }
+    override fun findById(id: SupplierId): Supplier? = store[id]
+    override fun findAllByCompany(companyId: CompanyId): List<Supplier> = store.values.filter { it.companyId == companyId }
 }
 
 class FakeCustomerRepository : CustomerRepository {

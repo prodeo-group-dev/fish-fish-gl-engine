@@ -11,7 +11,7 @@ import com.theprodeogroup.fish.domain.ledger.CashFlowActivity
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.ledger.PeriodId
-import com.theprodeogroup.fish.domain.purchasing.CreditorId
+import com.theprodeogroup.fish.domain.purchasing.SupplierId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
@@ -31,12 +31,12 @@ private val TODAY = LocalDate.of(2026, 8, 21)
  * per its own `DealRole`/`ExecutingParty` - the mirror of
  * [RecordCollectionUseCaseTest].
  */
-class RecordVendorPaymentUseCaseTest {
+class RecordSupplierPaymentUseCaseTest {
 
     private val periodRepository = FakePeriodRepository()
     private val accountRepository = FakeAccountRepository()
     private val journalEntryRepository = FakeJournalEntryRepository()
-    private val useCase = RecordVendorPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
+    private val useCase = RecordSupplierPaymentUseCase(periodRepository, accountRepository, journalEntryRepository)
 
     private val companyId = CompanyId.generate()
 
@@ -59,9 +59,9 @@ class RecordVendorPaymentUseCaseTest {
         apControlAccountId: AccountId,
         settlementAccountId: AccountId,
         amount: String = "12500.00",
-        vendorId: CreditorId = CreditorId.generate()
-    ) = RecordVendorPaymentUseCase.Request(
-        periodId, TODAY, apControlAccountId, settlementAccountId, Money(BigDecimal(amount), GBP), vendorId,
+        supplierId: SupplierId = SupplierId.generate()
+    ) = RecordSupplierPaymentUseCase.Request(
+        periodId, TODAY, apControlAccountId, settlementAccountId, Money(BigDecimal(amount), GBP), supplierId,
         "Payment to Brazilian sugar exporter via Access Bank UK"
     )
 
@@ -70,17 +70,17 @@ class RecordVendorPaymentUseCaseTest {
         val period = openPeriod()
         val apControl = account("2100", AccountType.LIABILITY)
         val cash = account("1000", AccountType.ASSET)
-        val vendorId = CreditorId.generate()
+        val supplierId = SupplierId.generate()
 
-        val result = useCase.execute(request(period.id, apControl.id, cash.id, vendorId = vendorId))
+        val result = useCase.execute(request(period.id, apControl.id, cash.id, supplierId = supplierId))
 
-        val success = result.shouldBeInstanceOf<RecordVendorPaymentResult.Success>()
+        val success = result.shouldBeInstanceOf<RecordSupplierPaymentResult.Success>()
         success.journalEntry.status shouldBe PostingStatus.POSTED
         val apLine = success.journalEntry.lines.single { it.accountId == apControl.id }
         val settlementLine = success.journalEntry.lines.single { it.accountId == cash.id }
         apLine.amount shouldBe Money(BigDecimal("12500.00"), GBP)
         settlementLine.amount shouldBe Money(BigDecimal("12500.00"), GBP)
-        apLine.dimensions[DimensionType.VENDOR] shouldBe vendorId.value.toString()
+        apLine.dimensions[DimensionType.VENDOR] shouldBe supplierId.value.toString()
         settlementLine.dimensions[DimensionType.CASH_FLOW_ACTIVITY] shouldBe CashFlowActivity.OPERATING.name
     }
 
@@ -92,7 +92,7 @@ class RecordVendorPaymentUseCaseTest {
 
         val result = useCase.execute(request(period.id, apControl.id, cash.id))
 
-        val success = result.shouldBeInstanceOf<RecordVendorPaymentResult.Success>()
+        val success = result.shouldBeInstanceOf<RecordSupplierPaymentResult.Success>()
         journalEntryRepository.saveCalls shouldContain success.journalEntry.id
         accountRepository.saveCalls shouldContain apControl.id
         accountRepository.saveCalls shouldContain cash.id
@@ -106,7 +106,7 @@ class RecordVendorPaymentUseCaseTest {
 
         val result = useCase.execute(request(period.id, apControl.id, cash.id, amount = "0.00"))
 
-        result.shouldBeInstanceOf<RecordVendorPaymentResult.InvalidAmount>()
+        result.shouldBeInstanceOf<RecordSupplierPaymentResult.InvalidAmount>()
     }
 
     @Test
@@ -116,7 +116,7 @@ class RecordVendorPaymentUseCaseTest {
 
         val result = useCase.execute(request(PeriodId.generate(), apControl.id, cash.id))
 
-        result.shouldBeInstanceOf<RecordVendorPaymentResult.PeriodNotFound>()
+        result.shouldBeInstanceOf<RecordSupplierPaymentResult.PeriodNotFound>()
     }
 
     @Test
@@ -128,7 +128,7 @@ class RecordVendorPaymentUseCaseTest {
 
         val result = useCase.execute(request(period.id, apControl.id, cash.id))
 
-        result.shouldBeInstanceOf<RecordVendorPaymentResult.PeriodNotOpen>()
+        result.shouldBeInstanceOf<RecordSupplierPaymentResult.PeriodNotOpen>()
     }
 
     @Test
@@ -138,7 +138,7 @@ class RecordVendorPaymentUseCaseTest {
 
         val result = useCase.execute(request(period.id, AccountId.generate(), cash.id))
 
-        result.shouldBeInstanceOf<RecordVendorPaymentResult.ApControlAccountNotFound>()
+        result.shouldBeInstanceOf<RecordSupplierPaymentResult.ApControlAccountNotFound>()
     }
 
     @Test
@@ -148,7 +148,7 @@ class RecordVendorPaymentUseCaseTest {
 
         val result = useCase.execute(request(period.id, apControl.id, AccountId.generate()))
 
-        result.shouldBeInstanceOf<RecordVendorPaymentResult.SettlementAccountNotFound>()
+        result.shouldBeInstanceOf<RecordSupplierPaymentResult.SettlementAccountNotFound>()
     }
 
     @Test
@@ -160,6 +160,6 @@ class RecordVendorPaymentUseCaseTest {
 
         val result = useCase.execute(request(period.id, apControl.id, otherCompanysCash.id))
 
-        result.shouldBeInstanceOf<RecordVendorPaymentResult.SettlementAccountNotFound>()
+        result.shouldBeInstanceOf<RecordSupplierPaymentResult.SettlementAccountNotFound>()
     }
 }

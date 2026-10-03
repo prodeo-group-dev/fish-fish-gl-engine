@@ -14,30 +14,30 @@ import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
-import com.theprodeogroup.fish.domain.purchasing.CreditorId
+import com.theprodeogroup.fish.domain.purchasing.SupplierId
 import java.time.LocalDate
 
 /**
- * Outcome of [RecordVendorPaymentUseCase.execute] - a sealed `Result`,
- * same reasoning as [RecordVendorObligationResult].
+ * Outcome of [RecordSupplierPaymentUseCase.execute] - a sealed `Result`,
+ * same reasoning as [RecordSupplierObligationResult].
  */
-sealed class RecordVendorPaymentResult {
+sealed class RecordSupplierPaymentResult {
     data class Success(
         val journalEntry: JournalEntry,
         val events: List<DomainEvent>
-    ) : RecordVendorPaymentResult()
-    data object InvalidAmount : RecordVendorPaymentResult()
-    data object PeriodNotFound : RecordVendorPaymentResult()
-    data object PeriodNotOpen : RecordVendorPaymentResult()
-    data class ApControlAccountNotFound(val accountId: AccountId) : RecordVendorPaymentResult()
-    data class SettlementAccountNotFound(val accountId: AccountId) : RecordVendorPaymentResult()
+    ) : RecordSupplierPaymentResult()
+    data object InvalidAmount : RecordSupplierPaymentResult()
+    data object PeriodNotFound : RecordSupplierPaymentResult()
+    data object PeriodNotOpen : RecordSupplierPaymentResult()
+    data class ApControlAccountNotFound(val accountId: AccountId) : RecordSupplierPaymentResult()
+    data class SettlementAccountNotFound(val accountId: AccountId) : RecordSupplierPaymentResult()
 }
 
 /**
- * The *Record vendor payment* thin posting interface
+ * The *Record supplier payment* thin posting interface
  * (docs/Purchase_Order_Processing_DDD_Design.md Section 0/4) - the
  * Purchasing mirror of [RecordCollectionUseCase], and the thin version
- * of `Creditor.makePayment()`, which today has no application-layer
+ * of `Supplier.makePayment()`, which today has no application-layer
  * caller wired through a `PurchaseOrder` at all (confirmed by grep
  * during the design pass - it exists only as a domain method exercised
  * by tests). This use case finally gives it one, just not inside this
@@ -49,14 +49,14 @@ sealed class RecordVendorPaymentResult {
  * sees the already-resolved [settlementAccountId].
  *
  * Dr AP Control (decreasing the liability), Cr settlement account - the
- * mirror image of [RecordVendorObligationUseCase]'s credit, matching
- * `Creditor.makePayment()`'s own KDoc: "Debit, not credit, on the AP
+ * mirror image of [RecordSupplierObligationUseCase]'s credit, matching
+ * `Supplier.makePayment()`'s own KDoc: "Debit, not credit, on the AP
  * control line... a payment decreases a liability." Settlement line
  * tagged [CashFlowActivity.OPERATING] (IAS 7) - settling a payable is
- * always an Operating activity, same rule `Creditor.makePayment()`
+ * always an Operating activity, same rule `Supplier.makePayment()`
  * already applies.
  */
-class RecordVendorPaymentUseCase(
+class RecordSupplierPaymentUseCase(
     private val periodRepository: PeriodRepository,
     private val accountRepository: AccountRepository,
     private val journalEntryRepository: JournalEntryRepository
@@ -67,19 +67,19 @@ class RecordVendorPaymentUseCase(
         val apControlAccountId: AccountId,
         val settlementAccountId: AccountId,
         val amount: Money,
-        val vendorId: CreditorId,
+        val supplierId: SupplierId,
         val description: String? = null
     )
 
-    fun execute(request: Request): RecordVendorPaymentResult {
+    fun execute(request: Request): RecordSupplierPaymentResult {
         if (request.amount.amount.signum() <= 0) {
-            return RecordVendorPaymentResult.InvalidAmount
+            return RecordSupplierPaymentResult.InvalidAmount
         }
 
         val period = periodRepository.findById(request.periodId)
-            ?: return RecordVendorPaymentResult.PeriodNotFound
+            ?: return RecordSupplierPaymentResult.PeriodNotFound
         if (!period.allowsPosting()) {
-            return RecordVendorPaymentResult.PeriodNotOpen
+            return RecordSupplierPaymentResult.PeriodNotOpen
         }
 
         // Cross-tenant isolation fix (2026-09-23, same gap/fix as PostJournalEntryUseCase):
@@ -88,15 +88,15 @@ class RecordVendorPaymentUseCase(
         // another Company's Account exists.
         val apControlAccount = accountRepository.findById(request.apControlAccountId)
             ?.takeIf { it.companyId == period.companyId }
-            ?: return RecordVendorPaymentResult.ApControlAccountNotFound(request.apControlAccountId)
+            ?: return RecordSupplierPaymentResult.ApControlAccountNotFound(request.apControlAccountId)
         val settlementAccount = accountRepository.findById(request.settlementAccountId)
             ?.takeIf { it.companyId == period.companyId }
-            ?: return RecordVendorPaymentResult.SettlementAccountNotFound(request.settlementAccountId)
+            ?: return RecordSupplierPaymentResult.SettlementAccountNotFound(request.settlementAccountId)
 
         val lines = listOf(
             JournalLine(
                 apControlAccount.id, request.amount, TransactionSide.DEBIT,
-                mapOf(DimensionType.VENDOR to request.vendorId.value.toString())
+                mapOf(DimensionType.VENDOR to request.supplierId.value.toString())
             ),
             JournalLine(
                 settlementAccount.id, request.amount, TransactionSide.CREDIT,
@@ -108,7 +108,7 @@ class RecordVendorPaymentUseCase(
         )
         val posting = entry.post()
         check(posting.isValid) {
-            "RecordVendorPaymentUseCase built a JournalEntry that failed its own post() precondition: " +
+            "RecordSupplierPaymentUseCase built a JournalEntry that failed its own post() precondition: " +
                 posting.errors.joinToString()
         }
 
@@ -120,6 +120,6 @@ class RecordVendorPaymentUseCase(
 
         journalEntryRepository.save(entry)
 
-        return RecordVendorPaymentResult.Success(entry, entry.pullDomainEvents())
+        return RecordSupplierPaymentResult.Success(entry, entry.pullDomainEvents())
     }
 }

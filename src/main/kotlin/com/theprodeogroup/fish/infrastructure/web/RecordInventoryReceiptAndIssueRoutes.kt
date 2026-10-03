@@ -33,7 +33,7 @@ import java.util.Currency
  * costing engine - calls into.
  *
  * **Same tenant-resolution departure as `recordSaleAndCollectionRoutes`/
- * `recordVendorObligationAndPaymentRoutes`, for the same reason:**
+ * `recordSupplierObligationAndPaymentRoutes`, for the same reason:**
  * neither use case has an owning aggregate in this repo (`StockItem`
  * still exists, but these routes deliberately don't look it up - that's
  * the whole point of "thin"), so there's no aggregate to derive

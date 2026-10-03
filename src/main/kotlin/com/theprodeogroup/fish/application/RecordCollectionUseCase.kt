@@ -43,7 +43,7 @@ sealed class RecordCollectionResult {
  * aggregate in this repo.
  *
  * The thin version of `Customer.receivePayment()`, which today (like
- * `Creditor.makePayment()` before Purchase Order Processing's own
+ * `Supplier.makePayment()` before Purchase Order Processing's own
  * extraction pass) has no application-layer caller wired through a
  * SalesOrder - `[[project_receivable_ecl]]` already flagged and fixed
  * a version of this gap once; this use case gives the corrected caller

@@ -11,7 +11,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountType
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.ledger.PeriodId
-import com.theprodeogroup.fish.domain.purchasing.CreditorId
+import com.theprodeogroup.fish.domain.purchasing.SupplierId
 import com.theprodeogroup.fish.domain.tax.VatCategory
 import com.theprodeogroup.fish.domain.tax.VatRateSchedule
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
@@ -32,12 +32,12 @@ private val TODAY = LocalDate.of(2026, 8, 20)
  * output VAT (debits the VAT Control Account instead of crediting it),
  * same atomic rate-resolution-and-computation shape.
  */
-class RecordVendorObligationUseCaseTest {
+class RecordSupplierObligationUseCaseTest {
 
     private val periodRepository = FakePeriodRepository()
     private val accountRepository = FakeAccountRepository()
     private val journalEntryRepository = FakeJournalEntryRepository()
-    private val useCase = RecordVendorObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
+    private val useCase = RecordSupplierObligationUseCase(periodRepository, accountRepository, journalEntryRepository)
 
     private val companyId = CompanyId.generate()
 
@@ -60,11 +60,11 @@ class RecordVendorObligationUseCaseTest {
         expenseAccountId: AccountId,
         apAccountId: AccountId,
         vatAccountId: AccountId,
-        lines: List<RecordVendorObligationUseCase.PurchaseLine> = listOf(RecordVendorObligationUseCase.PurchaseLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD)),
-        vendorId: CreditorId = CreditorId.generate(),
+        lines: List<RecordSupplierObligationUseCase.PurchaseLine> = listOf(RecordSupplierObligationUseCase.PurchaseLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD)),
+        supplierId: SupplierId = SupplierId.generate(),
         vatRateSchedule: VatRateSchedule = VatRateSchedule.IRELAND
-    ) = RecordVendorObligationUseCase.Request(
-        periodId, TODAY, expenseAccountId, apAccountId, vatAccountId, lines, vendorId, vatRateSchedule, "Purchase from supplier"
+    ) = RecordSupplierObligationUseCase.Request(
+        periodId, TODAY, expenseAccountId, apAccountId, vatAccountId, lines, supplierId, vatRateSchedule, "Purchase from supplier"
     )
 
     @Test
@@ -73,11 +73,11 @@ class RecordVendorObligationUseCaseTest {
         val expense = account("5000", AccountType.EXPENSE)
         val ap = account("2000", AccountType.LIABILITY)
         val vat = account("2150", AccountType.LIABILITY)
-        val vendorId = CreditorId.generate()
+        val supplierId = SupplierId.generate()
 
-        val result = useCase.execute(request(period.id, expense.id, ap.id, vat.id, vendorId = vendorId))
+        val result = useCase.execute(request(period.id, expense.id, ap.id, vat.id, supplierId = supplierId))
 
-        val success = result.shouldBeInstanceOf<RecordVendorObligationResult.Success>()
+        val success = result.shouldBeInstanceOf<RecordSupplierObligationResult.Success>()
         success.journalEntry.status shouldBe PostingStatus.POSTED
         val expenseLine = success.journalEntry.lines.single { it.accountId == expense.id }
         val apLine = success.journalEntry.lines.single { it.accountId == ap.id }
@@ -86,7 +86,7 @@ class RecordVendorObligationUseCaseTest {
         apLine.amount shouldBe Money(BigDecimal("1230.00"), EUR)
         vatLine.amount shouldBe Money(BigDecimal("230.00"), EUR)
         vatLine.dimensions[DimensionType.VAT_CATEGORY] shouldBe "STANDARD"
-        apLine.dimensions[DimensionType.VENDOR] shouldBe vendorId.value.toString()
+        apLine.dimensions[DimensionType.VENDOR] shouldBe supplierId.value.toString()
     }
 
     @Test
@@ -98,7 +98,7 @@ class RecordVendorObligationUseCaseTest {
 
         val result = useCase.execute(request(period.id, expense.id, ap.id, vat.id))
 
-        val success = result.shouldBeInstanceOf<RecordVendorObligationResult.Success>()
+        val success = result.shouldBeInstanceOf<RecordSupplierObligationResult.Success>()
         success.journalEntry.source shouldBe JournalSource.INTEGRATION
     }
 
@@ -111,7 +111,7 @@ class RecordVendorObligationUseCaseTest {
 
         val result = useCase.execute(request(period.id, expense.id, ap.id, vat.id).copy(journalSource = JournalSource.IMPORT))
 
-        val success = result.shouldBeInstanceOf<RecordVendorObligationResult.Success>()
+        val success = result.shouldBeInstanceOf<RecordSupplierObligationResult.Success>()
         success.journalEntry.source shouldBe JournalSource.IMPORT
     }
 
@@ -126,13 +126,13 @@ class RecordVendorObligationUseCaseTest {
             request(
                 period.id, expense.id, ap.id, vat.id,
                 lines = listOf(
-                    RecordVendorObligationUseCase.PurchaseLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD),
-                    RecordVendorObligationUseCase.PurchaseLine(Money(BigDecimal("100.00"), EUR), VatCategory.REDUCED)
+                    RecordSupplierObligationUseCase.PurchaseLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD),
+                    RecordSupplierObligationUseCase.PurchaseLine(Money(BigDecimal("100.00"), EUR), VatCategory.REDUCED)
                 )
             )
         )
 
-        val success = result.shouldBeInstanceOf<RecordVendorObligationResult.Success>()
+        val success = result.shouldBeInstanceOf<RecordSupplierObligationResult.Success>()
         val vatLines = success.journalEntry.lines.filter { it.accountId == vat.id }
         vatLines.size shouldBe 2
         vatLines.single { it.dimensions[DimensionType.VAT_CATEGORY] == "STANDARD" }.amount shouldBe Money(BigDecimal("230.00"), EUR)
@@ -151,11 +151,11 @@ class RecordVendorObligationUseCaseTest {
         val result = useCase.execute(
             request(
                 period.id, expense.id, ap.id, vat.id,
-                lines = listOf(RecordVendorObligationUseCase.PurchaseLine(Money(BigDecimal("500.00"), EUR), VatCategory.EXEMPT))
+                lines = listOf(RecordSupplierObligationUseCase.PurchaseLine(Money(BigDecimal("500.00"), EUR), VatCategory.EXEMPT))
             )
         )
 
-        val success = result.shouldBeInstanceOf<RecordVendorObligationResult.Success>()
+        val success = result.shouldBeInstanceOf<RecordSupplierObligationResult.Success>()
         success.journalEntry.lines.none { it.accountId == vat.id } shouldBe true
         val apLine = success.journalEntry.lines.single { it.accountId == ap.id }
         apLine.amount shouldBe Money(BigDecimal("500.00"), EUR)
@@ -170,15 +170,15 @@ class RecordVendorObligationUseCaseTest {
         val ap = account("2000", AccountType.LIABILITY)
         val vat = account("2150", AccountType.LIABILITY)
 
-        val req = RecordVendorObligationUseCase.Request(
+        val req = RecordSupplierObligationUseCase.Request(
             period.id, LocalDate.of(2026, 7, 15), expense.id, ap.id, vat.id,
-            listOf(RecordVendorObligationUseCase.PurchaseLine(Money(BigDecimal("100.00"), EUR), VatCategory.SECOND_REDUCED)),
-            CreditorId.generate(), VatRateSchedule.IRELAND
+            listOf(RecordSupplierObligationUseCase.PurchaseLine(Money(BigDecimal("100.00"), EUR), VatCategory.SECOND_REDUCED)),
+            SupplierId.generate(), VatRateSchedule.IRELAND
         )
 
         val result = useCase.execute(req)
 
-        val success = result.shouldBeInstanceOf<RecordVendorObligationResult.Success>()
+        val success = result.shouldBeInstanceOf<RecordSupplierObligationResult.Success>()
         val vatLine = success.journalEntry.lines.single { it.accountId == vat.id }
         vatLine.amount shouldBe Money(BigDecimal("9.00"), EUR)
     }
@@ -192,7 +192,7 @@ class RecordVendorObligationUseCaseTest {
 
         val result = useCase.execute(request(period.id, expense.id, ap.id, vat.id))
 
-        val success = result.shouldBeInstanceOf<RecordVendorObligationResult.Success>()
+        val success = result.shouldBeInstanceOf<RecordSupplierObligationResult.Success>()
         journalEntryRepository.saveCalls shouldContain success.journalEntry.id
         accountRepository.saveCalls shouldContain expense.id
         accountRepository.saveCalls shouldContain ap.id
@@ -210,11 +210,11 @@ class RecordVendorObligationUseCaseTest {
         val result = useCase.execute(
             request(
                 period.id, expense.id, ap.id, vat.id,
-                lines = listOf(RecordVendorObligationUseCase.PurchaseLine(Money(BigDecimal("500.00"), EUR), VatCategory.ZERO_RATED))
+                lines = listOf(RecordSupplierObligationUseCase.PurchaseLine(Money(BigDecimal("500.00"), EUR), VatCategory.ZERO_RATED))
             )
         )
 
-        result.shouldBeInstanceOf<RecordVendorObligationResult.Success>()
+        result.shouldBeInstanceOf<RecordSupplierObligationResult.Success>()
         val newSaveCalls = accountRepository.saveCalls.drop(saveCallsBeforeExecute.size)
         newSaveCalls shouldContain expense.id
         newSaveCalls shouldContain ap.id
@@ -230,13 +230,13 @@ class RecordVendorObligationUseCaseTest {
 
         val result = useCase.execute(request(period.id, expense.id, ap.id, vat.id, lines = emptyList()))
 
-        result.shouldBeInstanceOf<RecordVendorObligationResult.InvalidAmount>()
+        result.shouldBeInstanceOf<RecordSupplierObligationResult.InvalidAmount>()
     }
 
     @Test
     fun `given a non-positive line amount, when constructing a PurchaseLine, then it fails`() {
         shouldThrow<IllegalArgumentException> {
-            RecordVendorObligationUseCase.PurchaseLine(Money(BigDecimal.ZERO, EUR), VatCategory.STANDARD)
+            RecordSupplierObligationUseCase.PurchaseLine(Money(BigDecimal.ZERO, EUR), VatCategory.STANDARD)
         }
     }
 
@@ -248,7 +248,7 @@ class RecordVendorObligationUseCaseTest {
 
         val result = useCase.execute(request(PeriodId.generate(), expense.id, ap.id, vat.id))
 
-        result.shouldBeInstanceOf<RecordVendorObligationResult.PeriodNotFound>()
+        result.shouldBeInstanceOf<RecordSupplierObligationResult.PeriodNotFound>()
     }
 
     @Test
@@ -261,7 +261,7 @@ class RecordVendorObligationUseCaseTest {
 
         val result = useCase.execute(request(period.id, expense.id, ap.id, vat.id))
 
-        result.shouldBeInstanceOf<RecordVendorObligationResult.PeriodNotOpen>()
+        result.shouldBeInstanceOf<RecordSupplierObligationResult.PeriodNotOpen>()
     }
 
     @Test
@@ -272,7 +272,7 @@ class RecordVendorObligationUseCaseTest {
 
         val result = useCase.execute(request(period.id, AccountId.generate(), ap.id, vat.id))
 
-        result.shouldBeInstanceOf<RecordVendorObligationResult.ExpenseOrAssetAccountNotFound>()
+        result.shouldBeInstanceOf<RecordSupplierObligationResult.ExpenseOrAssetAccountNotFound>()
     }
 
     @Test
@@ -283,7 +283,7 @@ class RecordVendorObligationUseCaseTest {
 
         val result = useCase.execute(request(period.id, expense.id, AccountId.generate(), vat.id))
 
-        result.shouldBeInstanceOf<RecordVendorObligationResult.ApControlAccountNotFound>()
+        result.shouldBeInstanceOf<RecordSupplierObligationResult.ApControlAccountNotFound>()
     }
 
     @Test
@@ -294,7 +294,7 @@ class RecordVendorObligationUseCaseTest {
 
         val result = useCase.execute(request(period.id, expense.id, ap.id, AccountId.generate()))
 
-        result.shouldBeInstanceOf<RecordVendorObligationResult.VatControlAccountNotFound>()
+        result.shouldBeInstanceOf<RecordSupplierObligationResult.VatControlAccountNotFound>()
     }
 
     @Test
@@ -307,7 +307,7 @@ class RecordVendorObligationUseCaseTest {
 
         val result = useCase.execute(request(period.id, expense.id, otherCompanysAp.id, vat.id))
 
-        result.shouldBeInstanceOf<RecordVendorObligationResult.ApControlAccountNotFound>()
+        result.shouldBeInstanceOf<RecordSupplierObligationResult.ApControlAccountNotFound>()
     }
 
     @Test
@@ -323,12 +323,12 @@ class RecordVendorObligationUseCaseTest {
         val result = useCase.execute(
             request(
                 period.id, expense.id, ap.id, vat.id,
-                lines = listOf(RecordVendorObligationUseCase.PurchaseLine(Money(BigDecimal("100.00"), EUR), VatCategory.STANDARD)),
+                lines = listOf(RecordSupplierObligationUseCase.PurchaseLine(Money(BigDecimal("100.00"), EUR), VatCategory.STANDARD)),
                 vatRateSchedule = customSchedule
             )
         )
 
-        val success = result.shouldBeInstanceOf<RecordVendorObligationResult.Success>()
+        val success = result.shouldBeInstanceOf<RecordSupplierObligationResult.Success>()
         success.journalEntry.lines.single { it.accountId == vat.id }.amount shouldBe Money(BigDecimal("50.00"), EUR)
     }
 
@@ -344,12 +344,12 @@ class RecordVendorObligationUseCaseTest {
         val result = useCase.execute(
             request(
                 period.id, expense.id, ap.id, vat.id,
-                lines = listOf(RecordVendorObligationUseCase.PurchaseLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD)),
+                lines = listOf(RecordSupplierObligationUseCase.PurchaseLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD)),
                 vatRateSchedule = VatRateSchedule.UK
             )
         )
 
-        val success = result.shouldBeInstanceOf<RecordVendorObligationResult.Success>()
+        val success = result.shouldBeInstanceOf<RecordSupplierObligationResult.Success>()
         success.journalEntry.lines.single { it.accountId == vat.id }.amount shouldBe Money(BigDecimal("200.00"), EUR)
     }
 
@@ -363,12 +363,12 @@ class RecordVendorObligationUseCaseTest {
         val result = useCase.execute(
             request(
                 period.id, expense.id, ap.id, vat.id,
-                lines = listOf(RecordVendorObligationUseCase.PurchaseLine(Money(BigDecimal("100.00"), EUR), VatCategory.SECOND_REDUCED)),
+                lines = listOf(RecordSupplierObligationUseCase.PurchaseLine(Money(BigDecimal("100.00"), EUR), VatCategory.SECOND_REDUCED)),
                 vatRateSchedule = VatRateSchedule.UK
             )
         )
 
-        val failure = result.shouldBeInstanceOf<RecordVendorObligationResult.VatCategoryNotSupported>()
+        val failure = result.shouldBeInstanceOf<RecordSupplierObligationResult.VatCategoryNotSupported>()
         failure.category shouldBe VatCategory.SECOND_REDUCED
     }
 }

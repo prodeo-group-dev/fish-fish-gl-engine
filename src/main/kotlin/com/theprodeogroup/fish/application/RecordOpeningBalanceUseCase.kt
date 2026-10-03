@@ -36,7 +36,7 @@ import java.time.LocalDate
  * [ChartOfAccountsTemplate.OPENING_BALANCE_EQUITY_CODE] internally,
  * the one place in this codebase that didn't follow the otherwise-
  * universal "caller supplies every `AccountId` explicitly" convention
- * (`RecordVendorObligationUseCase`, `PostJournalEntryUseCase`,
+ * (`RecordSupplierObligationUseCase`, `PostJournalEntryUseCase`,
  * `RecordInventoryReceiptUseCase` all do). Generalizing it is what
  * lets this same, already-tested mechanism serve both a genuine
  * opening balance (contra = Opening Balance Equity) and a not-yet-
