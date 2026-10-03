@@ -12,9 +12,9 @@ starts, same judgment call as the Audit Trail backlog's own note.
 
 | # | Item | Depends on | Status |
 |---|---|---|---|
-| 1.1 | `ComputeWorkingCapitalUseCase(companyRepository, accountRepository, journalEntryRepository)` wrapping `WorkingCapital.of()`, mirroring `ComputeBalanceSheetUseCase`'s exact shape (including its "no accounts configured" error handling, per UC-WC-01's alternate flow) | — | Not started |
-| 1.2 | `GET /companies/{companyId}/reports/working-capital` - add to the existing `reportsRoutes()` function in `ReportsRoutes.kt` (not a new route file - same report family as balance-sheet/profit-and-loss/cash-flow), DTOs in `Dtos.kt` | 1.1 | Not started |
-| 1.3 | Wire into `Application.kt`'s `reportsRoutes(...)` call site | 1.2 | Not started |
+| 1.1 | ~~`ComputeWorkingCapitalUseCase`~~ | — | **Done** (GL `58642e0`, local, handed to CM). |
+| 1.2 | ~~`GET /companies/{companyId}/reports/working-capital`~~ | 1.1 | **Done** - added to `reportsRoutes()` alongside its three siblings, `WorkingCapitalResponseDto` in `Dtos.kt`. |
+| 1.3 | ~~Wire into `Application.kt`~~ | 1.2 | **Done** - `computeWorkingCapitalUseCase` is a defaulted `fishModule` param (constructed from repos already in scope), not a new required one, so none of the ~25 existing test fixtures needed touching. 3 new tests in `ReportsRoutesTest.kt`, full suite green. |
 | 2.0 | **Decision gate**: resolve SRS §2.2's four sub-decisions (repository shape, statement-ingestion mechanism, match-persistence model) with Femi before any code in this wave. | — | Blocked on decision |
 | 2.1 | `BankReconciliationRepository`/statement-line persistence, per whatever §2.2 decides | 2.0 | Not started |
 | 2.2 | `StartBankReconciliationUseCase` (or equivalent, naming depends on §2.2's ingestion decision) | 2.1 | Not started |
