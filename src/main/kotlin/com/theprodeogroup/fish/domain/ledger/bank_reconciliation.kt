@@ -42,16 +42,27 @@ class BankReconciliation private constructor(
     val statementEndingBalance: Money,
     val statementLines: List<BankStatementLine>,
     val postedEntries: List<JournalEntry>,
-    val currency: Currency
+    val currency: Currency,
+    initialMatches: Set<Pair<BankStatementLineId, JournalEntryId>> = emptySet()
 ) {
-    private val matchedStatementLineIds = mutableSetOf<BankStatementLineId>()
-    private val matchedJournalEntryIds = mutableSetOf<JournalEntryId>()
+    /**
+     * The actual pairing, not two independent sets of "already used" ids
+     * - `unmatch()` needs to know *which* entry a given statement line
+     * was matched to, which two separate `Set<BankStatementLineId>`/
+     * `Set<JournalEntryId>` can't express. [matches] is the one source
+     * of truth; [unmatchedStatementLines]/[unmatchedEntries] below are
+     * both derived from it.
+     */
+    private val matches = initialMatches.toMutableSet()
+
+    val currentMatches: Set<Pair<BankStatementLineId, JournalEntryId>>
+        get() = matches.toSet()
 
     val unmatchedStatementLines: List<BankStatementLine>
-        get() = statementLines.filter { it.id !in matchedStatementLineIds }
+        get() = statementLines.filter { line -> matches.none { it.first == line.id } }
 
     val unmatchedEntries: List<JournalEntry>
-        get() = postedEntries.filter { it.id !in matchedJournalEntryIds }
+        get() = postedEntries.filter { entry -> matches.none { it.second == entry.id } }
 
     val isFullyReconciled: Boolean
         get() = unmatchedStatementLines.isEmpty() && unmatchedEntries.isEmpty()
@@ -66,12 +77,12 @@ class BankReconciliation private constructor(
     fun match(statementLineId: BankStatementLineId, journalEntryId: JournalEntryId): ValidationResult {
         val statementLine = statementLines.find { it.id == statementLineId }
             ?: return ValidationResult.failure("No such bank statement line on this reconciliation")
-        if (statementLineId in matchedStatementLineIds) {
+        if (matches.any { it.first == statementLineId }) {
             return ValidationResult.failure("Bank statement line is already matched")
         }
         val entry = postedEntries.find { it.id == journalEntryId }
             ?: return ValidationResult.failure("No such eligible posted JournalEntry against this Account")
-        if (journalEntryId in matchedJournalEntryIds) {
+        if (matches.any { it.second == journalEntryId }) {
             return ValidationResult.failure("JournalEntry is already matched")
         }
 
@@ -89,8 +100,23 @@ class BankReconciliation private constructor(
             )
         }
 
-        matchedStatementLineIds.add(statementLineId)
-        matchedJournalEntryIds.add(journalEntryId)
+        matches.add(statementLineId to journalEntryId)
+        return ValidationResult.success()
+    }
+
+    /**
+     * Undoes a match (2026-10-03, FR-BANKREC-04) - deletes the pairing
+     * outright, per the direct decision that a reconciliation match has
+     * no compliance reason to stay immutable the way `AuditLogEntry`
+     * does, unlike a posted `JournalEntry`'s own reversal-only
+     * correction model.
+     */
+    fun unmatch(statementLineId: BankStatementLineId, journalEntryId: JournalEntryId): ValidationResult {
+        val pair = statementLineId to journalEntryId
+        if (pair !in matches) {
+            return ValidationResult.failure("This statement line and JournalEntry are not currently matched to each other")
+        }
+        matches.remove(pair)
         return ValidationResult.success()
     }
 
@@ -114,5 +140,28 @@ class BankReconciliation private constructor(
                 id, accountId, statementDate, statementEndingBalance, statementLines, eligibleEntries, currency
             )
         }
+
+        /**
+         * Rebuilds a `BankReconciliation` from persisted state, restoring
+         * [initialMatches] rather than starting empty - `internal`,
+         * matching every other aggregate's `reconstitute()` visibility.
+         * Doesn't re-apply [create]'s eligible-entries filter - a
+         * persisted reconciliation's own [postedEntries] list was already
+         * filtered when first created (or should be re-supplied already
+         * filtered by the caller, e.g. a repository re-querying posted
+         * entries for the Account).
+         */
+        internal fun reconstitute(
+            id: BankReconciliationId,
+            accountId: AccountId,
+            statementDate: LocalDate,
+            statementEndingBalance: Money,
+            statementLines: List<BankStatementLine>,
+            postedEntries: List<JournalEntry>,
+            currency: Currency,
+            matches: Set<Pair<BankStatementLineId, JournalEntryId>>
+        ): BankReconciliation = BankReconciliation(
+            id, accountId, statementDate, statementEndingBalance, statementLines, postedEntries, currency, matches
+        )
     }
 }

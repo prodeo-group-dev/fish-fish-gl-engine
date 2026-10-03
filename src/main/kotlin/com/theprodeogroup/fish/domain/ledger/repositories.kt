@@ -52,3 +52,27 @@ interface JournalEntryRepository {
     fun findAllByCompany(companyId: CompanyId): List<JournalEntry>
     fun findAllByPeriod(periodId: PeriodId): List<JournalEntry>
 }
+
+/**
+ * Persistence contract for [BankReconciliation]
+ * (docs/GL_Working_Capital_And_Bank_Reconciliation_Software_Requirements_Specification.md
+ * Section 2.2/4, decided 2026-10-03). [companyId] is a separate parameter
+ * on both methods, not a field read off the aggregate - `BankReconciliation`
+ * itself carries no `CompanyId` (only [AccountId], same as every other
+ * Ledger aggregate), but the persisted row needs one for the same direct,
+ * company-scoped-query convention every other repository in this
+ * codebase already uses (`findById` scoped to a Company, not just an id,
+ * closing the same cross-tenant-lookup gap `authorizeTenantFor*` guards
+ * against at the route layer).
+ *
+ * [postedEntries] is caller-supplied on [findById], matching
+ * [BankReconciliation.create]'s own shape - this repository doesn't
+ * depend on [JournalEntryRepository] itself; the calling use case already
+ * has to fetch posted entries for its own purposes and passes them
+ * through, the same composition responsibility every `Compute*UseCase`
+ * in `application` already carries.
+ */
+interface BankReconciliationRepository {
+    fun save(reconciliation: BankReconciliation, companyId: CompanyId)
+    fun findById(id: BankReconciliationId, companyId: CompanyId, postedEntries: List<JournalEntry>): BankReconciliation?
+}

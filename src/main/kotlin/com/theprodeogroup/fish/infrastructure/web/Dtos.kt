@@ -852,3 +852,45 @@ data class FixedAssetPostingResponseDto(
     val journalEntryStatus: String,
     val fixedAsset: FixedAssetSummaryDto
 )
+
+/**
+ * Wire shapes for `POST /companies/{companyId}/bank-reconciliations`
+ * (UC-BANKREC-01) - one request carries the whole statement's lines,
+ * per the decided bulk-synchronous-ingestion shape.
+ */
+@Serializable
+data class StatementLineInputDto(val date: String, val amount: String, val direction: String, val description: String)
+
+@Serializable
+data class StartBankReconciliationRequestDto(
+    val accountId: String,
+    val statementDate: String,
+    val statementEndingBalance: String,
+    val currency: String,
+    val lines: List<StatementLineInputDto>
+)
+
+@Serializable
+data class BankStatementLineDto(val id: String, val date: String, val amount: String, val direction: String, val description: String)
+
+/** Shared response shape for start/match/unmatch/read - a reconciliation's full current state (UC-BANKREC-01/02/03/04). */
+@Serializable
+data class BankReconciliationResponseDto(
+    val id: String,
+    val accountId: String,
+    val statementDate: String,
+    val statementEndingBalance: String,
+    val currency: String,
+    val statementLines: List<BankStatementLineDto>,
+    val unmatchedStatementLineIds: List<String>,
+    val unmatchedJournalEntryIds: List<String>,
+    val matches: List<BankReconciliationMatchDto>,
+    val isFullyReconciled: Boolean
+)
+
+@Serializable
+data class BankReconciliationMatchDto(val statementLineId: String, val journalEntryId: String)
+
+/** `POST /companies/{companyId}/bank-reconciliations/{id}/match` and `.../unmatch` (UC-BANKREC-02/04). */
+@Serializable
+data class MatchBankReconciliationLineRequestDto(val statementLineId: String, val journalEntryId: String)
