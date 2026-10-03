@@ -224,6 +224,104 @@ class BankReconciliationTest {
         reconciliation.unmatchedEntries shouldBe listOf(entry)
     }
 
+    @Test
+    fun `given a matched pair, when unmatched, then both become unmatched again`() {
+        val cashAccountId = AccountId.generate()
+        val statementLine = BankStatementLine(
+            date = TODAY, amount = Money(BigDecimal("500.00"), GBP),
+            direction = CashDirection.RECEIVED, description = "Card settlement"
+        )
+        val entry = postedEntry(
+            JournalLine(cashAccountId, Money(BigDecimal("500.00"), GBP), TransactionSide.DEBIT),
+            JournalLine(AccountId.generate(), Money(BigDecimal("500.00"), GBP), TransactionSide.CREDIT)
+        )
+        val reconciliation = BankReconciliation.create(
+            cashAccountId, TODAY, Money(BigDecimal("500.00"), GBP),
+            listOf(statementLine), listOf(entry), GBP
+        )
+        reconciliation.match(statementLine.id, entry.id)
+
+        val result = reconciliation.unmatch(statementLine.id, entry.id)
+
+        result.isValid shouldBe true
+        reconciliation.isFullyReconciled shouldBe false
+        reconciliation.unmatchedStatementLines shouldBe listOf(statementLine)
+        reconciliation.unmatchedEntries shouldBe listOf(entry)
+    }
+
+    @Test
+    fun `given a pair that was never matched, when unmatched, then it fails`() {
+        val cashAccountId = AccountId.generate()
+        val statementLine = BankStatementLine(
+            date = TODAY, amount = Money(BigDecimal("500.00"), GBP),
+            direction = CashDirection.RECEIVED, description = "Card settlement"
+        )
+        val entry = postedEntry(
+            JournalLine(cashAccountId, Money(BigDecimal("500.00"), GBP), TransactionSide.DEBIT),
+            JournalLine(AccountId.generate(), Money(BigDecimal("500.00"), GBP), TransactionSide.CREDIT)
+        )
+        val reconciliation = BankReconciliation.create(
+            cashAccountId, TODAY, Money(BigDecimal("500.00"), GBP),
+            listOf(statementLine), listOf(entry), GBP
+        )
+
+        val result = reconciliation.unmatch(statementLine.id, entry.id)
+
+        result.isValid shouldBe false
+    }
+
+    @Test
+    fun `given an unmatched pair, when unmatched again then rematched, then it can be matched to a different entry`() {
+        val cashAccountId = AccountId.generate()
+        val statementLine = BankStatementLine(
+            date = TODAY, amount = Money(BigDecimal("500.00"), GBP),
+            direction = CashDirection.RECEIVED, description = "Card settlement"
+        )
+        val wrongEntry = postedEntry(
+            JournalLine(cashAccountId, Money(BigDecimal("500.00"), GBP), TransactionSide.DEBIT),
+            JournalLine(AccountId.generate(), Money(BigDecimal("500.00"), GBP), TransactionSide.CREDIT)
+        )
+        val rightEntry = postedEntry(
+            JournalLine(cashAccountId, Money(BigDecimal("500.00"), GBP), TransactionSide.DEBIT),
+            JournalLine(AccountId.generate(), Money(BigDecimal("500.00"), GBP), TransactionSide.CREDIT)
+        )
+        val reconciliation = BankReconciliation.create(
+            cashAccountId, TODAY, Money(BigDecimal("500.00"), GBP),
+            listOf(statementLine), listOf(wrongEntry, rightEntry), GBP
+        )
+        reconciliation.match(statementLine.id, wrongEntry.id)
+        reconciliation.unmatch(statementLine.id, wrongEntry.id)
+
+        val result = reconciliation.match(statementLine.id, rightEntry.id)
+
+        result.isValid shouldBe true
+        reconciliation.isFullyReconciled shouldBe false
+        reconciliation.unmatchedEntries shouldBe listOf(wrongEntry)
+    }
+
+    @Test
+    fun `given persisted matches, when reconstituted, then the matches round-trip`() {
+        val cashAccountId = AccountId.generate()
+        val statementLine = BankStatementLine(
+            date = TODAY, amount = Money(BigDecimal("500.00"), GBP),
+            direction = CashDirection.RECEIVED, description = "Card settlement"
+        )
+        val entry = postedEntry(
+            JournalLine(cashAccountId, Money(BigDecimal("500.00"), GBP), TransactionSide.DEBIT),
+            JournalLine(AccountId.generate(), Money(BigDecimal("500.00"), GBP), TransactionSide.CREDIT)
+        )
+        val id = BankReconciliationId.generate()
+
+        val reconciliation = BankReconciliation.reconstitute(
+            id, cashAccountId, TODAY, Money(BigDecimal("500.00"), GBP),
+            listOf(statementLine), listOf(entry), GBP,
+            matches = setOf(statementLine.id to entry.id)
+        )
+
+        reconciliation.isFullyReconciled shouldBe true
+        reconciliation.currentMatches shouldBe setOf(statementLine.id to entry.id)
+    }
+
     private fun postedEntry(vararg lines: JournalLine): JournalEntry {
         val entry = JournalEntry.create(PeriodId.generate(), TODAY, lines.toList(), JournalSource.MANUAL)
         entry.post()

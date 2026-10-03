@@ -3,6 +3,9 @@ package com.theprodeogroup.fish.application
 import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
+import com.theprodeogroup.fish.domain.ledger.BankReconciliation
+import com.theprodeogroup.fish.domain.ledger.BankReconciliationId
+import com.theprodeogroup.fish.domain.ledger.BankReconciliationRepository
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
@@ -55,4 +58,44 @@ class FakeJournalEntryRepository : JournalEntryRepository {
      * faithful reproduction, deliberately simplified since it's unused.
      */
     override fun findAllByCompany(companyId: CompanyId): List<JournalEntry> = store.values.toList()
+}
+
+class FakeBankReconciliationRepository : BankReconciliationRepository {
+    private data class Record(
+        val companyId: CompanyId,
+        val accountId: AccountId,
+        val statementDate: java.time.LocalDate,
+        val statementEndingBalance: com.theprodeogroup.common.Money,
+        val statementLines: List<com.theprodeogroup.fish.domain.ledger.BankStatementLine>,
+        val currency: java.util.Currency,
+        val matches: Set<Pair<com.theprodeogroup.fish.domain.ledger.BankStatementLineId, JournalEntryId>>
+    )
+
+    private val store = mutableMapOf<BankReconciliationId, Record>()
+
+    override fun save(reconciliation: BankReconciliation, companyId: CompanyId) {
+        store[reconciliation.id] = Record(
+            companyId, reconciliation.accountId, reconciliation.statementDate, reconciliation.statementEndingBalance,
+            reconciliation.statementLines, reconciliation.currency, reconciliation.currentMatches
+        )
+    }
+
+    override fun findById(id: BankReconciliationId, companyId: CompanyId, postedEntries: List<JournalEntry>): BankReconciliation? {
+        val record = store[id] ?: return null
+        if (record.companyId != companyId) return null
+        return BankReconciliation.reconstitute(
+            id, record.accountId, record.statementDate, record.statementEndingBalance,
+            record.statementLines, postedEntries, record.currency, record.matches
+        )
+    }
+
+    override fun findAllByCompany(companyId: CompanyId, postedEntries: List<JournalEntry>, accountId: AccountId?): List<BankReconciliation> =
+        store.entries
+            .filter { (_, record) -> record.companyId == companyId && (accountId == null || record.accountId == accountId) }
+            .map { (id, record) ->
+                BankReconciliation.reconstitute(
+                    id, record.accountId, record.statementDate, record.statementEndingBalance,
+                    record.statementLines, postedEntries, record.currency, record.matches
+                )
+            }
 }
