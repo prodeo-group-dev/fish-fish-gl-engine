@@ -134,6 +134,37 @@ class BankReconciliationRepositoryIntegrationTest {
     }
 
     @Test
+    fun `given reconciliations for two Companies, when listed by company, then only the requested Company's reconciliations come back`() {
+        val companyId = newCompany()
+        val otherCompanyId = newCompany()
+        val cashAccount = newCashAccount(companyId)
+        val otherCashAccount = newCashAccount(otherCompanyId)
+        val reconciliation = BankReconciliation.create(cashAccount.id, TODAY, Money(BigDecimal("0.00"), GBP), emptyList(), emptyList(), GBP)
+        val otherReconciliation = BankReconciliation.create(otherCashAccount.id, TODAY, Money(BigDecimal("0.00"), GBP), emptyList(), emptyList(), GBP)
+        bankReconciliationRepository.save(reconciliation, companyId)
+        bankReconciliationRepository.save(otherReconciliation, otherCompanyId)
+
+        val results = bankReconciliationRepository.findAllByCompany(companyId, emptyList())
+
+        results.map { it.id } shouldBe listOf(reconciliation.id)
+    }
+
+    @Test
+    fun `given reconciliations for two Accounts in one Company, when listed filtered by Account, then only that Account's reconciliations come back`() {
+        val companyId = newCompany()
+        val cashAccount = newCashAccount(companyId)
+        val otherAccount = newCashAccount(companyId)
+        val reconciliation = BankReconciliation.create(cashAccount.id, TODAY, Money(BigDecimal("0.00"), GBP), emptyList(), emptyList(), GBP)
+        val otherReconciliation = BankReconciliation.create(otherAccount.id, TODAY, Money(BigDecimal("0.00"), GBP), emptyList(), emptyList(), GBP)
+        bankReconciliationRepository.save(reconciliation, companyId)
+        bankReconciliationRepository.save(otherReconciliation, companyId)
+
+        val results = bankReconciliationRepository.findAllByCompany(companyId, emptyList(), cashAccount.id)
+
+        results.map { it.id } shouldBe listOf(reconciliation.id)
+    }
+
+    @Test
     fun `given a saved match, when unmatched and saved again, then the pairing is gone on reload`() {
         val companyId = newCompany()
         val cashAccount = newCashAccount(companyId)

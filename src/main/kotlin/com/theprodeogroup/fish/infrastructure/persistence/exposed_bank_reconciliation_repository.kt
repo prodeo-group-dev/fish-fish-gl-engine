@@ -11,6 +11,7 @@ import com.theprodeogroup.fish.domain.ledger.CashDirection
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
+import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.inList
 import org.jetbrains.exposed.sql.and
@@ -76,9 +77,22 @@ class ExposedBankReconciliationRepository : BankReconciliationRepository {
             .where { (BankReconciliationsTable.id eq id.value) and (BankReconciliationsTable.companyId eq companyId.value) }
             .singleOrNull() ?: return@transaction null
 
-        val currency = Currency.getInstance(row[BankReconciliationsTable.currency])
+        row.toReconciliation(postedEntries)
+    }
+
+    override fun findAllByCompany(companyId: CompanyId, postedEntries: List<JournalEntry>, accountId: AccountId?): List<BankReconciliation> = transaction {
+        var condition = BankReconciliationsTable.companyId eq companyId.value
+        accountId?.let { condition = condition and (BankReconciliationsTable.accountId eq it.value) }
+
+        BankReconciliationsTable.selectAll().where { condition }.map { it.toReconciliation(postedEntries) }
+    }
+
+    /** Shared row-to-aggregate loading for [findById]/[findAllByCompany] - each reconciliation's statement lines/matches are still a per-row sub-query, fine at the scale a Company's own reconciliations run at (monthly per Account, not thousands). */
+    private fun ResultRow.toReconciliation(postedEntries: List<JournalEntry>): BankReconciliation {
+        val reconciliationId = BankReconciliationId(this[BankReconciliationsTable.id])
+        val currency = Currency.getInstance(this[BankReconciliationsTable.currency])
         val statementLines = BankStatementLinesTable.selectAll()
-            .where { BankStatementLinesTable.reconciliationId eq id.value }
+            .where { BankStatementLinesTable.reconciliationId eq reconciliationId.value }
             .map { lineRow ->
                 BankStatementLine(
                     id = BankStatementLineId(lineRow[BankStatementLinesTable.id]),
@@ -99,11 +113,11 @@ class ExposedBankReconciliationRepository : BankReconciliationRepository {
                 }.toSet()
         }
 
-        BankReconciliation.reconstitute(
-            id = id,
-            accountId = AccountId(row[BankReconciliationsTable.accountId]),
-            statementDate = row[BankReconciliationsTable.statementDate],
-            statementEndingBalance = Money(row[BankReconciliationsTable.statementEndingBalanceAmount], currency),
+        return BankReconciliation.reconstitute(
+            id = reconciliationId,
+            accountId = AccountId(this[BankReconciliationsTable.accountId]),
+            statementDate = this[BankReconciliationsTable.statementDate],
+            statementEndingBalance = Money(this[BankReconciliationsTable.statementEndingBalanceAmount], currency),
             statementLines = statementLines,
             postedEntries = postedEntries,
             currency = currency,

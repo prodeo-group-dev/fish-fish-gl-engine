@@ -30,6 +30,7 @@ import com.theprodeogroup.fish.application.StartBankReconciliationUseCase
 import com.theprodeogroup.fish.application.MatchBankReconciliationLineUseCase
 import com.theprodeogroup.fish.application.UnmatchBankReconciliationLineUseCase
 import com.theprodeogroup.fish.application.ComputeBankReconciliationUseCase
+import com.theprodeogroup.fish.application.ListBankReconciliationsUseCase
 import com.theprodeogroup.fish.application.ImportGlBalancesUseCase
 import com.theprodeogroup.fish.application.CreateAccountUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
@@ -205,6 +206,7 @@ fun Application.productionModule() {
     val matchBankReconciliationLineUseCase = MatchBankReconciliationLineUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
     val unmatchBankReconciliationLineUseCase = UnmatchBankReconciliationLineUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
     val computeBankReconciliationUseCase = ComputeBankReconciliationUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
+    val listBankReconciliationsUseCase = ListBankReconciliationsUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
 
     // EA (Enterprise Administration) - the human-facing half of
     // docs/Tenancy_Administration_Extraction_DDD_Design.md's rewiring.
@@ -253,6 +255,7 @@ fun Application.productionModule() {
         matchBankReconciliationLineUseCase = matchBankReconciliationLineUseCase,
         unmatchBankReconciliationLineUseCase = unmatchBankReconciliationLineUseCase,
         computeBankReconciliationUseCase = computeBankReconciliationUseCase,
+        listBankReconciliationsUseCase = listBankReconciliationsUseCase,
         periodRepository = periodRepository,
         accountRepository = accountRepository,
         journalEntryRepository = journalEntryRepository,
@@ -340,6 +343,7 @@ fun Application.fishModule(
     matchBankReconciliationLineUseCase: MatchBankReconciliationLineUseCase? = null,
     unmatchBankReconciliationLineUseCase: UnmatchBankReconciliationLineUseCase? = null,
     computeBankReconciliationUseCase: ComputeBankReconciliationUseCase? = null,
+    listBankReconciliationsUseCase: ListBankReconciliationsUseCase? = null,
     periodRepository: PeriodRepository,
     accountRepository: AccountRepository,
     journalEntryRepository: JournalEntryRepository,
@@ -538,11 +542,13 @@ fun Application.fishModule(
                     openingImportRoutes(importGlBalancesUseCase, importFixedAssetsUseCase, companyRepository)
                 }
                 if (startBankReconciliationUseCase != null && matchBankReconciliationLineUseCase != null &&
-                    unmatchBankReconciliationLineUseCase != null && computeBankReconciliationUseCase != null
+                    unmatchBankReconciliationLineUseCase != null && computeBankReconciliationUseCase != null &&
+                    listBankReconciliationsUseCase != null
                 ) {
                     bankReconciliationRoutes(
                         startBankReconciliationUseCase, matchBankReconciliationLineUseCase,
-                        unmatchBankReconciliationLineUseCase, computeBankReconciliationUseCase, companyRepository
+                        unmatchBankReconciliationLineUseCase, computeBankReconciliationUseCase,
+                        listBankReconciliationsUseCase, companyRepository
                     )
                 }
                 fixedAssetRoutes(

@@ -75,4 +75,17 @@ interface JournalEntryRepository {
 interface BankReconciliationRepository {
     fun save(reconciliation: BankReconciliation, companyId: CompanyId)
     fun findById(id: BankReconciliationId, companyId: CompanyId, postedEntries: List<JournalEntry>): BankReconciliation?
+
+    /**
+     * Every reconciliation for [companyId], optionally narrowed to one
+     * [accountId] - added 2026-10-03 after WEB flagged a real discovery
+     * gap: without this, a caller could only ever find a reconciliation
+     * again by already holding its id, the same "no way back" problem
+     * WEB.3 already fixed for School ids. [postedEntries] is
+     * caller-supplied once (not re-fetched per row), same composition
+     * responsibility [findById] already carries - callers already pay
+     * that cost once per request regardless of how many reconciliations
+     * come back.
+     */
+    fun findAllByCompany(companyId: CompanyId, postedEntries: List<JournalEntry>, accountId: AccountId? = null): List<BankReconciliation>
 }

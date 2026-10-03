@@ -894,3 +894,10 @@ data class BankReconciliationMatchDto(val statementLineId: String, val journalEn
 /** `POST /companies/{companyId}/bank-reconciliations/{id}/match` and `.../unmatch` (UC-BANKREC-02/04). */
 @Serializable
 data class MatchBankReconciliationLineRequestDto(val statementLineId: String, val journalEntryId: String)
+
+/** `GET /companies/{companyId}/bank-reconciliations` - a lightweight summary per reconciliation, not the full statement-line/match detail (that's `GET .../{id}`). */
+@Serializable
+data class BankReconciliationSummaryDto(val id: String, val accountId: String, val statementDate: String, val currency: String, val isFullyReconciled: Boolean)
+
+@Serializable
+data class ListBankReconciliationsResponseDto(val reconciliations: List<BankReconciliationSummaryDto>)

@@ -12,6 +12,7 @@ import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
 import com.theprodeogroup.fish.application.ComputeCashFlowUseCase
 import com.theprodeogroup.fish.application.ComputeBankReconciliationUseCase
 import com.theprodeogroup.fish.application.FakeBankReconciliationRepository
+import com.theprodeogroup.fish.application.ListBankReconciliationsUseCase
 import com.theprodeogroup.fish.application.AssessFixedAssetImpairmentUseCase
 import com.theprodeogroup.fish.application.ComputeFixedAssetRegisterUseCase
 import com.theprodeogroup.fish.application.CreateFixedAssetUseCase
@@ -143,6 +144,7 @@ class BankReconciliationRoutesTest {
         val matchBankReconciliationLineUseCase = MatchBankReconciliationLineUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
         val unmatchBankReconciliationLineUseCase = UnmatchBankReconciliationLineUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
         val computeBankReconciliationUseCase = ComputeBankReconciliationUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
+        val listBankReconciliationsUseCase = ListBankReconciliationsUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
 
         val tenant = TenantId.generate()
         val company = Company.create(tenant, "Purse UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
@@ -221,7 +223,8 @@ class BankReconciliationRoutesTest {
                 startBankReconciliationUseCase = startBankReconciliationUseCase,
                 matchBankReconciliationLineUseCase = matchBankReconciliationLineUseCase,
                 unmatchBankReconciliationLineUseCase = unmatchBankReconciliationLineUseCase,
-                computeBankReconciliationUseCase = computeBankReconciliationUseCase
+                computeBankReconciliationUseCase = computeBankReconciliationUseCase,
+                listBankReconciliationsUseCase = listBankReconciliationsUseCase
             )
         }
     }
@@ -421,5 +424,47 @@ class BankReconciliationRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.NotFound
+    }
+
+    @Test
+    fun `given two started reconciliations, when listed, then both come back as lightweight summaries`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val first = client.post("/api/companies/${fixture.company.id.value}/bank-reconciliations") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(startBody.format(fixture.cashAccount.id.value, TODAY, TODAY))
+        }.body<BankReconciliationResponseDto>()
+        val second = client.post("/api/companies/${fixture.company.id.value}/bank-reconciliations") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(startBody.format(fixture.cashAccount.id.value, TODAY, TODAY))
+        }.body<BankReconciliationResponseDto>()
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/bank-reconciliations") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: ListBankReconciliationsResponseDto = response.body()
+        body.reconciliations.map { it.id }.toSet() shouldBe setOf(first.id, second.id)
+        body.reconciliations.all { !it.isFullyReconciled } shouldBe true
+    }
+
+    @Test
+    fun `given no bearer token, when listed, then it returns 401`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/bank-reconciliations") {
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.Unauthorized
     }
 }

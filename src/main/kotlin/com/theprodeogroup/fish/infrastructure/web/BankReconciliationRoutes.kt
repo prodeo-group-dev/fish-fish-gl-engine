@@ -2,6 +2,8 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.application.ComputeBankReconciliationResult
 import com.theprodeogroup.fish.application.ComputeBankReconciliationUseCase
+import com.theprodeogroup.fish.application.ListBankReconciliationsResult
+import com.theprodeogroup.fish.application.ListBankReconciliationsUseCase
 import com.theprodeogroup.fish.application.MatchBankReconciliationLineResult
 import com.theprodeogroup.fish.application.MatchBankReconciliationLineUseCase
 import com.theprodeogroup.fish.application.StartBankReconciliationResult
@@ -42,8 +44,29 @@ fun Route.bankReconciliationRoutes(
     matchBankReconciliationLineUseCase: MatchBankReconciliationLineUseCase,
     unmatchBankReconciliationLineUseCase: UnmatchBankReconciliationLineUseCase,
     computeBankReconciliationUseCase: ComputeBankReconciliationUseCase,
+    listBankReconciliationsUseCase: ListBankReconciliationsUseCase,
     companyRepository: CompanyRepository
 ) {
+    get("/companies/{companyId}/bank-reconciliations") {
+        val companyId = call.parseBankReconciliationCompanyId() ?: return@get
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
+        if (!call.verifyClaimedTenant(tenantId)) return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
+
+        val accountIdRaw = call.request.queryParameters["accountId"]
+        val accountId = if (accountIdRaw != null) {
+            val uuid = call.parseUuid(accountIdRaw) ?: return@get
+            AccountId(uuid)
+        } else null
+
+        when (val result = listBankReconciliationsUseCase.execute(companyId, accountId)) {
+            is ListBankReconciliationsResult.Success -> call.respond(
+                HttpStatusCode.OK,
+                ListBankReconciliationsResponseDto(result.reconciliations.map { it.toSummaryDto() })
+            )
+            ListBankReconciliationsResult.CompanyNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
+        }
+    }
     post("/companies/{companyId}/bank-reconciliations") {
         val companyId = call.parseBankReconciliationCompanyId() ?: return@post
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
@@ -127,6 +150,14 @@ fun Route.bankReconciliationRoutes(
         }
     }
 }
+
+private fun BankReconciliation.toSummaryDto(): BankReconciliationSummaryDto = BankReconciliationSummaryDto(
+    id = id.value.toString(),
+    accountId = accountId.value.toString(),
+    statementDate = statementDate.toString(),
+    currency = currency.currencyCode,
+    isFullyReconciled = isFullyReconciled
+)
 
 private fun BankReconciliation.toDto(): BankReconciliationResponseDto = BankReconciliationResponseDto(
     id = id.value.toString(),

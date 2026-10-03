@@ -88,4 +88,14 @@ class FakeBankReconciliationRepository : BankReconciliationRepository {
             record.statementLines, postedEntries, record.currency, record.matches
         )
     }
+
+    override fun findAllByCompany(companyId: CompanyId, postedEntries: List<JournalEntry>, accountId: AccountId?): List<BankReconciliation> =
+        store.entries
+            .filter { (_, record) -> record.companyId == companyId && (accountId == null || record.accountId == accountId) }
+            .map { (id, record) ->
+                BankReconciliation.reconstitute(
+                    id, record.accountId, record.statementDate, record.statementEndingBalance,
+                    record.statementLines, postedEntries, record.currency, record.matches
+                )
+            }
 }
