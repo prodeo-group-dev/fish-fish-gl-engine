@@ -5,16 +5,28 @@ Companion to `GL_Audit_Trail_Software_Requirements_Specification.md` /
 table format as `docs/GL_POP_IM_SOP_Backlog.md`. Nothing built yet —
 this is the task breakdown, not a status report.
 
-**Before starting Wave 2**: confirm the SRS's §2.2 Open Question 1
-(fail-open vs. fail-closed on audit-write failure) with Femi. Wave 1
-doesn't depend on that answer; Wave 2 does.
+**Wave 2's wiring approach was corrected 2026-10-03** (see SRS §2.1)
+after the fail-open/fail-closed question was decided - **fail-closed**,
+direct instruction: *"The risk is high if it is Fail-Open. It has to be
+Fail-Closed,"* and confirmed again separately: *"Double entry is ALL or
+nothing"* - the audit write is held to the same atomicity standard as
+`JournalEntry.create()`'s own balance invariant. The original plan (a
+shared hook inside `authorizeTenantForWrite`/`Admin`) can't deliver
+that - it runs before business logic, so a later business-logic
+rejection would leave a stray audit entry for an action that never
+happened. The corrected shape: each use case wraps its own existing
+business `save()` and the new audit `save()` in one outer
+`transaction { }` block (confirmed directly that Exposed's
+`transaction { }` nests correctly into an already-open one, so this
+needs no change to either repository's own `save()` implementation) -
+materially larger surface area than the original one-hook plan, since
+it touches each of the ~30+ write use cases individually rather than
+one shared layer.
 
 **Coordination**: this is GL-internal, single-service work — no row
 needed in `docs/GL_POP_IM_SOP_Coordination.md` per that log's own
-carve-out, unless Wave 2's wiring point in `Auth.kt` is judged risky
-enough to warrant a heads-up to peers (it changes a function every
-sibling-calling route already depends on, even though the change is
-additive). Judgment call at Wave 2 start, not pre-decided here.
+carve-out. Nothing in Wave 2 touches a shared cross-service interface
+(`Auth.kt`'s own functions are untouched under the corrected approach).
 
 | # | Item | Depends on | Status |
 |---|---|---|---|
@@ -22,9 +34,8 @@ additive). Judgment call at Wave 2 start, not pre-decided here.
 | 1.2 | `AuditLogRepository` interface (`save()`, `findByCompany(companyId, filters, pagination)` — no `update`/`delete` method exists at all, same enforcement-by-omission MembershipRepository-style precedent used elsewhere in this codebase) | 1.1 | Not started |
 | 1.3 | Flyway migration + Exposed table (`audit_log_entries`, indexed on `(company_id, occurred_at)` per NFR-AUDIT-02/the SRS §4 access pattern) + `ExposedAuditLogRepository` | 1.2 | Not started |
 | 1.4 | `FakeAuditLogRepository` test double, matching every other `Fake*Repository` in `EcosystemRepositoryFakes.kt`/equivalent | 1.1 | Not started |
-| 2.1 | **Decision gate**: confirm SRS §2.2 Q1 (fail-open vs. fail-closed) with Femi before writing any code in this wave. | 1.1-1.4 | Blocked on decision |
-| 2.2 | Extend `authorizeTenantForWrite`/`authorizeTenantForAdmin` (`Auth.kt`) to accept an `AuditAction` + entity type/id and write an `AuditLogEntry` as part of the existing call, per the SRS §2.1 architectural approach - the single shared wiring point, not per-route hand-instrumentation. Exact function signature (new optional params with defaults vs. a new `*WithAudit` variant callers opt into) is an implementation-level call, not scoped further here. | 2.1 | Not started |
-| 2.3 | Thread the new audit parameters through every existing write route (~30+ call sites across `JournalEntryRoutes.kt`, `RecordSaleAndCollectionRoutes.kt`, `RecordSupplierObligationAndPaymentRoutes.kt`, `RecordInventoryReceiptAndIssueRoutes.kt`, `FixedAssetRoutes.kt`, `TenantRoutes.kt`, etc.) - mechanical but large-surface-area work; recommend doing it file-by-file with the full suite re-run after each to catch any missed call site immediately, same discipline as the Creditor->Supplier rename. | 2.2 | Not started |
+| 2.1 | Pick and build one representative write use case first (e.g. `PostJournalEntryUseCase`) wrapping its existing `journalEntryRepository.save()` and a new `auditLogRepository.save()` call in one outer `transaction { }` - prove the fail-closed shape (a forced audit-write failure must roll back the business write too, tested explicitly) before repeating it ~30 more times. | 1.1-1.4 | Not started |
+| 2.2 | Apply the proven shape from 2.1 to every remaining write use case (`RecordSaleUseCase`, `RecordCollectionUseCase`, `RecordSupplierObligationUseCase`/`RecordSupplierPaymentUseCase`, `RecordInventoryReceiptUseCase`/`RecordInventoryIssueUseCase`, `CreateAccountUseCase`, `CreateFixedAssetUseCase`, Period open/close, Tenant/Company admin operations, etc. - enumerate the full list directly against current code before starting, don't assume this list is exhaustive). Mechanical but large-surface-area; recommend one file/use case at a time with the full suite re-run after each, same discipline as the Creditor->Supplier rename. | 2.1 | Not started |
 | 3.1 | `ComputeAuditLogUseCase` (or equivalent) implementing the query/filter logic (date range, entity type, action) against `AuditLogRepository.findByCompany()`, per UC-AUDIT-02/03 | 1.2 | Not started |
 | 3.2 | `GET /companies/{companyId}/audit-log` route, Owner-Admin-gated (stricter than the general read-access level - confirm the exact access-level check against `AccessLevel`'s current definition before building, don't assume `authorizeTenantForRead` is sufficient), paginated, DTOs in `Dtos.kt` | 3.1 | Not started |
 | 4.1 | Wire the system-actor sentinel into every system-generated posting path (`RecordFixedAssetDepreciationUseCase`, `RemeasureLeaveAccrualUseCase`, ECL remeasurement, and any other `JournalSource.SYSTEM`-equivalent caller - audit this list directly against current code before building, don't assume it's only these three) per FR-AUDIT-06/UC-AUDIT-04 | 2.2 | Not started |
@@ -42,3 +53,18 @@ additive). Judgment call at Wave 2 start, not pre-decided here.
   has no actor field, confirmed every write route already resolves an
   `AuthorizedCaller(email, name)` via `authorizeTenantForWrite`/`Admin`
   (the chosen Wave 2 wiring point). Nothing built yet.
+- **2026-10-03 (GL session, same day)**: SRS §2.2 Q1 decided -
+  **fail-closed** (*"The risk is high if it is Fail-Open. It has to be
+  Fail-Closed"*, confirmed again as *"Double entry is ALL or nothing"*).
+  That decision invalidated the original Wave 2 wiring plan: a hook
+  inside `authorizeTenantForWrite`/`Admin` runs before business logic,
+  so it can't actually guarantee fail-closed (a later business
+  rejection would leave a stray audit entry for an action that never
+  happened). Corrected to: each write use case wraps its own existing
+  business `save()` and a new audit `save()` in one outer
+  `transaction { }`, confirmed directly against
+  `ExposedJournalEntryRepository` that Exposed's `transaction { }`
+  nests correctly into an already-open one. Wave 2 rewritten (2.1 proves
+  the shape on one use case, 2.2 rolls it out to the rest) - larger
+  surface area than originally scoped, but the only way to actually
+  deliver what was decided. Still nothing built.
