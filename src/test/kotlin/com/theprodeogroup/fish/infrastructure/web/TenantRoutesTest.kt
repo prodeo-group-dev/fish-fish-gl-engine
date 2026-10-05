@@ -11,6 +11,7 @@ import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.FakeCustomerRepository
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
+import com.theprodeogroup.fish.application.FakeJurisdictionRepository
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
@@ -46,6 +47,7 @@ import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.common.Jurisdiction
+import com.theprodeogroup.fish.domain.common.JurisdictionEntry
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.application.Membership
@@ -55,6 +57,7 @@ import com.theprodeogroup.fish.application.User
 import io.kotest.matchers.shouldBe
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -141,6 +144,7 @@ class TenantRoutesTest {
         val assessFixedAssetImpairmentUseCase = AssessFixedAssetImpairmentUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
         val disposeFixedAssetUseCase = DisposeFixedAssetUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeFixedAssetRegisterUseCase = ComputeFixedAssetRegisterUseCase(companyRepository, fixedAssetRepository)
+        val jurisdictionRepository = FakeJurisdictionRepository()
 
         fun installInto(app: Application) {
             app.fishModule(
@@ -184,7 +188,8 @@ class TenantRoutesTest {
                 recordFixedAssetDepreciationUseCase = recordFixedAssetDepreciationUseCase,
                 assessFixedAssetImpairmentUseCase = assessFixedAssetImpairmentUseCase,
                 disposeFixedAssetUseCase = disposeFixedAssetUseCase,
-                computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase
+                computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase,
+                jurisdictionRepository = jurisdictionRepository
             )
         }
     }
@@ -221,5 +226,103 @@ class TenantRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.Forbidden
+    }
+
+    @Test
+    fun `when GET jurisdictions is called, then it returns every Jurisdiction code with its name straight from the enum, UK including Northern Ireland and no GB`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/jurisdictions") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(EXISTING_ADMIN_EMAIL)}")
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: ListJurisdictionsResponseDto = response.body()
+        body.jurisdictions.map { it.code }.sorted() shouldBe listOf("CI", "GN", "IE", "LR", "NG", "SL", "UK")
+        body.jurisdictions.first { it.code == "UK" }.name shouldBe "United Kingdom (including Northern Ireland)"
+        body.jurisdictions.none { it.code == "GB" || it.code == "NI" } shouldBe true
+    }
+
+    @Test
+    fun `given a signed-in caller who has no User or Tenant yet (mid-onboarding), when GET jurisdictions is called, then it still returns 200`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/jurisdictions") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken("brand-new-founder@example.com")}")
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+    }
+
+    @Test
+    fun `given no bearer token, when GET jurisdictions is called, then it returns 401`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/jurisdictions")
+
+        response.status shouldBe HttpStatusCode.Unauthorized
+    }
+
+    @Test
+    fun `given a jurisdiction not in the registry, when add-company is posted, then it returns 400 - and once it is added as data, the same request returns 201 with no code change`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        suspend fun postCompanyIn(jurisdiction: String) = client.post("/api/tenants/${fixture.existingTenantId.value}/companies") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(EXISTING_ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.existingTenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody("""{"companyName": "Cape Co", "clientType": "COMPANY_LIMITED", "jurisdiction": "$jurisdiction", "companyBaseCurrency": "GBP", "fiscalYearStartMonth": 1}""")
+        }
+
+        postCompanyIn("ZA").status shouldBe HttpStatusCode.BadRequest
+
+        fixture.jurisdictionRepository.save(JurisdictionEntry(Jurisdiction("ZA"), "South Africa", enabled = true))
+
+        postCompanyIn("ZA").status shouldBe HttpStatusCode.Created
+    }
+
+    @Test
+    fun `given a jurisdiction that is registered but disabled, when add-company is posted, then it returns 400 and GET jurisdictions does not offer it`() = testApplication {
+        val fixture = Fixture()
+        fixture.jurisdictionRepository.save(JurisdictionEntry(Jurisdiction("ZA"), "South Africa", enabled = false))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val add = client.post("/api/tenants/${fixture.existingTenantId.value}/companies") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(EXISTING_ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.existingTenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody("""{"companyName": "Cape Co", "clientType": "COMPANY_LIMITED", "jurisdiction": "ZA", "companyBaseCurrency": "GBP", "fiscalYearStartMonth": 1}""")
+        }
+        val list: ListJurisdictionsResponseDto = client.get("/api/jurisdictions") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(EXISTING_ADMIN_EMAIL)}")
+        }.body()
+
+        add.status shouldBe HttpStatusCode.BadRequest
+        list.jurisdictions.none { it.code == "ZA" } shouldBe true
+    }
+
+    @Test
+    fun `given a malformed or retired code such as GB, when add-company is posted, then it returns 400`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        listOf("GB", "uk", "UKK", "").forEach { bad ->
+            val response = client.post("/api/tenants/${fixture.existingTenantId.value}/companies") {
+                header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(EXISTING_ADMIN_EMAIL)}")
+                header("X-Tenant-Id", fixture.existingTenantId.value.toString())
+                contentType(ContentType.Application.Json)
+                setBody("""{"companyName": "Bad Co", "clientType": "COMPANY_LIMITED", "jurisdiction": "$bad", "companyBaseCurrency": "GBP", "fiscalYearStartMonth": 1}""")
+            }
+            response.status shouldBe HttpStatusCode.BadRequest
+        }
     }
 }

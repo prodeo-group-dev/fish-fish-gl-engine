@@ -3,6 +3,7 @@ package com.theprodeogroup.fish.infrastructure.web
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.common.Jurisdiction
+import com.theprodeogroup.fish.domain.common.JurisdictionRepository
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -24,7 +25,7 @@ import java.util.Currency
  * 2026-09-05 (`docs/Tenancy_Administration_Extraction_DDD_Design.md`'s
  * WEB->EA+GL handoff).
  */
-fun Route.tenantRoutesAuthenticated(addCompanyToTenantUseCase: AddCompanyToTenantUseCase) {
+fun Route.tenantRoutesAuthenticated(addCompanyToTenantUseCase: AddCompanyToTenantUseCase, jurisdictionRepository: JurisdictionRepository) {
     post("/tenants/{tenantId}/companies") {
         val tenantIdRaw = call.parameters["tenantId"]
         if (tenantIdRaw == null) {
@@ -47,12 +48,20 @@ fun Route.tenantRoutesAuthenticated(addCompanyToTenantUseCase: AddCompanyToTenan
             call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "'${request.clientType}' is not a valid clientType"))
             return@post
         }
+        // Malformed code and unapproved/disabled code get the identical
+        // answer - the registry (`GET /api/jurisdictions`) is the only
+        // source of what's accepted here, so nothing can be accepted
+        // that wasn't offered.
         val jurisdiction = try {
-            Jurisdiction.valueOf(request.jurisdiction)
+            Jurisdiction(request.jurisdiction)
         } catch (e: IllegalArgumentException) {
+            null
+        }?.takeIf { jurisdictionRepository.findEnabledByCode(it) != null }
+        if (jurisdiction == null) {
+            val offered = jurisdictionRepository.findAllEnabled().joinToString { it.code.code }
             call.respond(
                 HttpStatusCode.BadRequest,
-                ErrorResponseDto("bad_request", "'${request.jurisdiction}' is not a supported jurisdiction (${Jurisdiction.entries.joinToString()})")
+                ErrorResponseDto("bad_request", "'${request.jurisdiction}' is not a supported jurisdiction ($offered)")
             )
             return@post
         }
