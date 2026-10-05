@@ -25,14 +25,14 @@ class ExposedTaxRuleRepository : TaxRuleRepository {
         val exists = TaxRulesTable.selectAll().where { TaxRulesTable.id eq taxRule.id.value }.count() > 0
         if (exists) {
             TaxRulesTable.update({ TaxRulesTable.id eq taxRule.id.value }) { statement ->
-                statement[jurisdiction] = taxRule.jurisdiction.name
+                statement[jurisdiction] = taxRule.jurisdiction.code
                 statement[taxType] = taxRule.taxType.name
                 statement[rateStructure] = encodeRateStructure(taxRule.rateStructure)
             }
         } else {
             TaxRulesTable.insert { statement ->
                 statement[id] = taxRule.id.value
-                statement[jurisdiction] = taxRule.jurisdiction.name
+                statement[jurisdiction] = taxRule.jurisdiction.code
                 statement[taxType] = taxRule.taxType.name
                 statement[rateStructure] = encodeRateStructure(taxRule.rateStructure)
             }
@@ -48,13 +48,13 @@ class ExposedTaxRuleRepository : TaxRuleRepository {
 
     override fun findByJurisdictionAndTaxType(jurisdiction: Jurisdiction, taxType: TaxType): TaxRule? = transaction {
         TaxRulesTable.selectAll()
-            .where { (TaxRulesTable.jurisdiction eq jurisdiction.name) and (TaxRulesTable.taxType eq taxType.name) }
+            .where { (TaxRulesTable.jurisdiction eq jurisdiction.code) and (TaxRulesTable.taxType eq taxType.name) }
             .map { it.toTaxRule() }
             .singleOrNull()
     }
 
     private fun ResultRow.toTaxRule(): TaxRule = TaxRule.create(
-        jurisdiction = Jurisdiction.valueOf(this[TaxRulesTable.jurisdiction]),
+        jurisdiction = Jurisdiction(this[TaxRulesTable.jurisdiction]),
         taxType = TaxType.valueOf(this[TaxRulesTable.taxType]),
         rateStructure = decodeRateStructure(this[TaxRulesTable.rateStructure]),
         id = TaxRuleId(this[TaxRulesTable.id])

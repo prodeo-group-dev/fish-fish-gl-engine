@@ -67,6 +67,10 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedFixedAssetRepos
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedSalesInvoiceRecordRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedIdempotencyKeyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedJournalEntryRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedJurisdictionRepository
+import com.theprodeogroup.fish.domain.common.JurisdictionEntry
+import com.theprodeogroup.fish.domain.common.Jurisdiction
+import com.theprodeogroup.fish.domain.common.JurisdictionRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedOpeningImportBatchRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedOpeningImportRowResultRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedLeaveAccrualRepository
@@ -245,6 +249,7 @@ fun Application.productionModule() {
         eaMembershipGateway = eaMembershipGateway,
         companyRepository = companyRepository,
         addCompanyToTenantUseCase = addCompanyToTenantUseCase,
+        jurisdictionRepository = ExposedJurisdictionRepository(),
         computeTaxUseCase = computeTaxUseCase,
         taxRuleRepository = taxRuleRepository,
         taxComputationRepository = taxComputationRepository,
@@ -385,7 +390,13 @@ fun Application.fishModule(
     recordFixedAssetDepreciationUseCase: RecordFixedAssetDepreciationUseCase,
     assessFixedAssetImpairmentUseCase: AssessFixedAssetImpairmentUseCase,
     disposeFixedAssetUseCase: DisposeFixedAssetUseCase,
-    computeFixedAssetRegisterUseCase: ComputeFixedAssetRegisterUseCase
+    computeFixedAssetRegisterUseCase: ComputeFixedAssetRegisterUseCase,
+    // Defaulted to an empty registry rather than required (every one of
+    // the ~25 existing test fixtures calls this function) - FAIL CLOSED:
+    // an unconfigured registry offers no jurisdictions and accepts none,
+    // so a fixture that forgets it can never silently approve a country.
+    // productionModule() always passes the real, table-backed one.
+    jurisdictionRepository: JurisdictionRepository = NoJurisdictionsRepository
 ) {
     install(ContentNegotiation) { json() }
     // Defense-in-depth against any caching-capable intermediary between
@@ -488,7 +499,7 @@ fun Application.fishModule(
         // infrastructure, not cosmetic.
         route("/api") {
             fishAuthenticated {
-                tenantRoutesAuthenticated(addCompanyToTenantUseCase)
+                tenantRoutesAuthenticated(addCompanyToTenantUseCase, jurisdictionRepository)
                 journalEntryRoutes(
                     postJournalEntryUseCase, createAccountUseCase, recordOpeningBalanceUseCase,
                     periodRepository, accountRepository, journalEntryRepository, companyRepository, idempotencyKeyRepository
@@ -504,6 +515,7 @@ fun Application.fishModule(
                 recordSupplierObligationAndPaymentRoutes(recordSupplierObligationUseCase, recordSupplierPaymentUseCase, companyRepository, idempotencyKeyRepository)
                 recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
                 meRoutes()
+                jurisdictionRoutes(jurisdictionRepository)
                 moneyVelocityRoutes(computeMoneyVelocityUseCase, companyRepository)
                 salesPostingContextRoutes(
                     ComputeSalesPostingContextUseCase(companyRepository, periodRepository, accountRepository), companyRepository
@@ -559,4 +571,15 @@ fun Application.fishModule(
             }
         }
     }
+}
+
+/**
+ * The fail-closed default for [fishModule]'s `jurisdictionRepository`:
+ * no jurisdiction is offered and none is accepted. Read-only on purpose -
+ * [save] throws so a fixture can't mistake it for a working registry.
+ */
+private object NoJurisdictionsRepository : JurisdictionRepository {
+    override fun save(entry: JurisdictionEntry) = error("NoJurisdictionsRepository is read-only; pass a real JurisdictionRepository")
+    override fun findAllEnabled(): List<JurisdictionEntry> = emptyList()
+    override fun findEnabledByCode(code: Jurisdiction): JurisdictionEntry? = null
 }

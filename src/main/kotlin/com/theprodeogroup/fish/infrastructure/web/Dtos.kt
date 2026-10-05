@@ -901,3 +901,10 @@ data class BankReconciliationSummaryDto(val id: String, val accountId: String, v
 
 @Serializable
 data class ListBankReconciliationsResponseDto(val reconciliations: List<BankReconciliationSummaryDto>)
+
+/** `GET /api/jurisdictions` - one entry per ENABLED row of the jurisdiction registry; `code` is the value `POST .../companies` accepts as `jurisdiction`. */
+@Serializable
+data class JurisdictionDto(val code: String, val name: String)
+
+@Serializable
+data class ListJurisdictionsResponseDto(val jurisdictions: List<JurisdictionDto>)

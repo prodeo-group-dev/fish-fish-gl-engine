@@ -147,14 +147,14 @@ class VatRateSchedule(private val entriesByCategory: Map<VatCategory, List<VatRa
          * default every posting to [IRELAND] regardless of the
          * Company's actual [Jurisdiction]. Returns `null`, not a
          * silent fallback, for a jurisdiction with no configured VAT
-         * schedule yet (`NG`/`SL`/`LR`/`GN`/`CI`) - mirrors
+         * schedule yet (every jurisdiction but `IE`/`UK`, including any added later to the jurisdiction registry - VAT is still code, not data) - mirrors
          * `TaxRuleRepository.findByJurisdictionAndTaxType`'s own
          * nullable-not-defaulted shape for the identical reason.
          */
         fun forJurisdiction(jurisdiction: Jurisdiction): VatRateSchedule? = when (jurisdiction) {
             Jurisdiction.IE -> IRELAND
             Jurisdiction.UK -> UK
-            Jurisdiction.NG, Jurisdiction.SL, Jurisdiction.LR, Jurisdiction.GN, Jurisdiction.CI -> null
+            else -> null
         }
     }
 }
