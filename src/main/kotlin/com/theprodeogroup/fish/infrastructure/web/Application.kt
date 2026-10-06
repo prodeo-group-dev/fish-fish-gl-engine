@@ -68,6 +68,11 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedSalesInvoiceRec
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedIdempotencyKeyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedJournalEntryRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedJurisdictionRepository
+import com.theprodeogroup.fish.infrastructure.persistence.ExposedVatRateRepository
+import com.theprodeogroup.fish.domain.tax.VatRateRepository
+import com.theprodeogroup.fish.domain.tax.VatRateRow
+import com.theprodeogroup.fish.domain.tax.VatRateSchedule
+import com.theprodeogroup.fish.application.ComputeVatCategoriesUseCase
 import com.theprodeogroup.fish.domain.common.JurisdictionEntry
 import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.common.JurisdictionRepository
@@ -250,6 +255,7 @@ fun Application.productionModule() {
         companyRepository = companyRepository,
         addCompanyToTenantUseCase = addCompanyToTenantUseCase,
         jurisdictionRepository = ExposedJurisdictionRepository(),
+        vatRateRepository = ExposedVatRateRepository(),
         computeTaxUseCase = computeTaxUseCase,
         taxRuleRepository = taxRuleRepository,
         taxComputationRepository = taxComputationRepository,
@@ -396,7 +402,12 @@ fun Application.fishModule(
     // an unconfigured registry offers no jurisdictions and accepts none,
     // so a fixture that forgets it can never silently approve a country.
     // productionModule() always passes the real, table-backed one.
-    jurisdictionRepository: JurisdictionRepository = NoJurisdictionsRepository
+    jurisdictionRepository: JurisdictionRepository = NoJurisdictionsRepository,
+    // Defaulted to an empty rate table rather than required (same reasoning as
+    // jurisdictionRepository above) - FAIL CLOSED: with no verified rates every
+    // jurisdiction has no VAT schedule, so a fixture that forgets it can never
+    // post a sale at an invented rate. productionModule() passes the real one.
+    vatRateRepository: VatRateRepository = NoVatRatesRepository
 ) {
     install(ContentNegotiation) { json() }
     // Defense-in-depth against any caching-capable intermediary between
@@ -509,10 +520,11 @@ fun Application.fishModule(
                     recordPayRunUseCase, getOrCreateLeaveAccrualUseCase,
                     companyRepository, idempotencyKeyRepository
                 )
-                recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, idempotencyKeyRepository)
+                recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, vatRateRepository, idempotencyKeyRepository)
                 recordSalesReturnRoutes(recordSalesReturnUseCase, companyRepository, idempotencyKeyRepository)
                 createSalesInvoiceRoutes(createSalesInvoiceUseCase, listSalesInvoicesUseCase, companyRepository, customerRepository, idempotencyKeyRepository)
-                recordSupplierObligationAndPaymentRoutes(recordSupplierObligationUseCase, recordSupplierPaymentUseCase, companyRepository, idempotencyKeyRepository)
+                recordSupplierObligationAndPaymentRoutes(recordSupplierObligationUseCase, recordSupplierPaymentUseCase, companyRepository, vatRateRepository, idempotencyKeyRepository)
+                vatCategoriesRoutes(ComputeVatCategoriesUseCase(companyRepository, vatRateRepository), companyRepository)
                 recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
                 meRoutes()
                 jurisdictionRoutes(jurisdictionRepository)
@@ -582,4 +594,14 @@ private object NoJurisdictionsRepository : JurisdictionRepository {
     override fun save(entry: JurisdictionEntry) = error("NoJurisdictionsRepository is read-only; pass a real JurisdictionRepository")
     override fun findAllEnabled(): List<JurisdictionEntry> = emptyList()
     override fun findEnabledByCode(code: Jurisdiction): JurisdictionEntry? = null
+}
+
+/**
+ * The fail-closed default for [fishModule]'s `vatRateRepository`: no
+ * jurisdiction has a VAT schedule. Read-only on purpose - [save] throws so a
+ * fixture can't mistake it for a working rate table.
+ */
+private object NoVatRatesRepository : VatRateRepository {
+    override fun save(row: VatRateRow) = error("NoVatRatesRepository is read-only; pass a real VatRateRepository")
+    override fun findVerifiedScheduleFor(jurisdiction: Jurisdiction): VatRateSchedule? = null
 }

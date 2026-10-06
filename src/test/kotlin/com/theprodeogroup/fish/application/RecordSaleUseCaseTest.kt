@@ -12,6 +12,7 @@ import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.sales.CustomerId
 import com.theprodeogroup.fish.domain.tax.VatCategory
+import com.theprodeogroup.fish.domain.tax.TestVatRates
 import com.theprodeogroup.fish.domain.tax.VatRateSchedule
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import io.kotest.assertions.throwables.shouldThrow
@@ -50,7 +51,7 @@ class RecordSaleUseCaseTest {
         vatAccountId: AccountId,
         lines: List<RecordSaleUseCase.SaleLine> = listOf(RecordSaleUseCase.SaleLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD)),
         customerId: CustomerId = CustomerId.generate(),
-        vatRateSchedule: VatRateSchedule = VatRateSchedule.IRELAND
+        vatRateSchedule: VatRateSchedule = TestVatRates.IRELAND
     ) = RecordSaleUseCase.Request(
         periodId, TODAY, arAccountId, revenueAccountId, vatAccountId, lines, customerId,
         vatRateSchedule, "Sale to SOCIETE JALLOH ALPHAJOR SARLU"
@@ -181,7 +182,7 @@ class RecordSaleUseCaseTest {
         val req = RecordSaleUseCase.Request(
             period.id, LocalDate.of(2026, 7, 15), ar.id, revenue.id, vat.id,
             listOf(RecordSaleUseCase.SaleLine(Money(BigDecimal("100.00"), EUR), VatCategory.SECOND_REDUCED)),
-            CustomerId.generate(), VatRateSchedule.IRELAND
+            CustomerId.generate(), TestVatRates.IRELAND
         )
 
         val result = useCase.execute(req)
@@ -357,7 +358,7 @@ class RecordSaleUseCaseTest {
             request(
                 period.id, ar.id, revenue.id, vat.id,
                 lines = listOf(RecordSaleUseCase.SaleLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD)),
-                vatRateSchedule = VatRateSchedule.UK
+                vatRateSchedule = TestVatRates.UK
             )
         )
 
@@ -376,7 +377,7 @@ class RecordSaleUseCaseTest {
             request(
                 period.id, ar.id, revenue.id, vat.id,
                 lines = listOf(RecordSaleUseCase.SaleLine(Money(BigDecimal("100.00"), EUR), VatCategory.SECOND_REDUCED)),
-                vatRateSchedule = VatRateSchedule.UK
+                vatRateSchedule = TestVatRates.UK
             )
         )
 

@@ -9,6 +9,7 @@ import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.sales.CustomerId
 import com.theprodeogroup.fish.domain.tax.VatCategory
+import com.theprodeogroup.fish.domain.tax.VatRateRepository
 import com.theprodeogroup.fish.domain.tax.VatRateSchedule
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
@@ -51,6 +52,7 @@ fun Route.recordSaleAndCollectionRoutes(
     recordSaleUseCase: RecordSaleUseCase,
     recordCollectionUseCase: RecordCollectionUseCase,
     companyRepository: CompanyRepository,
+    vatRateRepository: VatRateRepository,
     idempotencyKeyRepository: IdempotencyKeyRepository
 ) {
     post("/sales/record-sale") {
@@ -64,7 +66,7 @@ fun Route.recordSaleAndCollectionRoutes(
         if (!call.verifyClaimedTenant(company.tenantId)) return@post
         call.authorizeTenantForWrite(company.tenantId, company.id) ?: return@post
 
-        val vatRateSchedule = VatRateSchedule.forJurisdiction(company.jurisdiction)
+        val vatRateSchedule = vatRateRepository.findVerifiedScheduleFor(company.jurisdiction)
         if (vatRateSchedule == null) {
             call.respond(
                 HttpStatusCode.Conflict,

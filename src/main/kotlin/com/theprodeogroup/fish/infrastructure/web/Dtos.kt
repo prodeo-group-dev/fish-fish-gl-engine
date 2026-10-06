@@ -913,3 +913,21 @@ data class JurisdictionDto(val code: String, val name: String)
 
 @Serializable
 data class ListJurisdictionsResponseDto(val jurisdictions: List<JurisdictionDto>)
+
+/**
+ * `GET /companies/{companyId}/vat-categories` (2026-10-06). `ratePercent` is a
+ * plain decimal percent ("23", "13.5", "0"), `null` for EXEMPT (outside VAT
+ * scope, not 0%). `vatScheduleConfigured = false` with an empty list means the
+ * Company's jurisdiction has no verified VAT rates, so no sale can be recorded
+ * (`record-sale` answers 409 `no_vat_rate_schedule`).
+ */
+@Serializable
+data class VatCategoryRateDto(val category: String, val ratePercent: String?)
+
+@Serializable
+data class VatCategoriesResponseDto(
+    val jurisdiction: String,
+    val asOf: String,
+    val vatScheduleConfigured: Boolean,
+    val categories: List<VatCategoryRateDto>
+)
