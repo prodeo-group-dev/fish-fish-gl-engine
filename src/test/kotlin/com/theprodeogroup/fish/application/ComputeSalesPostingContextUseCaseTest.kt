@@ -42,9 +42,9 @@ class ComputeSalesPostingContextUseCaseTest {
         periodRepository.save(period)
     }
 
-    private fun account(code: String, type: AccountType) {
+    private fun account(code: String, type: AccountType): Account {
         val classification = if (type.requiresClassification()) AccountClassification.CURRENT else null
-        accountRepository.save(Account.create(company.id, type, classification, code, "Test Account"))
+        return Account.create(company.id, type, classification, code, "Test Account").also { accountRepository.save(it) }
     }
 
     @Test
@@ -58,8 +58,35 @@ class ComputeSalesPostingContextUseCaseTest {
 
         val success = result.shouldBeInstanceOf<SalesPostingContextResult.Success>()
         success.currency shouldBe EUR
+        success.cashAccountId shouldBe null
     }
 
+
+    @Test
+    fun `given an ASSET account with code 1000, when resolved, then cashAccountId is that account - the same one a cash sale posts to`() {
+        openPeriod()
+        account("1100", AccountType.ASSET)
+        account("4000", AccountType.REVENUE)
+        account("2150", AccountType.LIABILITY)
+        val cash = account("1000", AccountType.ASSET)
+
+        val result = useCase.execute(company.id)
+
+        result.shouldBeInstanceOf<SalesPostingContextResult.Success>().cashAccountId shouldBe cash.id
+    }
+
+    @Test
+    fun `given a LIABILITY account that happens to have code 1000 and no cash ASSET, when resolved, then cashAccountId is null - type is checked, not just the code`() {
+        openPeriod()
+        account("1100", AccountType.ASSET)
+        account("4000", AccountType.REVENUE)
+        account("2150", AccountType.LIABILITY)
+        account("1000", AccountType.LIABILITY)
+
+        val result = useCase.execute(company.id)
+
+        result.shouldBeInstanceOf<SalesPostingContextResult.Success>().cashAccountId shouldBe null
+    }
     @Test
     fun `given no VAT Control Account configured, when resolved, then it returns VatControlAccountNotConfigured`() {
         openPeriod()

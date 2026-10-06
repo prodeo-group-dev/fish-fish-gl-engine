@@ -148,6 +148,9 @@ class SalesPostingContextRoutesTest {
         val revenueAccount = if (configureAccounts) {
             Account.create(company.id, AccountType.REVENUE, null, "4000", "Revenue").also { accountRepository.save(it) }
         } else null
+        val cashAccount = if (configureAccounts) {
+            Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1000", "Cash").also { accountRepository.save(it) }
+        } else null
         val vatAccount = if (configureAccounts) {
             Account.create(company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2150", "VAT Control Account").also { accountRepository.save(it) }
         } else null
@@ -216,6 +219,7 @@ class SalesPostingContextRoutesTest {
         body.arControlAccountId shouldBe fixture.arAccount!!.id.value.toString()
         body.revenueAccountId shouldBe fixture.revenueAccount!!.id.value.toString()
         body.vatControlAccountId shouldBe fixture.vatAccount!!.id.value.toString()
+        body.cashAccountId shouldBe fixture.cashAccount!!.id.value.toString()
         body.currency shouldBe "GBP"
     }
 

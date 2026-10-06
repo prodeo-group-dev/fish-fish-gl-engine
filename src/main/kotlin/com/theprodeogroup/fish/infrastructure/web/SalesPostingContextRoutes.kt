@@ -43,6 +43,7 @@ fun Route.salesPostingContextRoutes(
                     arControlAccountId = result.arControlAccountId.value.toString(),
                     revenueAccountId = result.revenueAccountId.value.toString(),
                     vatControlAccountId = result.vatControlAccountId.value.toString(),
+                    cashAccountId = result.cashAccountId?.value?.toString(),
                     currency = result.currency.currencyCode
                 )
             )
