@@ -255,4 +255,14 @@ class VatRateScheduleTest {
     fun `given a date before the earliest rate, when categories are listed, then rated categories are omitted not failed and EXEMPT remains`() {
         TestVatRates.IRELAND.categoriesAsOf(LocalDate.of(1999, 12, 31)).map { it.category } shouldBe listOf(VatCategory.EXEMPT)
     }
+
+    @Test
+    fun `given a stored rate of 15 instead of 0-15, when a VatRateRow is constructed, then it is rejected - a rate is a fraction and a percent typo must not become 1500 percent`() {
+        shouldThrow<IllegalArgumentException> {
+            VatRateRow(Jurisdiction.SL, VatCategory.STANDARD, BigDecimal("15"), LocalDate.of(2000, 1, 1), true)
+        }
+        shouldThrow<IllegalArgumentException> {
+            VatRateRow(Jurisdiction.SL, VatCategory.STANDARD, BigDecimal.ONE, LocalDate.of(2000, 1, 1), true)
+        }
+    }
 }

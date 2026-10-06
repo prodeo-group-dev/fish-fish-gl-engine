@@ -151,6 +151,7 @@ data class VatRateRow(
     init {
         require(category != VatCategory.EXEMPT) { "EXEMPT has no rate by definition - it must not be stored" }
         require(rate.signum() >= 0) { "VAT rate cannot be negative" }
+        require(rate < BigDecimal.ONE) { "VAT rate is a fraction below 1 (0.23 = 23%), got $rate - did you enter a percent?" }
     }
 }
 

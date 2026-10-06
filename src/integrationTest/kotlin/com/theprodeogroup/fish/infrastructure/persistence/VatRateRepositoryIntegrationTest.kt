@@ -6,6 +6,7 @@ import com.theprodeogroup.fish.domain.tax.VatCategory
 import com.theprodeogroup.fish.domain.tax.VatRateRow
 import com.theprodeogroup.fish.domain.tax.VatRateSchedule
 import io.kotest.matchers.shouldBe
+import org.jetbrains.exposed.sql.insert
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -74,5 +75,23 @@ class VatRateRepositoryIntegrationTest {
 
         repository.findVerifiedScheduleFor(za)!!.categoriesAsOf(LocalDate.of(2026, 10, 6)).map { it.category } shouldBe
             listOf(VatCategory.STANDARD, VatCategory.ZERO_RATED, VatCategory.EXEMPT)
+    }
+
+    @Test
+    fun `given a rate of 15 instead of 0-15 is inserted straight into the table, when it is written, then the database rejects it - the CHECK is the backstop behind the domain guard`() {
+        val failure = runCatching {
+            org.jetbrains.exposed.sql.transactions.transaction {
+                VatRatesTable.insert { statement ->
+                    statement[jurisdiction] = "ZB"
+                    statement[category] = VatCategory.STANDARD.name
+                    statement[rate] = BigDecimal("15")
+                    statement[effectiveFrom] = LocalDate.of(2000, 1, 1)
+                    statement[verified] = true
+                }
+            }
+        }
+
+        failure.isFailure shouldBe true
+        repository.findVerifiedScheduleFor(Jurisdiction("ZB")) shouldBe null
     }
 }

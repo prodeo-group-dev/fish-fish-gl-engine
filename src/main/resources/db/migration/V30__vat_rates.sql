@@ -21,7 +21,10 @@
 CREATE TABLE vat_rates (
     jurisdiction CHAR(2) NOT NULL,
     category VARCHAR(30) NOT NULL,
-    rate NUMERIC(8, 6) NOT NULL CHECK (rate >= 0),
+    -- A rate is a fraction (0.23 = 23%), so it must be in [0, 1): a data-entry
+    -- slip such as 15 instead of 0.15 would otherwise be stored as 1500% and,
+    -- once verified, post VAT at that rate with no error (CM review, 2026-10-06).
+    rate NUMERIC(8, 6) NOT NULL CHECK (rate >= 0 AND rate < 1),
     effective_from DATE NOT NULL,
     verified BOOLEAN NOT NULL,
     PRIMARY KEY (jurisdiction, category, effective_from)
