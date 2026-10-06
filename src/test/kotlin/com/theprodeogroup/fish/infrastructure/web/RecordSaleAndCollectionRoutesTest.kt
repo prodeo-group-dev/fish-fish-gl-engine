@@ -220,6 +220,8 @@ class RecordSaleAndCollectionRoutesTest {
         response.status shouldBe HttpStatusCode.OK
         val body: RecordSaleResponseDto = response.body()
         body.status shouldBe "POSTED"
+        body.grossAmount shouldBe "45000.00"
+        body.vatAmount shouldBe "0.00"
     }
 
     @Test
@@ -594,5 +596,30 @@ class RecordSaleAndCollectionRoutesTest {
         }
 
         fixture.journalEntryRepository.saveCalls.size shouldBe 2
+    }
+
+    @Test
+    fun `given a standard-rated sale, when record-sale is posted, then grossAmount is net plus VAT and vatAmount is the VAT component - what a collection must clear`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/sales/record-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
+                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "100.00", "vatCategory": "STANDARD"}], "currency": "GBP",
+                    |"customerId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: RecordSaleResponseDto = response.body()
+        body.grossAmount shouldBe "120.00"
+        body.vatAmount shouldBe "20.00"
     }
 }

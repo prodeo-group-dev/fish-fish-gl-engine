@@ -96,6 +96,9 @@ class RecordSaleUseCaseTest {
         vatLine.amount shouldBe Money(BigDecimal("230.00"), EUR)
         vatLine.dimensions[DimensionType.VAT_CATEGORY] shouldBe "STANDARD"
         arLine.dimensions[DimensionType.CUSTOMER] shouldBe customerId.value.toString()
+        success.grossTotal shouldBe Money(BigDecimal("1230.00"), EUR)
+        success.vatTotal shouldBe Money(BigDecimal("230.00"), EUR)
+        success.grossTotal shouldBe arLine.amount
     }
 
     @Test
@@ -142,6 +145,8 @@ class RecordSaleUseCaseTest {
 
         val success = result.shouldBeInstanceOf<RecordSaleResult.Success>()
         success.journalEntry.lines.none { it.accountId == vat.id } shouldBe true
+        success.grossTotal shouldBe Money(BigDecimal("500.00"), EUR)
+        success.vatTotal shouldBe Money(BigDecimal.ZERO, EUR)
         val arLine = success.journalEntry.lines.single { it.accountId == ar.id }
         arLine.amount shouldBe Money(BigDecimal("500.00"), EUR)
     }

@@ -27,7 +27,11 @@ import java.time.LocalDate
 sealed class RecordSaleResult {
     data class Success(
         val journalEntry: JournalEntry,
-        val events: List<DomainEvent>
+        val events: List<DomainEvent>,
+        /** The gross AR amount debited (net + VAT) - what the customer owes, and what a collection must clear exactly (2026-10-06, SOP's cash-sale move). Already computed below; exposed, not recomputed. */
+        val grossTotal: Money,
+        /** The VAT component of [grossTotal]; zero when every line is zero-rated or exempt. */
+        val vatTotal: Money
     ) : RecordSaleResult()
     data object InvalidAmount : RecordSaleResult()
     data object PeriodNotFound : RecordSaleResult()
@@ -181,6 +185,6 @@ class RecordSaleUseCase(
 
         journalEntryRepository.save(entry)
 
-        return RecordSaleResult.Success(entry, entry.pullDomainEvents())
+        return RecordSaleResult.Success(entry, entry.pullDomainEvents(), grossTotal, vatTotal)
     }
 }

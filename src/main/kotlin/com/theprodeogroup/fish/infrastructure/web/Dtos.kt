@@ -155,7 +155,10 @@ data class RecordSaleRequestDto(
 @Serializable
 data class RecordSaleResponseDto(
     val journalEntryId: String,
-    val status: String
+    val status: String,
+    /** Plain decimals in the sale's currency (e.g. `"1230.00"`), added 2026-10-06 for SOP: `grossAmount` is the AR GL debited (net + VAT), `vatAmount` its VAT component. No defaults, so always present on a fresh response; a replay of an idempotency key recorded before this change returns the older stored body without them. */
+    val grossAmount: String,
+    val vatAmount: String
 )
 
 @Serializable
