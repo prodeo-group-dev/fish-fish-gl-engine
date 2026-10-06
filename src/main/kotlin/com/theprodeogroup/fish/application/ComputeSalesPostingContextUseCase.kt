@@ -19,6 +19,8 @@ sealed class SalesPostingContextResult {
         val arControlAccountId: AccountId,
         val revenueAccountId: AccountId,
         val vatControlAccountId: AccountId,
+        /** The Company's cash account (ASSET, code "1000"), or `null` if not configured - deliberately NOT a failure state: only a caller that takes a cash sale needs it (2026-10-06, SOP's cash-sale move), and credit-only callers must keep working against a Chart of Accounts without one. Resolved exactly as [CreateSalesInvoiceUseCase] resolves it for `SaleMethod.CASH`. */
+        val cashAccountId: AccountId?,
         val currency: Currency
     ) : SalesPostingContextResult()
     data object CompanyNotFound : SalesPostingContextResult()
@@ -63,6 +65,8 @@ class ComputeSalesPostingContextUseCase(
         val vatAccount = accounts.firstOrNull { it.type == AccountType.LIABILITY && it.code == ChartOfAccountsTemplate.VAT_CONTROL_ACCOUNT_CODE }
             ?: return SalesPostingContextResult.VatControlAccountNotConfigured
 
-        return SalesPostingContextResult.Success(period.id, arAccount.id, revenueAccount.id, vatAccount.id, company.baseCurrency)
+        val cashAccount = accounts.firstOrNull { it.type == AccountType.ASSET && it.code == "1000" }
+
+        return SalesPostingContextResult.Success(period.id, arAccount.id, revenueAccount.id, vatAccount.id, cashAccount?.id, company.baseCurrency)
     }
 }

@@ -600,6 +600,8 @@ data class SalesPostingContextResponseDto(
     val arControlAccountId: String,
     val revenueAccountId: String,
     val vatControlAccountId: String,
+    /** Nullable, no default (always present on the wire, `null` when the Company has no cash account "1000") - added 2026-10-06 for SOP's cash-sale move; same additive precedent as `suspenseAccountId` on inventory-posting-context. */
+    val cashAccountId: String?,
     val currency: String
 )
 
