@@ -13,6 +13,7 @@ import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.purchasing.SupplierId
 import com.theprodeogroup.fish.domain.tax.VatCategory
+import com.theprodeogroup.fish.domain.tax.TestVatRates
 import com.theprodeogroup.fish.domain.tax.VatRateSchedule
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import io.kotest.assertions.throwables.shouldThrow
@@ -62,7 +63,7 @@ class RecordSupplierObligationUseCaseTest {
         vatAccountId: AccountId,
         lines: List<RecordSupplierObligationUseCase.PurchaseLine> = listOf(RecordSupplierObligationUseCase.PurchaseLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD)),
         supplierId: SupplierId = SupplierId.generate(),
-        vatRateSchedule: VatRateSchedule = VatRateSchedule.IRELAND
+        vatRateSchedule: VatRateSchedule = TestVatRates.IRELAND
     ) = RecordSupplierObligationUseCase.Request(
         periodId, TODAY, expenseAccountId, apAccountId, vatAccountId, lines, supplierId, vatRateSchedule, "Purchase from supplier"
     )
@@ -173,7 +174,7 @@ class RecordSupplierObligationUseCaseTest {
         val req = RecordSupplierObligationUseCase.Request(
             period.id, LocalDate.of(2026, 7, 15), expense.id, ap.id, vat.id,
             listOf(RecordSupplierObligationUseCase.PurchaseLine(Money(BigDecimal("100.00"), EUR), VatCategory.SECOND_REDUCED)),
-            SupplierId.generate(), VatRateSchedule.IRELAND
+            SupplierId.generate(), TestVatRates.IRELAND
         )
 
         val result = useCase.execute(req)
@@ -345,7 +346,7 @@ class RecordSupplierObligationUseCaseTest {
             request(
                 period.id, expense.id, ap.id, vat.id,
                 lines = listOf(RecordSupplierObligationUseCase.PurchaseLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD)),
-                vatRateSchedule = VatRateSchedule.UK
+                vatRateSchedule = TestVatRates.UK
             )
         )
 
@@ -364,7 +365,7 @@ class RecordSupplierObligationUseCaseTest {
             request(
                 period.id, expense.id, ap.id, vat.id,
                 lines = listOf(RecordSupplierObligationUseCase.PurchaseLine(Money(BigDecimal("100.00"), EUR), VatCategory.SECOND_REDUCED)),
-                vatRateSchedule = VatRateSchedule.UK
+                vatRateSchedule = TestVatRates.UK
             )
         )
 

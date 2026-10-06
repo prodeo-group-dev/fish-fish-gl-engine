@@ -21,6 +21,7 @@ import com.theprodeogroup.fish.application.CreateAccountUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.RecordOpeningBalanceUseCase
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
+import com.theprodeogroup.fish.application.FakeVatRateRepository
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
@@ -190,6 +191,7 @@ class RecordSaleAndCollectionRoutesTest {
                 assessFixedAssetImpairmentUseCase = assessFixedAssetImpairmentUseCase,
                 disposeFixedAssetUseCase = disposeFixedAssetUseCase,
                 computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase,
+                vatRateRepository = FakeVatRateRepository(),
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
                 computeTaxUseCase = computeTaxUseCase,
                 taxRuleRepository = taxRuleRepository,

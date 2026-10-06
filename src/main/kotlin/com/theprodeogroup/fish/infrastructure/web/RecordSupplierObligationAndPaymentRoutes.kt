@@ -9,6 +9,7 @@ import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.purchasing.SupplierId
 import com.theprodeogroup.fish.domain.tax.VatCategory
+import com.theprodeogroup.fish.domain.tax.VatRateRepository
 import com.theprodeogroup.fish.domain.tax.VatRateSchedule
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
@@ -46,6 +47,7 @@ fun Route.recordSupplierObligationAndPaymentRoutes(
     recordSupplierObligationUseCase: RecordSupplierObligationUseCase,
     recordSupplierPaymentUseCase: RecordSupplierPaymentUseCase,
     companyRepository: CompanyRepository,
+    vatRateRepository: VatRateRepository,
     idempotencyKeyRepository: IdempotencyKeyRepository
 ) {
     post("/purchasing/record-obligation") {
@@ -59,7 +61,7 @@ fun Route.recordSupplierObligationAndPaymentRoutes(
         if (!call.verifyClaimedTenant(company.tenantId)) return@post
         call.authorizeTenantForWrite(company.tenantId, company.id) ?: return@post
 
-        val vatRateSchedule = VatRateSchedule.forJurisdiction(company.jurisdiction)
+        val vatRateSchedule = vatRateRepository.findVerifiedScheduleFor(company.jurisdiction)
         if (vatRateSchedule == null) {
             call.respond(
                 HttpStatusCode.Conflict,

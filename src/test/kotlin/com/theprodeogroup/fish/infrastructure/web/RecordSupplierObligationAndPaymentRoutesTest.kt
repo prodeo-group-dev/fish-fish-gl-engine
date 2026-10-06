@@ -25,6 +25,7 @@ import com.theprodeogroup.fish.application.RecordSalesReturnUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
+import com.theprodeogroup.fish.application.FakeVatRateRepository
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
@@ -189,6 +190,7 @@ class RecordSupplierObligationAndPaymentRoutesTest {
                 assessFixedAssetImpairmentUseCase = assessFixedAssetImpairmentUseCase,
                 disposeFixedAssetUseCase = disposeFixedAssetUseCase,
                 computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase,
+                vatRateRepository = FakeVatRateRepository(),
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
                 computeTaxUseCase = computeTaxUseCase,
                 taxRuleRepository = taxRuleRepository,

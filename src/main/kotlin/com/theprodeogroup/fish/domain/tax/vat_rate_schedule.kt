@@ -87,74 +87,82 @@ class VatRateSchedule(private val entriesByCategory: Map<VatCategory, List<VatRa
     fun supports(category: VatCategory): Boolean =
         category == VatCategory.EXEMPT || category in entriesByCategory
 
+
+    /**
+     * The categories this schedule has a resolvable rate for as of
+     * [asOf], in [VatCategory] declaration order - what a Company's Sales
+     * form may offer (2026-10-06, `GET /companies/{companyId}/vat-categories`).
+     * [VatCategory.EXEMPT] is always present with a `null` rate (outside
+     * VAT scope, not a 0% rate); a category whose earliest rate starts
+     * after [asOf] is omitted rather than failing.
+     */
+    fun categoriesAsOf(asOf: LocalDate): List<VatCategoryRate> =
+        VatCategory.entries.mapNotNull { category ->
+            when {
+                category == VatCategory.EXEMPT -> VatCategoryRate(category, null)
+                category !in entriesByCategory -> null
+                else -> try {
+                    VatCategoryRate(category, rateFor(category, asOf))
+                } catch (e: IllegalArgumentException) {
+                    null
+                }
+            }
+        }
+
     companion object {
         /**
-         * Real Irish rates (docs/IE/IE_Tax_And_Currency_Settings.md) - not
-         * fictional figures. `2000-01-01` is a placeholder "always in
-         * force" start date for rates with no known change date in this
-         * project's research; only `SECOND_REDUCED` has a real, dated
-         * change (1 Jul 2026, already legislated).
+         * Builds a schedule from stored rows (2026-10-06, Option B: VAT rates
+         * are DATA in `vat_rates`, not code constants - a new country or a
+         * rate change is an INSERT). Returns `null` for no rows: a
+         * jurisdiction with no (verified) rates has no schedule, never a
+         * fallback to another jurisdiction's. Callers pass only the rows they
+         * are entitled to use (`VatRateRepository` filters on
+         * [VatRateRow.verified]).
          */
-        val IRELAND: VatRateSchedule = VatRateSchedule(
-            mapOf(
-                VatCategory.STANDARD to listOf(
-                    VatRateEntry(BigDecimal("0.23"), LocalDate.of(2000, 1, 1))
-                ),
-                VatCategory.REDUCED to listOf(
-                    VatRateEntry(BigDecimal("0.135"), LocalDate.of(2000, 1, 1))
-                ),
-                VatCategory.SECOND_REDUCED to listOf(
-                    VatRateEntry(BigDecimal("0.135"), LocalDate.of(2000, 1, 1)),
-                    VatRateEntry(BigDecimal("0.09"), LocalDate.of(2026, 7, 1))
-                ),
-                VatCategory.SUPER_REDUCED to listOf(
-                    VatRateEntry(BigDecimal("0.048"), LocalDate.of(2000, 1, 1))
-                ),
-                VatCategory.ZERO_RATED to listOf(
-                    VatRateEntry(BigDecimal.ZERO, LocalDate.of(2000, 1, 1))
-                )
+        fun of(rows: List<VatRateRow>): VatRateSchedule? {
+            if (rows.isEmpty()) return null
+            return VatRateSchedule(
+                rows.groupBy { it.category }.mapValues { (_, categoryRows) ->
+                    categoryRows.map { VatRateEntry(it.rate, it.effectiveFrom) }
+                }
             )
-        )
-
-        /**
-         * Real UK rates (docs/UK/UK_Tax_And_Currency_Settings.md) - three
-         * bands, genuinely fewer than Ireland's five: UK VAT law has no
-         * `SECOND_REDUCED`/`SUPER_REDUCED` equivalent, so this schedule
-         * deliberately has no entry for either - [supports] returns
-         * `false` for them rather than this schedule guessing a rate.
-         * Only current headline rates are researched/documented (unlike
-         * Ireland's dated 1 Jul 2026 change); `2000-01-01` assumes no
-         * relevant past change, not confirmed-absent.
-         */
-        val UK: VatRateSchedule = VatRateSchedule(
-            mapOf(
-                VatCategory.STANDARD to listOf(
-                    VatRateEntry(BigDecimal("0.20"), LocalDate.of(2000, 1, 1))
-                ),
-                VatCategory.REDUCED to listOf(
-                    VatRateEntry(BigDecimal("0.05"), LocalDate.of(2000, 1, 1))
-                ),
-                VatCategory.ZERO_RATED to listOf(
-                    VatRateEntry(BigDecimal.ZERO, LocalDate.of(2000, 1, 1))
-                )
-            )
-        )
-
-        /**
-         * The jurisdiction-routing fix (2026-09-21) - resolves which
-         * schedule applies to a Company, closing the gap where
-         * `RecordSaleUseCase`/`RecordSupplierObligationUseCase` used to
-         * default every posting to [IRELAND] regardless of the
-         * Company's actual [Jurisdiction]. Returns `null`, not a
-         * silent fallback, for a jurisdiction with no configured VAT
-         * schedule yet (every jurisdiction but `IE`/`UK`, including any added later to the jurisdiction registry - VAT is still code, not data) - mirrors
-         * `TaxRuleRepository.findByJurisdictionAndTaxType`'s own
-         * nullable-not-defaulted shape for the identical reason.
-         */
-        fun forJurisdiction(jurisdiction: Jurisdiction): VatRateSchedule? = when (jurisdiction) {
-            Jurisdiction.IE -> IRELAND
-            Jurisdiction.UK -> UK
-            else -> null
         }
     }
+}
+
+/** One category's rate in a [VatRateSchedule.categoriesAsOf] answer; [rate] is a fraction (0.23 = 23%) and `null` only for [VatCategory.EXEMPT]. */
+data class VatCategoryRate(val category: VatCategory, val rate: BigDecimal?)
+
+/**
+ * One stored row of the `vat_rates` table. [verified] is the governance
+ * gate (2026-10-06, Femi: SL is to be seeded but "not live until
+ * confirmed"): only verified rows form a usable schedule, so seeding a
+ * jurisdiction's rates ahead of checking them against a primary tax
+ * source posts nothing. EXEMPT has no rate by definition and is never
+ * stored.
+ */
+data class VatRateRow(
+    val jurisdiction: Jurisdiction,
+    val category: VatCategory,
+    val rate: BigDecimal,
+    val effectiveFrom: LocalDate,
+    val verified: Boolean
+) {
+    init {
+        require(category != VatCategory.EXEMPT) { "EXEMPT has no rate by definition - it must not be stored" }
+        require(rate.signum() >= 0) { "VAT rate cannot be negative" }
+        require(rate < BigDecimal.ONE) { "VAT rate is a fraction below 1 (0.23 = 23%), got $rate - did you enter a percent?" }
+    }
+}
+
+/**
+ * The VAT rate table. Deliberately small: [save] for seeding/the future
+ * operator write path, and the one read every posting and the
+ * categories route make.
+ */
+interface VatRateRepository {
+    fun save(row: VatRateRow)
+
+    /** The schedule for [jurisdiction] built from its VERIFIED rows only, or `null` if it has none. */
+    fun findVerifiedScheduleFor(jurisdiction: Jurisdiction): VatRateSchedule?
 }
