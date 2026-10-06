@@ -96,7 +96,10 @@ fun Route.recordSaleAndCollectionRoutes(
                 is RecordSaleResult.Success ->
                     HttpStatusCode.OK to Json.encodeToString(
                         RecordSaleResponseDto.serializer(),
-                        RecordSaleResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+                        RecordSaleResponseDto(
+                            result.journalEntry.id.value.toString(), result.journalEntry.status.name,
+                            result.grossTotal.amount.toPlainString(), result.vatTotal.amount.toPlainString()
+                        )
                     )
                 is RecordSaleResult.InvalidAmount -> HttpStatusCode.BadRequest to errorResponseJson("invalid_amount")
                 is RecordSaleResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
