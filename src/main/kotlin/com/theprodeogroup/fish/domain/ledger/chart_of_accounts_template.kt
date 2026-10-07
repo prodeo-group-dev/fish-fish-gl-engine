@@ -81,6 +81,19 @@ object ChartOfAccountsTemplate {
     const val ACCRUED_LEAVE_LIABILITY_CODE = "2200"
 
     /**
+     * Reporting expense accounts (added 2026-10-07, EA/Femi: the Owner Admin's gross
+     * margin, operating margin, ROCE and interest cover need cost of sales,
+     * operating profit and interest separated). Seeded on every business
+     * template, same scoping as [payrollAccounts]. Each carries its
+     * [ExpenseClassification] so the trading P&L groups it without any
+     * tagging step; a Company created before this existed re-tags or creates
+     * its own through the account routes.
+     */
+    const val COST_OF_SALES_CODE = "5010"
+    const val INTEREST_EXPENSE_CODE = "5600"
+    const val INCOME_TAX_EXPENSE_CODE = "5700"
+
+    /**
      * Trade finance facility liability - closes the FR-PO06 gap
      * (docs/Purchase_Order_Processing_DDD_Design.md): when a Bank
      * executes a supplier payment on the financing structure's behalf
@@ -151,6 +164,7 @@ object ChartOfAccountsTemplate {
             expense(companyId, "5000", "Operating Expenses"),
         ),
         payrollAccounts(companyId),
+        reportingExpenseAccounts(companyId),
         facilityLiabilityAccounts(companyId),
         vatAccounts(companyId),
     ).flatten()
@@ -170,6 +184,7 @@ object ChartOfAccountsTemplate {
             expense(companyId, "5000", "Operating Expenses"),
         ),
         payrollAccounts(companyId),
+        reportingExpenseAccounts(companyId),
         facilityLiabilityAccounts(companyId),
         vatAccounts(companyId),
     ).flatten()
@@ -190,6 +205,7 @@ object ChartOfAccountsTemplate {
             expense(companyId, "5000", "Operating Expenses"),
         ),
         payrollAccounts(companyId),
+        reportingExpenseAccounts(companyId),
         facilityLiabilityAccounts(companyId),
         vatAccounts(companyId),
     ).flatten()
@@ -210,6 +226,7 @@ object ChartOfAccountsTemplate {
             expense(companyId, "5100", "Administrative Expenses"),
         ),
         payrollAccounts(companyId),
+        reportingExpenseAccounts(companyId),
         facilityLiabilityAccounts(companyId),
         vatAccounts(companyId),
     ).flatten()
@@ -227,6 +244,12 @@ object ChartOfAccountsTemplate {
         expense(companyId, SALARIES_EXPENSE_CODE, "Salaries Expense"),
         expense(companyId, LEAVE_EXPENSE_CODE, "Leave Expense"),
         liability(companyId, ACCRUED_LEAVE_LIABILITY_CODE, "Accrued Leave Liability", AccountClassification.CURRENT),
+    )
+
+    private fun reportingExpenseAccounts(companyId: CompanyId): List<Account> = listOf(
+        expense(companyId, COST_OF_SALES_CODE, "Cost of Sales", ExpenseClassification.COST_OF_GOODS_SOLD),
+        expense(companyId, INTEREST_EXPENSE_CODE, "Interest Expense", ExpenseClassification.INTEREST_EXPENSE),
+        expense(companyId, INCOME_TAX_EXPENSE_CODE, "Income Tax Expense", ExpenseClassification.INCOME_TAX_EXPENSE),
     )
 
     private fun asset(companyId: CompanyId, code: String, name: String, classification: AccountClassification) =
@@ -247,6 +270,6 @@ object ChartOfAccountsTemplate {
     private fun revenue(companyId: CompanyId, code: String, name: String) =
         Account.create(companyId, AccountType.REVENUE, null, code, name)
 
-    private fun expense(companyId: CompanyId, code: String, name: String) =
-        Account.create(companyId, AccountType.EXPENSE, null, code, name)
+    private fun expense(companyId: CompanyId, code: String, name: String, expenseClassification: ExpenseClassification? = null) =
+        Account.create(companyId, AccountType.EXPENSE, null, code, name, expenseClassification)
 }

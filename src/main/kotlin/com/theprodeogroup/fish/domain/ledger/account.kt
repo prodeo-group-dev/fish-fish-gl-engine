@@ -39,9 +39,18 @@ class Account private constructor(
     val classification: AccountClassification?,
     val code: String,
     val name: String,
-    val expenseClassification: ExpenseClassification?,
+    expenseClassification: ExpenseClassification?,
     val parentId: AccountId?
 ) {
+    /**
+     * How an Expense account is grouped in the trading P&L (cost of sales,
+     * operating, interest, tax). Changeable after creation (2026-10-07,
+     * [reclassifyExpense]) because it is a REPORTING attribute: it regroups
+     * existing balances, it never changes them.
+     */
+    var expenseClassification: ExpenseClassification? = expenseClassification
+        private set
+
     var active: Boolean = true
         private set
 
@@ -83,6 +92,20 @@ class Account private constructor(
             return ValidationResult.failure("Account is already active")
         }
         active = true
+        return ValidationResult.success()
+    }
+
+    /**
+     * Re-tags (or clears, with `null`) this Expense account's reporting
+     * classification. Only an EXPENSE account carries one. Allowed after the
+     * account has posted activity: it regroups the trading P&L, it does not
+     * touch any balance.
+     */
+    fun reclassifyExpense(newClassification: ExpenseClassification?): ValidationResult {
+        if (!type.requiresExpenseClassification()) {
+            return ValidationResult.failure("AccountType.$type does not use an expense classification")
+        }
+        expenseClassification = newClassification
         return ValidationResult.success()
     }
 

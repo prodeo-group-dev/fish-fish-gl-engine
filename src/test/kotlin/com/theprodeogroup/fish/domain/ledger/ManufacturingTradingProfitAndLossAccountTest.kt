@@ -151,6 +151,94 @@ class ManufacturingTradingProfitAndLossAccountTest {
         }
     }
 
+    @Test
+    fun `given cost of sales, operating, interest and tax accounts, when computed, then the cascade separates operating profit from interest and tax and net still equals revenue minus every expense`() {
+        val companyId = CompanyId.generate()
+        val period = period(companyId)
+        val revenue = revenueAccount(companyId)
+        val cogs = expenseAccount(companyId, ExpenseClassification.COST_OF_GOODS_SOLD)
+        val admin = expenseAccount(companyId, ExpenseClassification.ADMINISTRATIVE)
+        val interest = expenseAccount(companyId, ExpenseClassification.INTEREST_EXPENSE)
+        val tax = expenseAccount(companyId, ExpenseClassification.INCOME_TAX_EXPENSE)
+        val accounts = listOf(revenue, cogs, admin, interest, tax)
+        val entries = listOf(
+            debitCredit(period.id, WITHIN_PERIOD, AccountId.generate(), revenue.id, "50000.00"),
+            debitCredit(period.id, WITHIN_PERIOD, cogs.id, AccountId.generate(), "20000.00"),
+            debitCredit(period.id, WITHIN_PERIOD, admin.id, AccountId.generate(), "6000.00"),
+            debitCredit(period.id, WITHIN_PERIOD, interest.id, AccountId.generate(), "1500.00"),
+            debitCredit(period.id, WITHIN_PERIOD, tax.id, AccountId.generate(), "3000.00")
+        )
+
+        val account = ManufacturingTradingProfitAndLossAccount.of(accounts, entries, null, period, GBP)
+
+        account.revenue shouldBe Money(BigDecimal("50000.00"), GBP)
+        account.costOfSales shouldBe Money(BigDecimal("20000.00"), GBP)
+        account.grossProfit shouldBe Money(BigDecimal("30000.00"), GBP)
+        account.operatingExpenses shouldBe Money(BigDecimal("6000.00"), GBP)
+        account.operatingProfit shouldBe Money(BigDecimal("24000.00"), GBP)
+        account.interestExpense shouldBe Money(BigDecimal("1500.00"), GBP)
+        account.profitBeforeTax shouldBe Money(BigDecimal("22500.00"), GBP)
+        account.incomeTaxExpense shouldBe Money(BigDecimal("3000.00"), GBP)
+        account.netProfit shouldBe Money(BigDecimal("19500.00"), GBP)
+        account.netProfit shouldBe Money(BigDecimal("50000.00"), GBP) - Money(BigDecimal("30500.00"), GBP)
+        account.costOfSalesConfigured shouldBe true
+        account.interestConfigured shouldBe true
+    }
+
+    @Test
+    fun `given no work-in-progress account, when computed, then the WIP timing adjustment is zero`() {
+        val companyId = CompanyId.generate()
+        val period = period(companyId)
+        val revenue = revenueAccount(companyId)
+        val admin = expenseAccount(companyId, ExpenseClassification.ADMINISTRATIVE)
+        val entries = listOf(
+            debitCredit(period.id, WITHIN_PERIOD, AccountId.generate(), revenue.id, "1000.00"),
+            debitCredit(period.id, WITHIN_PERIOD, admin.id, AccountId.generate(), "400.00")
+        )
+
+        val account = ManufacturingTradingProfitAndLossAccount.of(listOf(revenue, admin), entries, null, period, GBP)
+
+        account.openingWorkInProgress shouldBe Money(BigDecimal.ZERO, GBP)
+        account.closingWorkInProgress shouldBe Money(BigDecimal.ZERO, GBP)
+        account.netProfit shouldBe Money(BigDecimal("600.00"), GBP)
+    }
+
+    @Test
+    fun `given nobody has tagged cost of sales or interest, when computed, then the configured flags are false and every expense counts as operating - gross profit equals revenue`() {
+        val companyId = CompanyId.generate()
+        val period = period(companyId)
+        val revenue = revenueAccount(companyId)
+        val untagged = Account.create(companyId, AccountType.EXPENSE, null, "5001", "Purchases")
+        val entries = listOf(
+            debitCredit(period.id, WITHIN_PERIOD, AccountId.generate(), revenue.id, "1000.00"),
+            debitCredit(period.id, WITHIN_PERIOD, untagged.id, AccountId.generate(), "700.00")
+        )
+
+        val account = ManufacturingTradingProfitAndLossAccount.of(listOf(revenue, untagged), entries, null, period, GBP)
+
+        account.costOfSalesConfigured shouldBe false
+        account.interestConfigured shouldBe false
+        account.grossProfit shouldBe account.revenue
+        account.operatingExpenses shouldBe Money(BigDecimal("700.00"), GBP)
+        account.operatingProfit shouldBe Money(BigDecimal("300.00"), GBP)
+    }
+
+    @Test
+    fun `given interest and tax accounts, when OperatingExpenses is computed, then they are excluded like cost of sales`() {
+        val companyId = CompanyId.generate()
+        val period = period(companyId)
+        val admin = expenseAccount(companyId, ExpenseClassification.ADMINISTRATIVE)
+        val interest = expenseAccount(companyId, ExpenseClassification.INTEREST_EXPENSE)
+        val tax = expenseAccount(companyId, ExpenseClassification.INCOME_TAX_EXPENSE)
+        val entries = listOf(
+            debitCredit(period.id, WITHIN_PERIOD, admin.id, AccountId.generate(), "600.00"),
+            debitCredit(period.id, WITHIN_PERIOD, interest.id, AccountId.generate(), "100.00"),
+            debitCredit(period.id, WITHIN_PERIOD, tax.id, AccountId.generate(), "200.00")
+        )
+
+        OperatingExpenses.of(listOf(admin, interest, tax), entries, period.id, GBP).total shouldBe Money(BigDecimal("600.00"), GBP)
+    }
+
     private fun period(companyId: CompanyId): Period =
         Period.create(companyId, PeriodType.MONTH, PERIOD_START, PERIOD_END)
 

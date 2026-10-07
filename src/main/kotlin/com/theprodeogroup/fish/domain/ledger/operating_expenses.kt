@@ -9,7 +9,8 @@ import java.util.Currency
  * "The rate at which money is being expensed - not direct purchases
  * for resale" (2026-08-27, the expense-velocity dashboard KPI's
  * counterpart to [ProfitAndLoss]'s money-velocity). Every Expense
- * account **except** the ones that are Cost of Sales by either path
+ * account **except** interest and income-tax expense (below operating profit, since
+ * 2026-10-07) and the ones that are Cost of Sales by either path
  * into it - a manufacturer's Manufacturing Account
  * ([ExpenseClassification.DIRECT_MATERIAL]/[ExpenseClassification.DIRECT_LABOR]/
  * [ExpenseClassification.DIRECT_EXPENSE]/[ExpenseClassification.FACTORY_OVERHEAD])
@@ -35,12 +36,15 @@ class OperatingExpenses private constructor(
     val total: Money
 ) {
     companion object {
-        private val COST_OF_SALES_CLASSIFICATIONS = setOf(
+        private val NON_OPERATING_CLASSIFICATIONS = setOf(
             ExpenseClassification.DIRECT_MATERIAL,
             ExpenseClassification.DIRECT_LABOR,
             ExpenseClassification.DIRECT_EXPENSE,
             ExpenseClassification.FACTORY_OVERHEAD,
-            ExpenseClassification.COST_OF_GOODS_SOLD
+            ExpenseClassification.COST_OF_GOODS_SOLD,
+            // Below operating profit, not operating expenses (2026-10-07).
+            ExpenseClassification.INTEREST_EXPENSE,
+            ExpenseClassification.INCOME_TAX_EXPENSE
         )
 
         /** [accounts] should all belong to one Company. */
@@ -60,7 +64,7 @@ class OperatingExpenses private constructor(
 
             val zero = Money(BigDecimal.ZERO, currency)
             val total = accounts
-                .filter { it.type == AccountType.EXPENSE && it.expenseClassification !in COST_OF_SALES_CLASSIFICATIONS }
+                .filter { it.type == AccountType.EXPENSE && it.expenseClassification !in NON_OPERATING_CLASSIFICATIONS }
                 .fold(zero) { sum, account -> sum + balances.getValue(account.id) }
 
             return OperatingExpenses(companyId, periodId, currency, total)

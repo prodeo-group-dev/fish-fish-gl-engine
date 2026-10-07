@@ -166,4 +166,17 @@ class ChartOfAccountsTemplateTest {
 
         accounts.none { it.code == ChartOfAccountsTemplate.VAT_CONTROL_ACCOUNT_CODE } shouldBe true
     }
+
+    @Test
+    fun `given any business client type, when its chart is built, then it has tagged cost of sales, interest and income tax expense accounts - but an individual does not`() {
+        val companyId = CompanyId.generate()
+        listOf(ClientType.SOLE_TRADER, ClientType.PARTNERSHIP, ClientType.COMPANY_LIMITED, ClientType.NON_PROFIT).forEach { clientType ->
+            val accounts = ChartOfAccountsTemplate.accountsFor(clientType, companyId).associateBy { it.code }
+            accounts.getValue(ChartOfAccountsTemplate.COST_OF_SALES_CODE).expenseClassification shouldBe ExpenseClassification.COST_OF_GOODS_SOLD
+            accounts.getValue(ChartOfAccountsTemplate.INTEREST_EXPENSE_CODE).expenseClassification shouldBe ExpenseClassification.INTEREST_EXPENSE
+            accounts.getValue(ChartOfAccountsTemplate.INCOME_TAX_EXPENSE_CODE).expenseClassification shouldBe ExpenseClassification.INCOME_TAX_EXPENSE
+        }
+        val individual = ChartOfAccountsTemplate.accountsFor(ClientType.INDIVIDUAL, companyId).map { it.code }
+        individual.contains(ChartOfAccountsTemplate.COST_OF_SALES_CODE) shouldBe false
+    }
 }

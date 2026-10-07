@@ -227,4 +227,23 @@ class AccountTest {
         code = "1000",
         name = "Cash and Bank"
     )
+
+    @Test
+    fun `given an Expense account, when it is re-tagged and cleared, then the classification follows`() {
+        val account = Account.create(CompanyId.generate(), AccountType.EXPENSE, null, "5010", "Cost of Sales")
+
+        account.reclassifyExpense(ExpenseClassification.COST_OF_GOODS_SOLD).isValid shouldBe true
+        account.expenseClassification shouldBe ExpenseClassification.COST_OF_GOODS_SOLD
+
+        account.reclassifyExpense(null).isValid shouldBe true
+        account.expenseClassification shouldBe null
+    }
+
+    @Test
+    fun `given a non-Expense account, when it is re-tagged, then it is refused and unchanged`() {
+        val account = Account.create(CompanyId.generate(), AccountType.REVENUE, null, "4000", "Sales")
+
+        account.reclassifyExpense(ExpenseClassification.INTEREST_EXPENSE).isValid shouldBe false
+        account.expenseClassification shouldBe null
+    }
 }

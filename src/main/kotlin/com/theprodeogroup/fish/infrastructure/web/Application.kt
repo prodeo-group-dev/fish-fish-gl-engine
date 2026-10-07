@@ -73,6 +73,8 @@ import com.theprodeogroup.fish.domain.tax.VatRateRepository
 import com.theprodeogroup.fish.domain.tax.VatRateRow
 import com.theprodeogroup.fish.domain.tax.VatRateSchedule
 import com.theprodeogroup.fish.application.ComputeVatCategoriesUseCase
+import com.theprodeogroup.fish.application.ClassifyExpenseAccountUseCase
+import com.theprodeogroup.fish.application.ComputeTradingProfitAndLossUseCase
 import com.theprodeogroup.fish.domain.common.JurisdictionEntry
 import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.common.JurisdictionRepository
@@ -529,6 +531,11 @@ fun Application.fishModule(
                 meRoutes()
                 jurisdictionRoutes(jurisdictionRepository)
                 moneyVelocityRoutes(computeMoneyVelocityUseCase, companyRepository)
+                tradingProfitAndLossRoutes(
+                    ComputeTradingProfitAndLossUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository),
+                    ClassifyExpenseAccountUseCase(accountRepository),
+                    companyRepository
+                )
                 salesPostingContextRoutes(
                     ComputeSalesPostingContextUseCase(companyRepository, periodRepository, accountRepository), companyRepository
                 )
