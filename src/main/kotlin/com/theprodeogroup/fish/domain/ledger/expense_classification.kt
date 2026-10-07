@@ -36,5 +36,19 @@ enum class ExpenseClassification {
     FACTORY_OVERHEAD,
     COST_OF_GOODS_SOLD,
     ADMINISTRATIVE,
-    SELLING_DISTRIBUTION
+    SELLING_DISTRIBUTION,
+
+    /**
+     * Interest on borrowings (2026-10-07, EA/Femi: interest cover and operating
+     * profit need it separated). NOT an operating expense: it sits below
+     * operating profit in the trading P&L, so [OperatingExpenses] and
+     * [ManufacturingTradingProfitAndLossAccount.operatingExpenses] exclude it.
+     */
+    INTEREST_EXPENSE,
+
+    /**
+     * Income or corporate tax charged on profit (2026-10-07). Also below
+     * operating profit and excluded from operating expenses.
+     */
+    INCOME_TAX_EXPENSE
 }

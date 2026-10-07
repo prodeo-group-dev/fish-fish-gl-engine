@@ -139,7 +139,7 @@ fun Route.journalEntryRoutes(
             try {
                 ExpenseClassification.valueOf(it)
             } catch (e: IllegalArgumentException) {
-                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "expenseClassification must be MANUFACTURING, TRADING, or PROFIT_AND_LOSS"))
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "expenseClassification must be one of ${ExpenseClassification.entries.joinToString()}"))
                 return@post
             }
         }

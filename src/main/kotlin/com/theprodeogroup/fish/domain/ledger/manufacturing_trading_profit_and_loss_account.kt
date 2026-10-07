@@ -34,15 +34,20 @@ import java.util.Currency
  *   only one of the two simply has zero in the other.
  * - [grossProfit] = [revenue] − [costOfSales]
  *
- * **Profit & Loss Account:**
+ * **Profit & Loss Account** (extended 2026-10-07 with interest and tax, EA's
+ * request for the Owner Admin's accounting ratios):
  * - [operatingExpenses] = every Expense account *not* already counted
  *   in [costOfSales]'s two paths (`ADMINISTRATIVE`/`SELLING_DISTRIBUTION`,
  *   and critically any *unclassified* Expense account too - computed
- *   as `totalExpense - manufacturingAndCogsExpense` rather than
- *   enumerating classifications, so an Expense account nobody got
- *   around to classifying still counts toward Net Profit instead of
- *   silently vanishing).
- * - [netProfit] = [grossProfit] − [operatingExpenses]
+ *   as `totalExpense - manufacturingAndCogsExpense - interest - tax`
+ *   rather than enumerating classifications, so an Expense account
+ *   nobody got around to classifying still counts toward Net Profit
+ *   instead of silently vanishing). Interest ([ExpenseClassification.INTEREST_EXPENSE])
+ *   and income tax ([ExpenseClassification.INCOME_TAX_EXPENSE]) are NOT
+ *   operating expenses.
+ * - [operatingProfit] = [grossProfit] − [operatingExpenses]
+ * - [profitBeforeTax] = [operatingProfit] − [interestExpense]
+ * - [netProfit] = [profitBeforeTax] − [incomeTaxExpense]
  *
  * Algebraically, [netProfit] always equals [revenue] − (every Expense
  * account's balance) ± the WIP timing adjustment - the three-stage
@@ -62,15 +67,39 @@ class ManufacturingTradingProfitAndLossAccount private constructor(
     val revenue: Money,
     val costOfSales: Money,
     val grossProfit: Money,
+    /** Every Expense account that is not cost of sales, interest or income tax (an unclassified one counts here). */
     val operatingExpenses: Money,
-    val netProfit: Money
+    /** [grossProfit] - [operatingExpenses]; before interest and tax. */
+    val operatingProfit: Money,
+    val interestExpense: Money,
+    /** [operatingProfit] - [interestExpense]. */
+    val profitBeforeTax: Money,
+    val incomeTaxExpense: Money,
+    /** [profitBeforeTax] - [incomeTaxExpense]; still equals revenue minus every Expense account (plus the WIP timing adjustment). */
+    val netProfit: Money,
+    /** `true` when the Company has at least one account tagged as cost of sales - the honest "gross profit is meaningful" signal. */
+    val costOfSalesConfigured: Boolean,
+    /** `true` when the Company has at least one account tagged [ExpenseClassification.INTEREST_EXPENSE]. */
+    val interestConfigured: Boolean
 ) {
     companion object {
-        /** [accounts] should all belong to one Company; [workInProgressAccount] is that Company's WIP control Account. */
+        private val COST_OF_SALES_CLASSIFICATIONS = setOf(
+            ExpenseClassification.DIRECT_MATERIAL,
+            ExpenseClassification.DIRECT_LABOR,
+            ExpenseClassification.DIRECT_EXPENSE,
+            ExpenseClassification.FACTORY_OVERHEAD,
+            ExpenseClassification.COST_OF_GOODS_SOLD
+        )
+
+        /**
+         * [accounts] should all belong to one Company; [workInProgressAccount] is that
+         * Company's WIP control Account, or `null` for a Company that has none (a
+         * trader or services Company: the WIP timing adjustment is then zero).
+         */
         fun of(
             accounts: List<Account>,
             postedEntries: List<JournalEntry>,
-            workInProgressAccount: Account,
+            workInProgressAccount: Account?,
             period: Period,
             currency: Currency
         ): ManufacturingTradingProfitAndLossAccount {
@@ -93,12 +122,19 @@ class ManufacturingTradingProfitAndLossAccount private constructor(
                 sumBy(ExpenseClassification.DIRECT_EXPENSE)
             val totalManufacturingCost = primeCost + sumBy(ExpenseClassification.FACTORY_OVERHEAD)
 
-            val openingEntries = postedEntries.filter { it.date.isBefore(period.startDate) }
-            val closingEntries = postedEntries.filter { !it.date.isAfter(period.endDate) }
-            val openingWorkInProgress = accountBalances(listOf(workInProgressAccount), openingEntries, currency)
-                .getValue(workInProgressAccount.id)
-            val closingWorkInProgress = accountBalances(listOf(workInProgressAccount), closingEntries, currency)
-                .getValue(workInProgressAccount.id)
+            val openingWorkInProgress: Money
+            val closingWorkInProgress: Money
+            if (workInProgressAccount == null) {
+                openingWorkInProgress = zero
+                closingWorkInProgress = zero
+            } else {
+                val openingEntries = postedEntries.filter { it.date.isBefore(period.startDate) }
+                val closingEntries = postedEntries.filter { !it.date.isAfter(period.endDate) }
+                openingWorkInProgress = accountBalances(listOf(workInProgressAccount), openingEntries, currency)
+                    .getValue(workInProgressAccount.id)
+                closingWorkInProgress = accountBalances(listOf(workInProgressAccount), closingEntries, currency)
+                    .getValue(workInProgressAccount.id)
+            }
             val costOfProduction = totalManufacturingCost + openingWorkInProgress - closingWorkInProgress
 
             val revenue = accounts.filter { it.type == AccountType.REVENUE }
@@ -107,17 +143,29 @@ class ManufacturingTradingProfitAndLossAccount private constructor(
             val costOfSales = costOfProduction + costOfGoodsSold
             val grossProfit = revenue - costOfSales
 
+            val interestExpense = sumBy(ExpenseClassification.INTEREST_EXPENSE)
+            val incomeTaxExpense = sumBy(ExpenseClassification.INCOME_TAX_EXPENSE)
             val totalExpense = accounts.filter { it.type == AccountType.EXPENSE }
                 .fold(zero) { sum, account -> sum + balances.getValue(account.id) }
             val manufacturingAndCogsExpense = totalManufacturingCost + costOfGoodsSold
-            val operatingExpenses = totalExpense - manufacturingAndCogsExpense
-            val netProfit = grossProfit - operatingExpenses
+            val operatingExpenses = totalExpense - manufacturingAndCogsExpense - interestExpense - incomeTaxExpense
+            val operatingProfit = grossProfit - operatingExpenses
+            val profitBeforeTax = operatingProfit - interestExpense
+            val netProfit = profitBeforeTax - incomeTaxExpense
+
+            val costOfSalesConfigured = accounts.any {
+                it.type == AccountType.EXPENSE && it.expenseClassification in COST_OF_SALES_CLASSIFICATIONS
+            }
+            val interestConfigured = accounts.any {
+                it.type == AccountType.EXPENSE && it.expenseClassification == ExpenseClassification.INTEREST_EXPENSE
+            }
 
             return ManufacturingTradingProfitAndLossAccount(
                 companyId, period.id, currency,
                 primeCost, totalManufacturingCost, openingWorkInProgress, closingWorkInProgress, costOfProduction,
                 revenue, costOfSales, grossProfit,
-                operatingExpenses, netProfit
+                operatingExpenses, operatingProfit, interestExpense, profitBeforeTax, incomeTaxExpense, netProfit,
+                costOfSalesConfigured, interestConfigured
             )
         }
     }

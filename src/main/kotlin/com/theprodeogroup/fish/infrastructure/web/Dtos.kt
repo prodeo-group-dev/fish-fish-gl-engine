@@ -931,3 +931,35 @@ data class VatCategoriesResponseDto(
     val vatScheduleConfigured: Boolean,
     val categories: List<VatCategoryRateDto>
 )
+
+/**
+ * GET /companies/{companyId}/reports/trading-profit-and-loss (2026-10-07). All money
+ * fields are plain decimals in the Company's currency; periodStart/periodEnd are the open
+ * Period's dates. costOfSalesConfigured and interestConfigured are true when the Company has
+ * at least one account tagged as cost of sales / interest expense, the signal that "0" means
+ * "none" and not "nobody tagged the account". netProfit equals the profit-and-loss route's netIncome.
+ */
+@Serializable
+data class TradingProfitAndLossResponseDto(
+    val currency: String,
+    val periodStart: String,
+    val periodEnd: String,
+    val costOfSalesConfigured: Boolean,
+    val interestConfigured: Boolean,
+    val revenue: String,
+    val costOfSales: String,
+    val grossProfit: String,
+    val operatingExpenses: String,
+    val operatingProfit: String,
+    val interestExpense: String,
+    val profitBeforeTax: String,
+    val incomeTaxExpense: String,
+    val netProfit: String
+)
+
+/** PUT /companies/{companyId}/accounts/{accountId}/expense-classification - null clears the tag. */
+@Serializable
+data class ClassifyExpenseAccountRequestDto(val expenseClassification: String? = null)
+
+@Serializable
+data class ExpenseAccountClassificationDto(val accountId: String, val code: String, val name: String, val expenseClassification: String?)
