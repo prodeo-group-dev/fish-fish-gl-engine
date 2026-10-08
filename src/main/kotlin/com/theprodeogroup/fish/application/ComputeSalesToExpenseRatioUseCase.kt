@@ -46,7 +46,7 @@ class ComputeSalesToExpenseRatioUseCase(
         data object NoOpenPeriod : Result()
         data object NoAccountsForCompany : Result()
         /** No operating expense posted yet this Period - the ratio is undefined (division by zero), not infinite or zero. */
-        data object NoOperatingExpenseYet : Result()
+        data class NoOperatingExpenseYet(val period: Period, val totalRevenue: Money, val operatingExpense: Money) : Result()
     }
 
     fun execute(companyId: CompanyId): Result {
@@ -62,7 +62,9 @@ class ComputeSalesToExpenseRatioUseCase(
 
         val pnl = ProfitAndLoss.of(accounts, entries, openPeriod.id, company.baseCurrency)
         val operatingExpenses = OperatingExpenses.of(accounts, entries, openPeriod.id, company.baseCurrency)
-        if (operatingExpenses.total.amount.signum() == 0) return Result.NoOperatingExpenseYet
+        if (operatingExpenses.total.amount.signum() == 0) {
+            return Result.NoOperatingExpenseYet(openPeriod, pnl.totalRevenue, operatingExpenses.total)
+        }
 
         val ratio = pnl.totalRevenue.amount.divide(operatingExpenses.total.amount, MathContext(10))
         return Result.Success(openPeriod, pnl.totalRevenue, operatingExpenses.total, ratio)
