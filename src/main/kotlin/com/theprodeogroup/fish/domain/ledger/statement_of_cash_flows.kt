@@ -57,12 +57,18 @@ class StatementOfCashFlows private constructor(
         get() = closingBalance - openingBalance
 
     companion object {
+        /**
+         * [accounts] (the Company's Chart of Accounts, optional) lets an untagged cash line be
+         * categorised from the other lines of its own entry - see [inferActivity]. Without it an
+         * untagged line is Uncategorized, exactly as before.
+         */
         fun of(
             cashAccount: Account,
             postedEntries: List<JournalEntry>,
             startDate: LocalDate,
             endDate: LocalDate,
-            currency: Currency
+            currency: Currency,
+            accounts: List<Account> = emptyList()
         ): StatementOfCashFlows {
             require(!endDate.isBefore(startDate)) { "endDate cannot be before startDate" }
 
@@ -77,18 +83,21 @@ class StatementOfCashFlows private constructor(
             val activityTotals = CashFlowActivity.entries.associateWith { zero }.toMutableMap()
             var uncategorized = zero
 
+            val accountsById = accounts.associateBy { it.id }
+
             periodEntries
                 .filter { it.status.hasHistoricalEffect() }
-                .flatMap { it.lines }
-                .filter { it.accountId == cashAccount.id }
-                .forEach { line ->
-                    val signedAmount = if (line.side == cashAccount.type.normalBalance()) line.amount else zero - line.amount
-                    val activity = line.dimensions[DimensionType.CASH_FLOW_ACTIVITY]
-                        ?.let { runCatching { CashFlowActivity.valueOf(it) }.getOrNull() }
-                    if (activity != null) {
-                        activityTotals[activity] = activityTotals.getValue(activity) + signedAmount
-                    } else {
-                        uncategorized = uncategorized + signedAmount
+                .forEach { entry ->
+                    entry.lines.filter { it.accountId == cashAccount.id }.forEach { line ->
+                        val signedAmount = if (line.side == cashAccount.type.normalBalance()) line.amount else zero - line.amount
+                        val activity = line.dimensions[DimensionType.CASH_FLOW_ACTIVITY]
+                            ?.let { runCatching { CashFlowActivity.valueOf(it) }.getOrNull() }
+                            ?: inferActivity(entry, cashAccount, accountsById)
+                        if (activity != null) {
+                            activityTotals[activity] = activityTotals.getValue(activity) + signedAmount
+                        } else {
+                            uncategorized = uncategorized + signedAmount
+                        }
                     }
                 }
 
@@ -100,6 +109,38 @@ class StatementOfCashFlows private constructor(
                 cashAccount.companyId, cashAccount.id, startDate, endDate, currency,
                 openingBalance, closingBalance, activityAmounts, uncategorized
             )
+        }
+
+        /**
+         * Fallback for a cash line with no CASH_FLOW_ACTIVITY tag (UAT v2.2 W-L3: every manual journal,
+         * and so a cash expense or an acquisition's reversal, is untagged). Looks only at the OTHER
+         * lines of the same entry and answers only when they all point the same way; otherwise `null`,
+         * which stays Uncategorized rather than a guess. A tag always wins, and the opening-balance and
+         * suspense accounts are never a flow, so they stay Uncategorized.
+         *
+         * - Revenue, Expense, current Asset (receivables, stock, prepayments) and current Liability
+         *   (payables, VAT, accruals) -> OPERATING
+         * - non-current Asset (fixed assets, long-term investments) -> INVESTING
+         * - non-current Liability (loans) and Equity (capital, drawings, dividends) -> FINANCING
+         */
+        private fun inferActivity(entry: JournalEntry, cashAccount: Account, accountsById: Map<AccountId, Account>): CashFlowActivity? {
+            val counterLines = entry.lines.filter { it.accountId != cashAccount.id }
+            if (counterLines.isEmpty()) return null
+            val activities = counterLines.map { line ->
+                val counter = accountsById[line.accountId] ?: return null
+                if (counter.code == ChartOfAccountsTemplate.OPENING_BALANCE_EQUITY_CODE ||
+                    counter.code == ChartOfAccountsTemplate.SUSPENSE_ACCOUNT_CODE
+                ) return null
+                when (counter.type) {
+                    AccountType.REVENUE, AccountType.EXPENSE -> CashFlowActivity.OPERATING
+                    AccountType.ASSET ->
+                        if (counter.classification == AccountClassification.NON_CURRENT) CashFlowActivity.INVESTING else CashFlowActivity.OPERATING
+                    AccountType.LIABILITY ->
+                        if (counter.classification == AccountClassification.NON_CURRENT) CashFlowActivity.FINANCING else CashFlowActivity.OPERATING
+                    AccountType.EQUITY -> CashFlowActivity.FINANCING
+                }
+            }.toSet()
+            return activities.singleOrNull()
         }
     }
 }
