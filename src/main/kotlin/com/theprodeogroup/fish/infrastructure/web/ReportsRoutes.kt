@@ -85,7 +85,17 @@ fun Route.reportsRoutes(
         if (!call.verifyClaimedTenant(tenantId)) return@get
         call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
-        when (val result = computeBalanceSheetUseCase.execute(companyId)) {
+        // `?asOf=YYYY-MM-DD` (optional): the sheet as at that day. Deliberately a request parameter only -
+        // no response field, since EA decodes this response strictly.
+        val asOfRaw = call.request.queryParameters["asOf"]
+        val asOf = if (asOfRaw == null) null else try {
+            java.time.LocalDate.parse(asOfRaw)
+        } catch (e: java.time.format.DateTimeParseException) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_as_of", "asOf must be a date, YYYY-MM-DD"))
+            return@get
+        }
+
+        when (val result = computeBalanceSheetUseCase.execute(companyId, asOf)) {
             is ComputeBalanceSheetUseCase.Result.Success -> {
                 val bs = result.balanceSheet
                 call.respond(

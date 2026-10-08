@@ -24,12 +24,14 @@ class ComputeBalanceSheetUseCase(
         data object NoAccountsForCompany : Result()
     }
 
-    fun execute(companyId: CompanyId): Result {
+    /** [asOf] limits the sheet to entries dated on or before that day (a month- or year-end pack); `null` means all posted activity. */
+    fun execute(companyId: CompanyId, asOf: java.time.LocalDate? = null): Result {
         val company = companyRepository.findById(companyId) ?: return Result.CompanyNotFound
 
         val accounts = accountRepository.findAllByCompany(companyId)
         if (accounts.isEmpty()) return Result.NoAccountsForCompany
         val entries = journalEntryRepository.findAllByCompany(companyId)
+            .filter { asOf == null || !it.date.isAfter(asOf) }
 
         return Result.Success(BalanceSheet.of(accounts, entries, company.baseCurrency))
     }
