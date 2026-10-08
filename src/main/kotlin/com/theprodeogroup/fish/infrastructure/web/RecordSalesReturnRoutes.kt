@@ -57,6 +57,7 @@ fun Route.recordSalesReturnRoutes(
         ) {
             val result = recordSalesReturnUseCase.execute(
                 RecordSalesReturnUseCase.Request(
+                    CompanyId(companyUuid),
                     PeriodId(periodUuid), date, AccountId(salesReturnsAccountUuid), AccountId(arControlAccountUuid),
                     amount, CustomerId(customerUuid), request.description
                 )

@@ -60,7 +60,7 @@ class RecordSupplierPaymentUseCaseTest {
         settlementAccountId: AccountId,
         amount: String = "12500.00",
         supplierId: SupplierId = SupplierId.generate()
-    ) = RecordSupplierPaymentUseCase.Request(
+    ) = RecordSupplierPaymentUseCase.Request(companyId, 
         periodId, TODAY, apControlAccountId, settlementAccountId, Money(BigDecimal(amount), GBP), supplierId,
         "Payment to Brazilian sugar exporter via Access Bank UK"
     )

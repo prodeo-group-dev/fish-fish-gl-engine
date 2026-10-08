@@ -21,6 +21,7 @@ import com.theprodeogroup.fish.application.CreateAccountUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.RecordOpeningBalanceUseCase
 import com.theprodeogroup.fish.application.FakeIdempotencyKeyRepository
+import com.theprodeogroup.fish.application.FakeVatRateRepository
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
@@ -44,16 +45,12 @@ import com.theprodeogroup.fish.application.RecordSupplierObligationUseCase
 import com.theprodeogroup.fish.application.RecordSupplierPaymentUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
-import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.common.Jurisdiction
-import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.PeriodType
-import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountType
-import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import com.theprodeogroup.fish.domain.tenancy.Company
@@ -62,39 +59,44 @@ import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.application.User
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.string.shouldContain
 import io.ktor.client.call.body
-import io.ktor.server.application.Application
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.server.application.Application
 import io.ktor.server.testing.testApplication
+import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.string.shouldContain
+import io.ktor.client.statement.bodyAsText
+import io.kotest.assertions.withClue
+import com.theprodeogroup.common.Money
+import com.theprodeogroup.fish.domain.fixedassets.AssetCategory
+import com.theprodeogroup.fish.domain.fixedassets.FixedAsset
 import org.junit.jupiter.api.Test
 import java.time.LocalDate
 import java.util.Currency
+import java.util.UUID
 
 private val GBP: Currency = Currency.getInstance("GBP")
-private val TODAY = LocalDate.of(2026, 8, 26)
-private const val TEST_EMAIL = "accountant@example.com"
+private val TODAY = LocalDate.of(2026, 8, 21)
+private const val TEST_EMAIL = "sop-caller@example.com"
 
 /**
- * `POST /journal-entries` via Ktor's `testApplication` - fakes
- * throughout, no real database or network JWKS endpoint (see
- * [TestJwtSupport]). Covers the full auth -> tenant-ownership ->
- * use-case -> `Result`-to-HTTP pipeline, not just the use case itself
- * (already covered by `PostJournalEntryUseCaseTest`).
+ * `POST /sales/record-sale` and `POST /sales/record-collection` via
+ * Ktor's `testApplication` (docs/Sales_Order_Processing_DDD_Design.md
+ * Section 0) - unlike [SalesOrderRoutesTest], there's no owning
+ * aggregate to derive tenant scoping from, so every request body
+ * carries `companyId` directly.
  */
-class JournalEntryRoutesTest {
+class CrossCompanyPostingIsolationRouteTest {
 
-    private class Fixture(role: Role = Role.ACCOUNTANT, accessLevel: AccessLevel = Membership.defaultAccessLevelFor(role)) {
+    private class Fixture(role: Role = Role.ACCOUNTANT, jurisdiction: Jurisdiction = Jurisdiction.UK, accessLevel: AccessLevel = Membership.defaultAccessLevelFor(role)) {
         val userRepository = FakeUserRepository()
         val membershipRepository = FakeMembershipRepository()
         val companyRepository = FakeCompanyRepository()
@@ -129,15 +131,17 @@ class JournalEntryRoutesTest {
         val getOrCreateLeaveAccrualUseCase = GetOrCreateLeaveAccrualUseCase(leaveAccrualRepository)
 
         val tenantId = TenantId.generate()
-        val user = User.create(TEST_EMAIL, "Test Accountant").also { userRepository.save(it) }
-        val company = Company.create(tenantId, "Test Co", ClientType.NON_PROFIT, Jurisdiction.UK, GBP).also { companyRepository.save(it) }
+        val user = User.create(TEST_EMAIL, "Test SOP Caller").also { userRepository.save(it) }
+        val company = Company.create(tenantId, "Test Co", ClientType.NON_PROFIT, jurisdiction, GBP).also { companyRepository.save(it) }
         val membership = Membership.grant(user.id, tenantId, role, company.id, accessLevel = accessLevel).also { membershipRepository.save(it) }
         val period = Period.create(company.id, PeriodType.MONTH, TODAY, TODAY.plusDays(30)).also {
             it.open()
             periodRepository.save(it)
         }
-        val debitAccount = Account.create(company.id, AccountType.EXPENSE, null, "5000", "Test Expense").also { accountRepository.save(it) }
-        val creditAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1000", "Test Cash").also { accountRepository.save(it) }
+        val arControlAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1100", "Accounts Receivable").also { accountRepository.save(it) }
+        val revenueAccount = Account.create(company.id, AccountType.REVENUE, null, "4000", "Sales Revenue").also { accountRepository.save(it) }
+        val cashAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1000", "Cash").also { accountRepository.save(it) }
+        val vatControlAccount = Account.create(company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2150", "VAT Control Account").also { accountRepository.save(it) }
 
 
         val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
@@ -194,6 +198,8 @@ class JournalEntryRoutesTest {
                 assessFixedAssetImpairmentUseCase = assessFixedAssetImpairmentUseCase,
                 disposeFixedAssetUseCase = disposeFixedAssetUseCase,
                 computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase,
+                vatRateRepository = FakeVatRateRepository(),
+                popServiceVerifier = TestJwtSupport.popServiceVerifier(),
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
                 computeTaxUseCase = computeTaxUseCase,
                 taxRuleRepository = taxRuleRepository,
@@ -202,216 +208,174 @@ class JournalEntryRoutesTest {
         }
     }
 
-    private fun validLinesJson(fixture: Fixture) = """
-        [
-          {"accountId": "${fixture.debitAccount.id.value}", "amount": "100.00", "currency": "GBP", "side": "DEBIT"},
-          {"accountId": "${fixture.creditAccount.id.value}", "amount": "100.00", "currency": "GBP", "side": "CREDIT"}
-        ]
-    """.trimIndent()
+    /**
+     * One Company's books: an open Period plus one account of every kind any
+     * posting route needs. "A" is the Company the caller is authorized for;
+     * "B" is some other Company (another Tenant's, or a second Company in the
+     * same Tenant) whose period and accounts the caller has no right to.
+     */
+    private class World(private val fixture: Fixture, val company: Company) {
+        val period = Period.create(company.id, PeriodType.MONTH, TODAY, TODAY.plusDays(30)).also {
+            it.open()
+            fixture.periodRepository.save(it)
+        }
+        private fun account(type: AccountType, code: String, classification: AccountClassification? = null) =
+            Account.create(company.id, type, classification, code, "Acct $code").also { fixture.accountRepository.save(it) }
 
-    @Test
-    fun `given a valid request with a bearer token and matching X-Tenant-Id, when posted, then it returns 201 with the entry status`() = testApplication {
-        val fixture = Fixture(Role.ACCOUNTANT)
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
+        val ar = account(AccountType.ASSET, "1100", AccountClassification.CURRENT).id.value
+        val cash = account(AccountType.ASSET, "1000", AccountClassification.CURRENT).id.value
+        val inventory = account(AccountType.ASSET, "1300", AccountClassification.CURRENT).id.value
+        val revenue = account(AccountType.REVENUE, "4000").id.value
+        val salesReturns = account(AccountType.REVENUE, "4100").id.value
+        val expense = account(AccountType.EXPENSE, "5000").id.value
+        val expense2 = account(AccountType.EXPENSE, "5100").id.value
+        val vat = account(AccountType.LIABILITY, "2150", AccountClassification.CURRENT).id.value
+        val ap = account(AccountType.LIABILITY, "2000", AccountClassification.CURRENT).id.value
+        val fixedAsset = account(AccountType.ASSET, "1200", AccountClassification.NON_CURRENT).id.value
+        val accumulatedDepreciation = account(AccountType.ASSET, "1210", AccountClassification.NON_CURRENT).id.value
+        val depreciationExpense = account(AccountType.EXPENSE, "6100").id.value
 
-        val response = client.post("/api/journal-entries") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        fun entries(fixture: Fixture) = fixture.journalEntryRepository.findAllByPeriod(period.id)
+    }
+
+    private fun Fixture.worldA() = World(this, company)
+    private fun Fixture.worldOfAnotherTenant() =
+        World(this, Company.create(TenantId.generate(), "Other Tenant Co", ClientType.NON_PROFIT, Jurisdiction.UK, GBP).also { companyRepository.save(it) })
+    private fun Fixture.worldOfASiblingCompany() =
+        World(this, Company.create(tenantId, "Sibling Co", ClientType.NON_PROFIT, Jurisdiction.UK, GBP).also { companyRepository.save(it) })
+
+    /** A posting route: its path and how to build its body from the Company the caller claims, a period and an account set. */
+    private class Route(val name: String, val path: String, val body: (companyId: UUID, period: World, accounts: World) -> String)
+
+    private val postingRoutes = listOf(
+        Route("record-sale", "/api/sales/record-sale") { c, p, a ->
+            """{"companyId": "$c", "periodId": "${p.period.id.value}", "date": "$TODAY", "arControlAccountId": "${a.ar}",
+              |"revenueAccountId": "${a.revenue}", "vatControlAccountId": "${a.vat}",
+              |"lines": [{"netAmount": "100.00", "vatCategory": "EXEMPT"}], "currency": "GBP", "customerId": "${UUID.randomUUID()}"}""".trimMargin()
+        },
+        Route("record-collection", "/api/sales/record-collection") { c, p, a ->
+            """{"companyId": "$c", "periodId": "${p.period.id.value}", "date": "$TODAY", "settlementAccountId": "${a.cash}",
+              |"arControlAccountId": "${a.ar}", "amount": "100.00", "currency": "GBP", "customerId": "${UUID.randomUUID()}"}""".trimMargin()
+        },
+        Route("record-sales-return", "/api/sales/record-sales-return") { c, p, a ->
+            """{"companyId": "$c", "periodId": "${p.period.id.value}", "date": "$TODAY", "salesReturnsAccountId": "${a.salesReturns}",
+              |"arControlAccountId": "${a.ar}", "amount": "100.00", "currency": "GBP", "customerId": "${UUID.randomUUID()}"}""".trimMargin()
+        },
+        Route("record-obligation", "/api/purchasing/record-obligation") { c, p, a ->
+            """{"companyId": "$c", "periodId": "${p.period.id.value}", "date": "$TODAY", "expenseOrAssetAccountId": "${a.expense}",
+              |"apControlAccountId": "${a.ap}", "vatControlAccountId": "${a.vat}",
+              |"lines": [{"netAmount": "100.00", "vatCategory": "EXEMPT"}], "currency": "GBP", "supplierId": "${UUID.randomUUID()}"}""".trimMargin()
+        },
+        Route("record-payment", "/api/purchasing/record-payment") { c, p, a ->
+            """{"companyId": "$c", "periodId": "${p.period.id.value}", "date": "$TODAY", "apControlAccountId": "${a.ap}",
+              |"settlementAccountId": "${a.cash}", "amount": "100.00", "currency": "GBP", "supplierId": "${UUID.randomUUID()}"}""".trimMargin()
+        },
+        Route("record-receipt", "/api/inventory/record-receipt") { c, p, a ->
+            """{"companyId": "$c", "periodId": "${p.period.id.value}", "date": "$TODAY", "inventoryAssetAccountId": "${a.inventory}",
+              |"contraAccountId": "${a.ap}", "committedCost": "100.00", "committedCostCurrency": "GBP", "itemId": "${UUID.randomUUID()}"}""".trimMargin()
+        },
+        Route("record-issue", "/api/inventory/record-issue") { c, p, a ->
+            """{"companyId": "$c", "periodId": "${p.period.id.value}", "date": "$TODAY", "contraAccountId": "${a.expense}",
+              |"inventoryAssetAccountId": "${a.inventory}", "committedCost": "100.00", "committedCostCurrency": "GBP", "itemId": "${UUID.randomUUID()}"}""".trimMargin()
+        },
+        Route("create-fixed-asset", "/api/fixed-assets") { c, p, a ->
+            """{"companyId": "$c", "name": "Van", "category": "VEHICLES", "cost": "1000.00", "currency": "GBP",
+              |"acquisitionDate": "$TODAY", "usefulLifeYears": 5, "periodId": "${p.period.id.value}", "fixedAssetAccountId": "${a.fixedAsset}",
+              |"fundingMethod": "CASH", "cashAccountId": "${a.cash}"}""".trimMargin()
+        },
+        Route("record-pay-run", "/api/payroll/record-pay-run") { c, p, a ->
+            """{"companyId": "$c", "periodId": "${p.period.id.value}", "date": "$TODAY", "totalWages": "100.00", "totalSalaries": "200.00",
+              |"currency": "GBP", "wagesExpenseAccountId": "${a.expense}", "salariesExpenseAccountId": "${a.expense2}", "cashAccountId": "${a.cash}"}""".trimMargin()
+        }
+    )
+
+    private suspend fun io.ktor.client.HttpClient.postJson(path: String, tenant: TenantId, token: String, body: String) =
+        post(path) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header("X-Tenant-Id", tenant.value.toString())
             contentType(ContentType.Application.Json)
-            setBody("""{"periodId": "${fixture.period.id.value}", "date": "$TODAY", "lines": ${validLinesJson(fixture)}, "source": "MANUAL"}""")
+            setBody(body)
         }
 
-        response.status shouldBe HttpStatusCode.Created
-        val body: JournalEntryResponseDto = response.body()
-        body.status shouldBe "POSTED"
-    }
+    private fun every(variant: String, token: () -> String, world: Fixture.() -> World) {
+        for (route in postingRoutes) {
+            testApplication {
+                val fixture = Fixture()
+                application { fixture.installInto(this) }
+                val client = createClient { install(ContentNegotiation) { json() } }
+                val a = fixture.worldA()
+                val b = fixture.world()
 
-    @Test
-    fun `given no bearer token, when posted, then it returns 401`() = testApplication {
-        val fixture = Fixture(Role.ACCOUNTANT)
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
+                // Control: the caller's own period and accounts still post.
+                val own = client.postJson(route.path, fixture.tenantId, token(), route.body(fixture.company.id.value, a, a))
+                withClue("${route.name} control ($variant) -> ${own.bodyAsText()}") { own.status shouldBe HttpStatusCode.OK }
 
-        val response = client.post("/api/journal-entries") {
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody("""{"periodId": "${fixture.period.id.value}", "date": "$TODAY", "lines": [], "source": "MANUAL"}""")
-        }
-
-        response.status shouldBe HttpStatusCode.Unauthorized
-    }
-
-    @Test
-    fun `given a caller with a READ_ONLY Membership, when posted, then it returns 403`() = testApplication {
-        val fixture = Fixture(accessLevel = AccessLevel.READ)
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.post("/api/journal-entries") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody("""{"periodId": "${fixture.period.id.value}", "date": "$TODAY", "lines": [], "source": "MANUAL"}""")
-        }
-
-        response.status shouldBe HttpStatusCode.Forbidden
-    }
-
-    @Test
-    fun `given a claimed X-Tenant-Id that does not own the Period, when posted, then it returns 403`() = testApplication {
-        val fixture = Fixture(Role.ACCOUNTANT)
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.post("/api/journal-entries") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", TenantId.generate().value.toString())
-            contentType(ContentType.Application.Json)
-            setBody("""{"periodId": "${fixture.period.id.value}", "date": "$TODAY", "lines": [], "source": "MANUAL"}""")
-        }
-
-        response.status shouldBe HttpStatusCode.Forbidden
-        response.bodyAsText() shouldContain "forbidden"
-    }
-
-    @Test
-    fun `given a nonexistent Period id, when posted, then it returns 404`() = testApplication {
-        val fixture = Fixture(Role.ACCOUNTANT)
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.post("/api/journal-entries") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-            contentType(ContentType.Application.Json)
-            setBody("""{"periodId": "${java.util.UUID.randomUUID()}", "date": "$TODAY", "lines": [], "source": "MANUAL"}""")
-        }
-
-        response.status shouldBe HttpStatusCode.NotFound
-    }
-
-    // -- GET /companies/{companyId}/accounts (2026-08-29, "Journals should be created and posted from the GL page") --
-
-    @Test
-    fun `given a Company with active Accounts, when GET accounts is called, then it returns them sorted by code`() = testApplication {
-        val fixture = Fixture(Role.ACCOUNTANT)
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.get("/api/companies/${fixture.company.id.value}/accounts") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-        }
-
-        response.status shouldBe HttpStatusCode.OK
-        val body: List<AccountSummaryDto> = response.body()
-        body.map { it.code } shouldBe listOf("1000", "5000")
-        body.first { it.code == "1000" }.name shouldBe "Test Cash"
-        body.first { it.code == "1000" }.type shouldBe "ASSET"
-    }
-
-    @Test
-    fun `given an inactive Account, when GET accounts is called, then it is excluded`() = testApplication {
-        val fixture = Fixture(Role.ACCOUNTANT)
-        fixture.debitAccount.deactivate()
-        fixture.accountRepository.save(fixture.debitAccount)
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.get("/api/companies/${fixture.company.id.value}/accounts") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-        }
-
-        response.status shouldBe HttpStatusCode.OK
-        val body: List<AccountSummaryDto> = response.body()
-        body.map { it.code } shouldBe listOf("1000")
-    }
-
-    @Test
-    fun `given a caller with a READ_ONLY role Membership, when GET accounts is called, then it returns 200`() = testApplication {
-        val fixture = Fixture(accessLevel = AccessLevel.READ)
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.get("/api/companies/${fixture.company.id.value}/accounts") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-        }
-
-        response.status shouldBe HttpStatusCode.OK
-    }
-
-    @Test
-    fun `given no bearer token, when GET accounts is called, then it returns 401`() = testApplication {
-        val fixture = Fixture(Role.ACCOUNTANT)
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.get("/api/companies/${fixture.company.id.value}/accounts") {
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-        }
-
-        response.status shouldBe HttpStatusCode.Unauthorized
-    }
-
-    private fun Fixture.postEntry(date: LocalDate, description: String) {
-        val lines = listOf(
-            JournalLine(debitAccount.id, Money(java.math.BigDecimal("100.00"), GBP), TransactionSide.DEBIT),
-            JournalLine(creditAccount.id, Money(java.math.BigDecimal("100.00"), GBP), TransactionSide.CREDIT)
-        )
-        postJournalEntryUseCase.execute(
-            PostJournalEntryUseCase.Request(period.companyId, period.id, date, lines, JournalSource.MANUAL, description)
-        )
-    }
-
-    @Test
-    fun `given two posted JournalEntries on different dates, when GET journal-entries is called, then it returns them newest first with resolved account names`() =
-        testApplication {
-            val fixture = Fixture(Role.ACCOUNTANT)
-            fixture.postEntry(TODAY, "Older entry")
-            fixture.postEntry(TODAY.plusDays(1), "Newer entry")
-            application { fixture.installInto(this) }
-            val client = createClient { install(ContentNegotiation) { json() } }
-
-            val response = client.get("/api/companies/${fixture.company.id.value}/journal-entries") {
-                header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-                header("X-Tenant-Id", fixture.tenantId.value.toString())
+                // Attack: authorized at A, but B's period and B's accounts.
+                val response = client.postJson(route.path, fixture.tenantId, token(), route.body(fixture.company.id.value, b, b))
+                val text = response.bodyAsText()
+                withClue("${route.name} cross-company ($variant) -> $text") {
+                    response.status shouldBe HttpStatusCode.NotFound
+                    text shouldContain "period_not_found"
+                    b.entries(fixture).shouldBeEmpty()
+                }
             }
-
-            response.status shouldBe HttpStatusCode.OK
-            val body: List<JournalEntryRecordDto> = response.body()
-            body.map { it.description } shouldBe listOf("Newer entry", "Older entry")
-            val newest = body.first()
-            newest.lines.map { it.accountCode }.toSet() shouldBe setOf("1000", "5000")
-            newest.lines.first { it.accountCode == "1000" }.accountName shouldBe "Test Cash"
         }
-
-    @Test
-    fun `given a caller with a READ_ONLY role Membership, when GET journal-entries is called, then it returns 200`() = testApplication {
-        val fixture = Fixture(accessLevel = AccessLevel.READ)
-        application { fixture.installInto(this) }
-        val client = createClient { install(ContentNegotiation) { json() } }
-
-        val response = client.get("/api/companies/${fixture.company.id.value}/journal-entries") {
-            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-        }
-
-        response.status shouldBe HttpStatusCode.OK
     }
 
     @Test
-    fun `given no bearer token, when GET journal-entries is called, then it returns 401`() = testApplication {
-        val fixture = Fixture(Role.ACCOUNTANT)
+    fun `a person authorized at Company A cannot post into another Tenant's period via any posting route`() =
+        every("person, other tenant", { TestJwtSupport.signToken(TEST_EMAIL) }) { worldOfAnotherTenant() }
+
+    @Test
+    fun `a person authorized at Company A cannot post into a sibling Company's period via any posting route`() =
+        every("person, sibling company", { TestJwtSupport.signToken(TEST_EMAIL) }) { worldOfASiblingCompany() }
+
+    @Test
+    fun `a service credential authorized at Company A cannot post into another Tenant's period via any posting route`() =
+        every("service, other tenant", { TestJwtSupport.signPopServiceToken("pop-gl-service@theprodeogroup.com") }) { worldOfAnotherTenant() }
+
+    @Test
+    fun `a service credential cannot post into a sibling Company's period via any posting route`() =
+        every("service, sibling company", { TestJwtSupport.signPopServiceToken("pop-gl-service@theprodeogroup.com") }) { worldOfASiblingCompany() }
+
+    @Test
+    fun `A's own period with B's accounts is refused and nothing is posted`() {
+        for (route in postingRoutes) {
+            testApplication {
+                val fixture = Fixture()
+                application { fixture.installInto(this) }
+                val client = createClient { install(ContentNegotiation) { json() } }
+                val a = fixture.worldA()
+                val b = fixture.worldOfAnotherTenant()
+
+                val response = client.postJson(route.path, fixture.tenantId, TestJwtSupport.signToken(TEST_EMAIL), route.body(fixture.company.id.value, a, b))
+                withClue("${route.name} -> ${response.bodyAsText()}") { response.status.value shouldBe 404 }
+                a.entries(fixture).shouldBeEmpty()
+                b.entries(fixture).shouldBeEmpty()
+            }
+        }
+    }
+
+    private fun assetOf(fixture: Fixture, w: World): String =
+        FixedAsset.create(w.company.id, "Van", AssetCategory.VEHICLES, Money(java.math.BigDecimal("10000.00"), GBP), TODAY, 5)
+            .also { fixture.fixedAssetRepository.save(it) }.id.value.toString()
+
+    @Test
+    fun `a fixed-asset action cannot pair B's asset with A's period`() = testApplication {
+        val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
+        val a = fixture.worldA()
+        val b = fixture.worldOfAnotherTenant()
+        val assetOfB = assetOf(fixture, b)
 
-        val response = client.get("/api/companies/${fixture.company.id.value}/journal-entries") {
-            header("X-Tenant-Id", fixture.tenantId.value.toString())
-        }
+        val response = client.postJson(
+            "/api/fixed-assets/$assetOfB/record-depreciation", fixture.tenantId, TestJwtSupport.signToken(TEST_EMAIL),
+            """{"depreciationExpenseAccountId": "${b.depreciationExpense}", "accumulatedDepreciationAccountId": "${b.accumulatedDepreciation}",
+              |"periodId": "${a.period.id.value}", "date": "$TODAY"}""".trimMargin()
+        )
 
-        response.status shouldBe HttpStatusCode.Unauthorized
+        withClue(response.bodyAsText()) { response.status shouldBe HttpStatusCode.NotFound }
+        a.entries(fixture).shouldBeEmpty()
     }
 }

@@ -60,7 +60,7 @@ class RecordInventoryReceiptUseCaseTest {
         contraAccountId: AccountId,
         committedCost: String = "500.00",
         itemId: StockItemId = StockItemId.generate()
-    ) = RecordInventoryReceiptUseCase.Request(
+    ) = RecordInventoryReceiptUseCase.Request(companyId, 
         periodId, TODAY, inventoryAssetAccountId, contraAccountId, Money(BigDecimal(committedCost), GBP), itemId,
         "Receipt of Refined White Sugar, CIF Conakry"
     )

@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.application
 
+import com.theprodeogroup.fish.domain.ledger.findOwnedBy
 import com.theprodeogroup.fish.domain.common.DomainEvent
 import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountId
@@ -81,7 +82,7 @@ class RecordPayRunUseCase(
             return RecordPayRunResult.InvalidAmounts
         }
 
-        val period = periodRepository.findById(request.periodId)
+        val period = periodRepository.findOwnedBy(request.periodId, request.companyId)
             ?: return RecordPayRunResult.PeriodNotFound
         if (!period.allowsPosting()) {
             return RecordPayRunResult.PeriodNotOpen

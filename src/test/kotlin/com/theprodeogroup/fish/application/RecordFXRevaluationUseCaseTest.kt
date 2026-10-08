@@ -60,7 +60,7 @@ class RecordFXRevaluationUseCaseTest {
         foreignCurrencyAmount: Money = Money(BigDecimal("50000.00"), USD),
         currentlyRecordedHomeValue: Money = Money(BigDecimal("39500.00"), GBP),
         currentRate: FXRate = FXRate(USD, GBP, BigDecimal("0.79"), TODAY)
-    ) = RecordFXRevaluationUseCase.Request(
+    ) = RecordFXRevaluationUseCase.Request(companyId, 
         periodId, TODAY, receivableAccountId, fxGainLossAccountId,
         foreignCurrencyAmount, currentlyRecordedHomeValue, currentRate
     )

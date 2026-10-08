@@ -139,6 +139,7 @@ class CreateFixedAssetUseCase(
 
         val posting = postJournalEntryUseCase.execute(
             PostJournalEntryUseCase.Request(
+                companyId = request.companyId,
                 periodId = request.periodId,
                 date = request.acquisitionDate,
                 lines = lines,

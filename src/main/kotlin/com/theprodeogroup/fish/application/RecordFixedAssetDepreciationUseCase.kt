@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.application
 
+import com.theprodeogroup.fish.domain.ledger.findOwnedBy
 import com.theprodeogroup.fish.domain.common.DomainEvent
 import com.theprodeogroup.fish.domain.fixedassets.FixedAsset
 import com.theprodeogroup.fish.domain.fixedassets.FixedAssetId
@@ -53,7 +54,7 @@ class RecordFixedAssetDepreciationUseCase(
         val fixedAsset = fixedAssetRepository.findById(request.fixedAssetId)
             ?: return RecordFixedAssetDepreciationResult.FixedAssetNotFound
 
-        val period = periodRepository.findById(request.periodId)
+        val period = periodRepository.findOwnedBy(request.periodId, fixedAsset.companyId)
             ?: return RecordFixedAssetDepreciationResult.PeriodNotFound
         if (!period.allowsPosting()) {
             return RecordFixedAssetDepreciationResult.PeriodNotOpen

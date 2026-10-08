@@ -52,7 +52,7 @@ class RecordSaleUseCaseTest {
         lines: List<RecordSaleUseCase.SaleLine> = listOf(RecordSaleUseCase.SaleLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD)),
         customerId: CustomerId = CustomerId.generate(),
         vatRateSchedule: VatRateSchedule = TestVatRates.IRELAND
-    ) = RecordSaleUseCase.Request(
+    ) = RecordSaleUseCase.Request(companyId, 
         periodId, TODAY, arAccountId, revenueAccountId, vatAccountId, lines, customerId,
         vatRateSchedule, "Sale to SOCIETE JALLOH ALPHAJOR SARLU"
     )
@@ -179,7 +179,7 @@ class RecordSaleUseCaseTest {
         val revenue = account("4000", AccountType.REVENUE)
         val vat = account("2150", AccountType.LIABILITY)
 
-        val req = RecordSaleUseCase.Request(
+        val req = RecordSaleUseCase.Request(companyId, 
             period.id, LocalDate.of(2026, 7, 15), ar.id, revenue.id, vat.id,
             listOf(RecordSaleUseCase.SaleLine(Money(BigDecimal("100.00"), EUR), VatCategory.SECOND_REDUCED)),
             CustomerId.generate(), TestVatRates.IRELAND

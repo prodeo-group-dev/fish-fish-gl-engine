@@ -98,7 +98,7 @@ class RecordExpectedCreditLossUseCaseTest {
         aging: AccountsReceivableAging,
         lossRates: Map<AgingBucketLabel, BigDecimal>,
         currentAllowance: Money = Money(BigDecimal.ZERO, GBP)
-    ) = RecordExpectedCreditLossUseCase.Request(
+    ) = RecordExpectedCreditLossUseCase.Request(companyId, 
         periodId, TODAY, aging, lossRates, currentAllowance, expenseAccountId, allowanceAccountId
     )
 

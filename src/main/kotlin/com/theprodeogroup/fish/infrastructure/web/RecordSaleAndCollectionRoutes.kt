@@ -89,6 +89,7 @@ fun Route.recordSaleAndCollectionRoutes(
         ) {
             val result = recordSaleUseCase.execute(
                 RecordSaleUseCase.Request(
+                    CompanyId(companyUuid),
                     PeriodId(periodUuid), date, AccountId(arControlAccountUuid), AccountId(revenueAccountUuid),
                     AccountId(vatControlAccountUuid), lines, CustomerId(customerUuid), vatRateSchedule, request.description
                 )
@@ -138,6 +139,7 @@ fun Route.recordSaleAndCollectionRoutes(
         ) {
             val result = recordCollectionUseCase.execute(
                 RecordCollectionUseCase.Request(
+                    CompanyId(companyUuid),
                     PeriodId(periodUuid), date, AccountId(settlementAccountUuid), AccountId(arControlAccountUuid),
                     amount, CustomerId(customerUuid), request.description
                 )

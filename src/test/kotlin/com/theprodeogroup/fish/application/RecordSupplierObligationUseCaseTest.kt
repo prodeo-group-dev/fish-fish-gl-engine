@@ -64,7 +64,7 @@ class RecordSupplierObligationUseCaseTest {
         lines: List<RecordSupplierObligationUseCase.PurchaseLine> = listOf(RecordSupplierObligationUseCase.PurchaseLine(Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD)),
         supplierId: SupplierId = SupplierId.generate(),
         vatRateSchedule: VatRateSchedule = TestVatRates.IRELAND
-    ) = RecordSupplierObligationUseCase.Request(
+    ) = RecordSupplierObligationUseCase.Request(companyId, 
         periodId, TODAY, expenseAccountId, apAccountId, vatAccountId, lines, supplierId, vatRateSchedule, "Purchase from supplier"
     )
 
@@ -171,7 +171,7 @@ class RecordSupplierObligationUseCaseTest {
         val ap = account("2000", AccountType.LIABILITY)
         val vat = account("2150", AccountType.LIABILITY)
 
-        val req = RecordSupplierObligationUseCase.Request(
+        val req = RecordSupplierObligationUseCase.Request(companyId, 
             period.id, LocalDate.of(2026, 7, 15), expense.id, ap.id, vat.id,
             listOf(RecordSupplierObligationUseCase.PurchaseLine(Money(BigDecimal("100.00"), EUR), VatCategory.SECOND_REDUCED)),
             SupplierId.generate(), TestVatRates.IRELAND

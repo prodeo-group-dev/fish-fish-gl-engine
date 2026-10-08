@@ -62,7 +62,7 @@ class RecordSalesReturnUseCaseTest {
         arAccountId: AccountId,
         amount: String = "1200.00",
         customerId: CustomerId = CustomerId.generate()
-    ) = RecordSalesReturnUseCase.Request(
+    ) = RecordSalesReturnUseCase.Request(companyId, 
         periodId, TODAY, salesReturnsAccountId, arAccountId, Money(BigDecimal(amount), GBP), customerId,
         "Credit note for RMA-0001"
     )

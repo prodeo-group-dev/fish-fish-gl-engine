@@ -86,6 +86,7 @@ fun Route.recordSupplierObligationAndPaymentRoutes(
         ) {
             val result = recordSupplierObligationUseCase.execute(
                 RecordSupplierObligationUseCase.Request(
+                    CompanyId(companyUuid),
                     PeriodId(periodUuid), date, AccountId(expenseOrAssetAccountUuid), AccountId(apControlAccountUuid),
                     AccountId(vatControlAccountUuid), lines, SupplierId(supplierUuid), vatRateSchedule, request.description, journalSource
                 )
@@ -133,6 +134,7 @@ fun Route.recordSupplierObligationAndPaymentRoutes(
         ) {
             val result = recordSupplierPaymentUseCase.execute(
                 RecordSupplierPaymentUseCase.Request(
+                    CompanyId(companyUuid),
                     PeriodId(periodUuid), date, AccountId(apControlAccountUuid), AccountId(settlementAccountUuid),
                     amount, SupplierId(supplierUuid), request.description
                 )

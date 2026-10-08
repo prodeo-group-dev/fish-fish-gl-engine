@@ -1,5 +1,7 @@
 package com.theprodeogroup.fish.application
 
+import com.theprodeogroup.fish.domain.ledger.findOwnedBy
+import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.common.DomainEvent
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
@@ -60,6 +62,8 @@ class RecordFXRevaluationUseCase(
     private val journalEntryRepository: JournalEntryRepository
 ) {
     data class Request(
+        /** The Company the caller was authorized against - the Period must belong to it (T19 / F9). */
+        val companyId: CompanyId,
         val periodId: PeriodId,
         val date: LocalDate,
         val receivableAccountId: AccountId,
@@ -71,7 +75,7 @@ class RecordFXRevaluationUseCase(
     )
 
     fun execute(request: Request): RecordFXRevaluationResult {
-        val period = periodRepository.findById(request.periodId)
+        val period = periodRepository.findOwnedBy(request.periodId, request.companyId)
             ?: return RecordFXRevaluationResult.PeriodNotFound
         if (!period.allowsPosting()) {
             return RecordFXRevaluationResult.PeriodNotOpen

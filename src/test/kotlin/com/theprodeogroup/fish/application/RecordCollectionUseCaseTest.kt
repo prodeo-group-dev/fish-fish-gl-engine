@@ -59,7 +59,7 @@ class RecordCollectionUseCaseTest {
         arAccountId: AccountId,
         amount: String = "50000.00",
         customerId: CustomerId = CustomerId.generate()
-    ) = RecordCollectionUseCase.Request(
+    ) = RecordCollectionUseCase.Request(companyId, 
         periodId, TODAY, settlementAccountId, arAccountId, Money(BigDecimal(amount), GBP), customerId,
         "Bill for Collection settled - SOCIETE JALLOH ALPHAJOR SARLU"
     )

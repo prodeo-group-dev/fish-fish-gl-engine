@@ -74,6 +74,7 @@ fun Route.recordInventoryReceiptAndIssueRoutes(
         ) {
             val result = recordInventoryReceiptUseCase.execute(
                 RecordInventoryReceiptUseCase.Request(
+                    CompanyId(companyUuid),
                     PeriodId(periodUuid), date, AccountId(inventoryAssetAccountUuid), AccountId(contraAccountUuid),
                     committedCost, StockItemId(itemUuid), request.description, journalSource
                 )
@@ -118,6 +119,7 @@ fun Route.recordInventoryReceiptAndIssueRoutes(
         ) {
             val result = recordInventoryIssueUseCase.execute(
                 RecordInventoryIssueUseCase.Request(
+                    CompanyId(companyUuid),
                     PeriodId(periodUuid), date, AccountId(contraAccountUuid), AccountId(inventoryAssetAccountUuid),
                     committedCost, StockItemId(itemUuid), request.description, journalSource
                 )
