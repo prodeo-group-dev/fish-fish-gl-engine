@@ -243,6 +243,41 @@ class ReportsRoutesTest {
     }
 
     @Test
+    fun `given activity dated today, when the balance sheet is read as of yesterday, then it is empty, and as of today it matches the full sheet`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleActivity()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        suspend fun sheet(query: String): BalanceSheetResponseDto = client.get("/api/companies/${fixture.company.id.value}/reports/balance-sheet$query") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }.body()
+
+        val before = sheet("?asOf=${TODAY.minusDays(1)}")
+        before.totalAssets shouldBe "0.00"
+        before.totalLiabilities shouldBe "0.00"
+        before.retainedEarnings shouldBe "0.00"
+        before.isBalanced shouldBe true
+
+        sheet("?asOf=$TODAY") shouldBe sheet("")
+        sheet("").totalAssets shouldBe "1300.00"
+    }
+
+    @Test
+    fun `given an asOf that is not a date, when the balance sheet is requested, then it returns 400`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/reports/balance-sheet?asOf=yesterday") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.BadRequest
+    }
+
+    @Test
     fun `given no bearer token, when GET reports balance-sheet is called, then it returns 401`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }
