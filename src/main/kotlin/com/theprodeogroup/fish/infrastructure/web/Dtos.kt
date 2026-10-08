@@ -719,6 +719,33 @@ data class BalanceSheetResponseDto(
     val isBalanced: Boolean
 )
 
+/** One account row of a [TrialBalanceResponseDto]; exactly one of [debit]/[credit] is non-zero unless the account is at zero. */
+@Serializable
+data class TrialBalanceLineDto(
+    val accountId: String,
+    val code: String,
+    val name: String,
+    val type: String,
+    val debit: String,
+    val credit: String
+)
+
+/**
+ * `GET /companies/{companyId}/reports/trial-balance[?asOf=YYYY-MM-DD]` - every account of the
+ * Chart of Accounts by code with its debit or credit balance, and the two column totals.
+ * [asOf] is `null` when the report covers all posted activity.
+ */
+@Serializable
+data class TrialBalanceResponseDto(
+    val currency: String,
+    val asOf: String?,
+    val lines: List<TrialBalanceLineDto>,
+    val totalDebits: String,
+    val totalCredits: String,
+    val difference: String,
+    val isBalanced: Boolean
+)
+
 /** `GET /companies/{companyId}/reports/working-capital` - the "Reports" sub-page's Working Capital report. */
 @Serializable
 data class WorkingCapitalResponseDto(

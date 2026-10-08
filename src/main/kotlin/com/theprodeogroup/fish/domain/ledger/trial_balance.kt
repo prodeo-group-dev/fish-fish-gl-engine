@@ -10,7 +10,27 @@ data class TrialBalanceLine(
     val accountId: AccountId,
     val accountType: AccountType,
     val balance: Money
-)
+) {
+    /** True when [balance] (in the account's own normal direction) is a debit-column figure. */
+    private val inDebitColumn: Boolean
+        get() = (accountType.normalBalance() == com.theprodeogroup.fish.domain.common.TransactionSide.DEBIT) ==
+            (balance.amount.signum() >= 0)
+
+    private fun zero(): Money = Money(BigDecimal.ZERO, balance.currency)
+    private fun magnitude(): Money = Money(balance.amount.abs(), balance.currency)
+
+    /**
+     * The debit-column figure of a conventional trial balance: the account's net balance
+     * placed on its normal side, or on the opposite side when it runs the wrong way
+     * (an overdrawn Cash account shows in the credit column).
+     */
+    val debit: Money
+        get() = if (inDebitColumn) magnitude() else zero()
+
+    /** The credit-column figure; see [debit]. */
+    val credit: Money
+        get() = if (inDebitColumn) zero() else magnitude()
+}
 
 /**
  * The Trial Balance report (docs/DDD_Design.md Section 2.1/3.1) - a
@@ -40,6 +60,14 @@ class TrialBalance private constructor(
 
     val isBalanced: Boolean
         get() = totalAssetAndExpense == totalLiabilityEquityRevenue
+
+    /** Sum of the debit column - equals [totalCredits] exactly when every posted entry balanced. */
+    val totalDebits: Money
+        get() = lines.fold(Money(BigDecimal.ZERO, currency)) { sum, line -> sum + line.debit }
+
+    /** Sum of the credit column. */
+    val totalCredits: Money
+        get() = lines.fold(Money(BigDecimal.ZERO, currency)) { sum, line -> sum + line.credit }
 
     /**
      * IAS 1: a Cash/Asset account with a negative balance (an overdraft)
