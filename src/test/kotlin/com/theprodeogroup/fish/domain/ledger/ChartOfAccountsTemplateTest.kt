@@ -66,6 +66,37 @@ class ChartOfAccountsTemplateTest {
     }
 
     @Test
+    fun `given any business ClientType, when a template is requested, then it seeds accumulated depreciation, inventory and depreciation expense`() {
+        // UAT v2.2 W-M4/W-L4: depreciation was crediting Fixed Assets (1200) directly because no contra account
+        // existed, and there was no inventory asset account to post stock to.
+        for (clientType in ClientType.entries - ClientType.INDIVIDUAL) {
+            val byCode = ChartOfAccountsTemplate.accountsFor(clientType, CompanyId.generate()).associateBy { it.code }
+
+            val accumulated = requireNotNull(byCode["1210"]) { "$clientType has no 1210" }
+            accumulated.name shouldBe "Accumulated Depreciation"
+            accumulated.type shouldBe AccountType.ASSET
+            accumulated.classification shouldBe AccountClassification.NON_CURRENT
+
+            val inventory = requireNotNull(byCode["1300"]) { "$clientType has no 1300" }
+            inventory.name shouldBe "Inventory"
+            inventory.type shouldBe AccountType.ASSET
+            inventory.classification shouldBe AccountClassification.CURRENT
+
+            val depreciationExpense = requireNotNull(byCode["5500"]) { "$clientType has no 5500" }
+            depreciationExpense.name shouldBe "Depreciation Expense"
+            depreciationExpense.type shouldBe AccountType.EXPENSE
+        }
+    }
+
+    @Test
+    fun `given INDIVIDUAL, when a template is requested, then it does not seed fixed-asset accounts`() {
+        val codes = ChartOfAccountsTemplate.accountsFor(ClientType.INDIVIDUAL, CompanyId.generate()).map { it.code }
+
+        ("1210" in codes) shouldBe false
+        ("1300" in codes) shouldBe false
+    }
+
+    @Test
     fun `given every ClientType, when a template is requested, then every Asset and Liability account has a classification`() {
         for (clientType in ClientType.entries) {
             val accounts = ChartOfAccountsTemplate.accountsFor(clientType, CompanyId.generate())
