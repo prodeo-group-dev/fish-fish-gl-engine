@@ -3,6 +3,7 @@ package com.theprodeogroup.fish.infrastructure.web
 import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
 import com.theprodeogroup.fish.application.ComputeCashFlowUseCase
 import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
+import com.theprodeogroup.fish.application.ComputeTrialBalanceUseCase
 import com.theprodeogroup.fish.application.ComputeWorkingCapitalUseCase
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
@@ -25,8 +26,59 @@ fun Route.reportsRoutes(
     computeProfitAndLossUseCase: ComputeProfitAndLossUseCase,
     computeCashFlowUseCase: ComputeCashFlowUseCase,
     computeWorkingCapitalUseCase: ComputeWorkingCapitalUseCase,
+    computeTrialBalanceUseCase: ComputeTrialBalanceUseCase,
     companyRepository: CompanyRepository
 ) {
+    // The Ledger's test of correctness (Femi, 2026-10-08): a debit column and a credit column that
+    // must agree. `?asOf=YYYY-MM-DD` limits it to entries dated on or before that day.
+    get("/companies/{companyId}/reports/trial-balance") {
+        val companyId = call.parseCompanyId() ?: return@get
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
+        if (!call.verifyClaimedTenant(tenantId)) return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
+
+        val asOfRaw = call.request.queryParameters["asOf"]
+        val asOf = if (asOfRaw == null) null else try {
+            java.time.LocalDate.parse(asOfRaw)
+        } catch (e: java.time.format.DateTimeParseException) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_as_of", "asOf must be a date, YYYY-MM-DD"))
+            return@get
+        }
+
+        when (val result = computeTrialBalanceUseCase.execute(companyId, asOf)) {
+            is ComputeTrialBalanceUseCase.Result.Success -> {
+                val tb = result.trialBalance
+                call.respond(
+                    TrialBalanceResponseDto(
+                        currency = tb.currency.currencyCode,
+                        asOf = result.asOf?.toString(),
+                        lines = tb.lines
+                            .map { line ->
+                                val account = result.accounts.getValue(line.accountId)
+                                TrialBalanceLineDto(
+                                    accountId = line.accountId.value.toString(),
+                                    code = account.code,
+                                    name = account.name,
+                                    type = line.accountType.name,
+                                    debit = line.debit.amount.toPlainString(),
+                                    credit = line.credit.amount.toPlainString()
+                                )
+                            }
+                            .sortedBy { it.code },
+                        totalDebits = tb.totalDebits.amount.toPlainString(),
+                        totalCredits = tb.totalCredits.amount.toPlainString(),
+                        difference = (tb.totalDebits - tb.totalCredits).amount.toPlainString(),
+                        isBalanced = tb.totalDebits == tb.totalCredits
+                    )
+                )
+            }
+            ComputeTrialBalanceUseCase.Result.CompanyNotFound ->
+                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
+            ComputeTrialBalanceUseCase.Result.NoAccountsForCompany ->
+                call.respond(HttpStatusCode.Conflict, ErrorResponseDto("no_accounts", "This Company has no Chart of Accounts"))
+        }
+    }
+
     get("/companies/{companyId}/reports/balance-sheet") {
         val companyId = call.parseCompanyId() ?: return@get
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get

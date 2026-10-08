@@ -255,6 +255,98 @@ class ReportsRoutesTest {
         response.status shouldBe HttpStatusCode.Unauthorized
     }
 
+    private suspend fun io.ktor.client.HttpClient.report(fixture: Fixture, path: String) =
+        get("/api/companies/${fixture.company.id.value}/reports/$path") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }
+
+    @Test
+    fun `given the sample activity, when GET reports trial-balance is called, then every account shows in its column and debits equal credits`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleActivity()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.report(fixture, "trial-balance")
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: TrialBalanceResponseDto = response.body()
+        body.currency shouldBe "GBP"
+        body.asOf shouldBe null
+        body.lines.map { it.code } shouldBe listOf("1000", "2000", "3000", "4000", "5000")
+        body.lines.map { it.debit to it.credit } shouldBe listOf(
+            "1300.00" to "0.00", "0.00" to "100.00", "0.00" to "1000.00", "0.00" to "500.00", "300.00" to "0.00"
+        )
+        body.totalDebits shouldBe "1600.00"
+        body.totalCredits shouldBe "1600.00"
+        body.difference shouldBe "0.00"
+        body.isBalanced shouldBe true
+    }
+
+    @Test
+    fun `given the sample activity, when the trial balance is read next to the balance sheet and profit and loss, then the three agree`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleActivity()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val tb: TrialBalanceResponseDto = client.report(fixture, "trial-balance").body()
+        val bs: BalanceSheetResponseDto = client.report(fixture, "balance-sheet").body()
+        val pl: ProfitAndLossResponseDto = client.report(fixture, "profit-and-loss").body()
+
+        fun sum(type: String) = tb.lines.filter { it.type == type }
+            .fold(BigDecimal.ZERO) { acc, l -> acc + BigDecimal(l.debit) - BigDecimal(l.credit) }
+        fun credits(type: String) = -sum(type)
+
+        sum("ASSET") shouldBe BigDecimal(bs.totalAssets)
+        credits("LIABILITY") shouldBe BigDecimal(bs.totalLiabilities)
+        credits("EQUITY") + BigDecimal(bs.retainedEarnings) shouldBe BigDecimal(bs.totalEquity)
+        credits("REVENUE") shouldBe BigDecimal(pl.totalRevenue)
+        sum("EXPENSE") shouldBe BigDecimal(pl.totalExpense)
+        credits("REVENUE") - sum("EXPENSE") shouldBe BigDecimal(pl.netIncome)
+        BigDecimal(bs.totalAssets) shouldBe BigDecimal(bs.totalLiabilities) + BigDecimal(bs.totalEquity)
+    }
+
+    @Test
+    fun `given activity dated today, when the trial balance is read as of yesterday, then it is empty and still balanced`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleActivity()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val body: TrialBalanceResponseDto = client.report(fixture, "trial-balance?asOf=${TODAY.minusDays(1)}").body()
+
+        body.asOf shouldBe TODAY.minusDays(1).toString()
+        body.totalDebits shouldBe "0.00"
+        body.totalCredits shouldBe "0.00"
+        body.lines.all { it.debit == "0.00" && it.credit == "0.00" } shouldBe true
+        body.isBalanced shouldBe true
+    }
+
+    @Test
+    fun `given an asOf that is not a date, when the trial balance is requested, then it returns 400`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.report(fixture, "trial-balance?asOf=yesterday").status shouldBe HttpStatusCode.BadRequest
+    }
+
+    @Test
+    fun `given a claimed Tenant that does not own the Company, when the trial balance is requested, then it returns 403`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/reports/trial-balance") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", TenantId.generate().value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.Forbidden
+    }
+
     @Test
     fun `given the sample activity, when GET reports profit-and-loss is called, then it returns revenue, expense and net income`() = testApplication {
         val fixture = Fixture()
