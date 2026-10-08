@@ -89,3 +89,17 @@ interface BankReconciliationRepository {
      */
     fun findAllByCompany(companyId: CompanyId, postedEntries: List<JournalEntry>, accountId: AccountId? = null): List<BankReconciliation>
 }
+
+/**
+ * The only way a posting use case may load a Period named by its caller
+ * (RBAC finding F9 / T19, 2026-10-08): returns the Period only when it
+ * belongs to [companyId], the Company the caller was authorized against.
+ * A Period of any other Company - another Tenant's or a sibling's - comes
+ * back `null`, so every caller answers it exactly as a Period that does
+ * not exist (`period_not_found`), never confirming it exists elsewhere.
+ * Applies to service credentials too: they bypass the membership check,
+ * not this one. A raw `findById(request.periodId)` in `application/` is
+ * rejected by `PeriodOwnershipGuardTest`.
+ */
+fun PeriodRepository.findOwnedBy(id: PeriodId, companyId: CompanyId): Period? =
+    findById(id)?.takeIf { it.companyId == companyId }

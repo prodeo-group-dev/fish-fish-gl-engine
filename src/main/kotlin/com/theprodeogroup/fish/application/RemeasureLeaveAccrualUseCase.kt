@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.application
 
+import com.theprodeogroup.fish.domain.ledger.findOwnedBy
 import com.theprodeogroup.fish.domain.common.DomainEvent
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
@@ -93,7 +94,7 @@ class RemeasureLeaveAccrualUseCase(
         val leaveAccrual = leaveAccrualRepository.findById(request.leaveAccrualId)
             ?: return RemeasureLeaveAccrualResult.LeaveAccrualNotFound
 
-        val period = periodRepository.findById(request.periodId)
+        val period = periodRepository.findOwnedBy(request.periodId, leaveAccrual.companyId)
             ?: return RemeasureLeaveAccrualResult.PeriodNotFound
         if (!period.allowsPosting()) {
             return RemeasureLeaveAccrualResult.PeriodNotOpen

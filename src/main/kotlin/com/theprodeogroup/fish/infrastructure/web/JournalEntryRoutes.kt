@@ -300,7 +300,7 @@ fun Route.journalEntryRoutes(
             idempotencyKeyRepository, tenantId, "post-journal-entry", Json.encodeToString(PostJournalEntryRequestDto.serializer(), request)
         ) {
             val result = postJournalEntryUseCase.execute(
-                PostJournalEntryUseCase.Request(PeriodId(periodId), date, lines, source, request.description)
+                PostJournalEntryUseCase.Request(period.companyId, PeriodId(periodId), date, lines, source, request.description)
             )
 
             when (result) {

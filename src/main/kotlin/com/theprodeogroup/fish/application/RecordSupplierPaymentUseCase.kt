@@ -1,5 +1,7 @@
 package com.theprodeogroup.fish.application
 
+import com.theprodeogroup.fish.domain.ledger.findOwnedBy
+import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.DomainEvent
 import com.theprodeogroup.fish.domain.common.JournalSource
@@ -62,6 +64,8 @@ class RecordSupplierPaymentUseCase(
     private val journalEntryRepository: JournalEntryRepository
 ) {
     data class Request(
+        /** The Company the caller was authorized against - the Period must belong to it (T19 / F9). */
+        val companyId: CompanyId,
         val periodId: PeriodId,
         val date: LocalDate,
         val apControlAccountId: AccountId,
@@ -76,7 +80,7 @@ class RecordSupplierPaymentUseCase(
             return RecordSupplierPaymentResult.InvalidAmount
         }
 
-        val period = periodRepository.findById(request.periodId)
+        val period = periodRepository.findOwnedBy(request.periodId, request.companyId)
             ?: return RecordSupplierPaymentResult.PeriodNotFound
         if (!period.allowsPosting()) {
             return RecordSupplierPaymentResult.PeriodNotOpen

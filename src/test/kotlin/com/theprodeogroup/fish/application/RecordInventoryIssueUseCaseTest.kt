@@ -54,7 +54,7 @@ class RecordInventoryIssueUseCaseTest {
         inventoryAssetAccountId: AccountId,
         committedCost: String = "500.00",
         itemId: StockItemId = StockItemId.generate()
-    ) = RecordInventoryIssueUseCase.Request(
+    ) = RecordInventoryIssueUseCase.Request(companyId, 
         periodId, TODAY, contraAccountId, inventoryAssetAccountId, Money(BigDecimal(committedCost), GBP), itemId,
         "Issue of Refined White Sugar against Sales Order"
     )

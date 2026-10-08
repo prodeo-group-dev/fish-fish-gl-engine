@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.application
 
+import com.theprodeogroup.fish.domain.ledger.findOwnedBy
 import com.theprodeogroup.fish.domain.common.DomainEvent
 import com.theprodeogroup.fish.domain.fixedassets.FixedAsset
 import com.theprodeogroup.fish.domain.fixedassets.FixedAssetId
@@ -72,7 +73,7 @@ class DisposeFixedAssetUseCase(
             return DisposeFixedAssetResult.AccumulatedImpairmentAccountRequired
         }
 
-        val period = periodRepository.findById(request.periodId)
+        val period = periodRepository.findOwnedBy(request.periodId, fixedAsset.companyId)
             ?: return DisposeFixedAssetResult.PeriodNotFound
         if (!period.allowsPosting()) {
             return DisposeFixedAssetResult.PeriodNotOpen

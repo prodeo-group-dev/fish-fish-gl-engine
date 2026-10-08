@@ -61,7 +61,7 @@ class PostJournalEntryUseCaseTest {
         val revenue = account("4000", "Sales", AccountType.REVENUE)
 
         val result = useCase.execute(
-            PostJournalEntryUseCase.Request(period.id, TODAY, balancedLines(cash, revenue), JournalSource.MANUAL)
+            PostJournalEntryUseCase.Request(companyId, period.id, TODAY, balancedLines(cash, revenue), JournalSource.MANUAL)
         )
 
         val success = result.shouldBeInstanceOf<PostJournalEntryResult.Success>()
@@ -76,7 +76,7 @@ class PostJournalEntryUseCaseTest {
         val cash = account("1000", "Cash")
         val revenue = account("4000", "Sales", AccountType.REVENUE)
 
-        useCase.execute(PostJournalEntryUseCase.Request(period.id, TODAY, balancedLines(cash, revenue), JournalSource.MANUAL))
+        useCase.execute(PostJournalEntryUseCase.Request(companyId, period.id, TODAY, balancedLines(cash, revenue), JournalSource.MANUAL))
 
         accountRepository.saveCalls shouldContain cash.id
         accountRepository.saveCalls shouldContain revenue.id
@@ -90,7 +90,7 @@ class PostJournalEntryUseCaseTest {
         val revenue = account("4000", "Sales", AccountType.REVENUE)
 
         val result = useCase.execute(
-            PostJournalEntryUseCase.Request(period.id, TODAY, balancedLines(cash, revenue), JournalSource.MANUAL)
+            PostJournalEntryUseCase.Request(companyId, period.id, TODAY, balancedLines(cash, revenue), JournalSource.MANUAL)
         )
 
         val success = result.shouldBeInstanceOf<PostJournalEntryResult.Success>()
@@ -103,7 +103,7 @@ class PostJournalEntryUseCaseTest {
         val revenue = account("4000", "Sales", AccountType.REVENUE)
 
         val result = useCase.execute(
-            PostJournalEntryUseCase.Request(PeriodId.generate(), TODAY, balancedLines(cash, revenue), JournalSource.MANUAL)
+            PostJournalEntryUseCase.Request(companyId, PeriodId.generate(), TODAY, balancedLines(cash, revenue), JournalSource.MANUAL)
         )
 
         result.shouldBeInstanceOf<PostJournalEntryResult.PeriodNotFound>()
@@ -118,7 +118,7 @@ class PostJournalEntryUseCaseTest {
         val revenue = account("4000", "Sales", AccountType.REVENUE)
 
         val result = useCase.execute(
-            PostJournalEntryUseCase.Request(period.id, TODAY, balancedLines(cash, revenue), JournalSource.MANUAL)
+            PostJournalEntryUseCase.Request(companyId, period.id, TODAY, balancedLines(cash, revenue), JournalSource.MANUAL)
         )
 
         result.shouldBeInstanceOf<PostJournalEntryResult.PeriodNotOpen>()
@@ -135,7 +135,7 @@ class PostJournalEntryUseCaseTest {
             JournalLine(revenue.id, Money(BigDecimal("50.00"), GBP), TransactionSide.CREDIT)
         )
 
-        val result = useCase.execute(PostJournalEntryUseCase.Request(period.id, TODAY, unbalanced, JournalSource.MANUAL))
+        val result = useCase.execute(PostJournalEntryUseCase.Request(companyId, period.id, TODAY, unbalanced, JournalSource.MANUAL))
 
         val invalid = result.shouldBeInstanceOf<PostJournalEntryResult.InvalidLines>()
         invalid.errors.isEmpty() shouldBe false
@@ -156,7 +156,7 @@ class PostJournalEntryUseCaseTest {
         // the use case itself did, not the test's own setup.
         val saveCallsBeforeExecute = accountRepository.saveCalls.size
 
-        val result = useCase.execute(PostJournalEntryUseCase.Request(period.id, TODAY, lines, JournalSource.MANUAL))
+        val result = useCase.execute(PostJournalEntryUseCase.Request(companyId, period.id, TODAY, lines, JournalSource.MANUAL))
 
         val notFound = result.shouldBeInstanceOf<PostJournalEntryResult.AccountNotFound>()
         notFound.accountId shouldBe missingAccountId
@@ -179,7 +179,7 @@ class PostJournalEntryUseCaseTest {
         )
         val saveCallsBeforeExecute = accountRepository.saveCalls.size
 
-        val result = useCase.execute(PostJournalEntryUseCase.Request(period.id, TODAY, lines, JournalSource.MANUAL))
+        val result = useCase.execute(PostJournalEntryUseCase.Request(companyId, period.id, TODAY, lines, JournalSource.MANUAL))
 
         val notFound = result.shouldBeInstanceOf<PostJournalEntryResult.AccountNotFound>()
         notFound.accountId shouldBe otherCompanysRevenue.id
