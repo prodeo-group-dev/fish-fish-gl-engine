@@ -102,7 +102,7 @@ class Borrowing private constructor(
         )
         return JournalEntry.create(
             periodId, date, lines, JournalSource.SYSTEM,
-            "Interest accrual - $lenderName ($id)", journalEntryId
+            "Interest accrual - $lenderName", journalEntryId
         )
     }
 
@@ -150,7 +150,7 @@ class Borrowing private constructor(
         )
         return JournalEntry.create(
             periodId, date, lines, JournalSource.SYSTEM,
-            "Capitalised interest - $lenderName ($id)", journalEntryId
+            "Capitalised interest - $lenderName", journalEntryId
         )
     }
 
@@ -188,7 +188,7 @@ class Borrowing private constructor(
         )
         return JournalEntry.create(
             periodId, date, lines, JournalSource.MANUAL,
-            "Interest payment - $lenderName ($id)", journalEntryId
+            "Interest payment - $lenderName", journalEntryId
         )
     }
 
@@ -223,7 +223,7 @@ class Borrowing private constructor(
         )
         return JournalEntry.create(
             periodId, date, lines, JournalSource.MANUAL,
-            "Principal repayment - $lenderName ($id)", journalEntryId
+            "Principal repayment - $lenderName", journalEntryId
         )
     }
 

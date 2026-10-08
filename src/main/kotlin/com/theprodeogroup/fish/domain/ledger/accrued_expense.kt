@@ -74,7 +74,7 @@ class AccruedExpense private constructor(
         )
         return JournalEntry.create(
             periodId, date, lines, JournalSource.SYSTEM,
-            "Accrual - $description ($id)", journalEntryId
+            "Accrual - $description", journalEntryId
         )
     }
 
@@ -108,7 +108,7 @@ class AccruedExpense private constructor(
         )
         return JournalEntry.create(
             periodId, date, lines, JournalSource.REVERSAL,
-            "Accrual reversal - $description ($id)", journalEntryId
+            "Accrual reversal - $description", journalEntryId
         )
     }
 

@@ -91,7 +91,7 @@ class Provision private constructor(
         balance = targetAmount
         return JournalEntry.create(
             periodId, date, lines, JournalSource.SYSTEM,
-            "Provision remeasurement - $description ($id)", journalEntryId
+            "Provision remeasurement - $description", journalEntryId
         )
     }
 
@@ -136,7 +136,7 @@ class Provision private constructor(
         )
         return JournalEntry.create(
             periodId, date, lines, JournalSource.MANUAL,
-            "Provision utilized - $description ($id)", journalEntryId
+            "Provision utilized - $description", journalEntryId
         )
     }
 
