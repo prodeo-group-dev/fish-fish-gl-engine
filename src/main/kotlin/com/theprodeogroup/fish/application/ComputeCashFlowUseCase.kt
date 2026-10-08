@@ -44,7 +44,7 @@ class ComputeCashFlowUseCase(
         val entries = journalEntryRepository.findAllByCompany(companyId)
 
         return Result.Success(
-            StatementOfCashFlows.of(cashAccount, entries, openPeriod.startDate, openPeriod.endDate, company.baseCurrency)
+            StatementOfCashFlows.of(cashAccount, entries, openPeriod.startDate, openPeriod.endDate, company.baseCurrency, accounts)
         )
     }
 }
