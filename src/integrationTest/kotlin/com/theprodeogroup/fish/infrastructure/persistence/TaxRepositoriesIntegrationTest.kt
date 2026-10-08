@@ -152,15 +152,16 @@ class TaxRepositoriesIntegrationTest {
     }
 
     @Test
-    fun `given no TaxRule for a jurisdiction, when looked up, then it returns null`() {
-        // UK is deliberately never given a CORPORATE_INCOME_TAX TaxRule by
-        // any *integrationTest* (a real, non-ephemeral database) - every
-        // other TaxRule-creating test in this class/ComputeTaxUseCaseIntegrationTest
-        // uses LR/NG/GN/CI/SL instead, leaving UK (and IE) free for this
-        // negative case to rely on staying genuinely absent across runs.
-        val found = taxRuleRepository.findByJurisdictionAndTaxType(Jurisdiction.UK, TaxType.CORPORATE_INCOME_TAX)
+    fun `given the reference migration, when the UK and IE rules are looked up, then they are seeded and no test overwrites them`() {
+        // V31__reference_tax_rules.sql seeds UK, IE and SL (UAT v2.2 W-H1). This replaces the old
+        // "UK has no rule" negative case, which the seed makes false by design. UK and IE are never
+        // upserted by any *integrationTest* (a real, non-ephemeral database), so they must read back
+        // exactly as seeded; the missing-rule path (409 no_tax_rule) is covered at the route level.
+        val uk = requireNotNull(taxRuleRepository.findByJurisdictionAndTaxType(Jurisdiction.UK, TaxType.CORPORATE_INCOME_TAX))
+        (uk.rateStructure as RateStructure.Tiered).marginalRelief?.fraction?.compareTo(BigDecimal("0.015")) shouldBe 0
 
-        found shouldBe null
+        val ie = requireNotNull(taxRuleRepository.findByJurisdictionAndTaxType(Jurisdiction.IE, TaxType.CORPORATE_INCOME_TAX))
+        (ie.rateStructure as RateStructure.CategorySplit).ratesByCategory.keys shouldBe setOf("TRADING", "PASSIVE")
     }
 
     /** A real Tenant + Company + Period, needed since `tax_computations` carries real FKs to `companies`/`periods`/`tax_rules`. */
