@@ -92,15 +92,30 @@ fun Route.taxRoutes(
             }
         }
 
-        val result = computeTaxUseCase.execute(
-            ComputeTaxUseCase.Request(
-                companyId = companyId,
-                periodId = PeriodId(periodUuid),
-                taxRule = taxRule,
-                currency = company.baseCurrency,
-                inputs = TaxComputationInputs(category = request.category, turnover = turnover, fixedAssets = fixedAssets)
+        // A rule that needs an input the caller did not supply (Ireland's category TRADING/PASSIVE, a
+        // threshold's turnover or fixed assets) or supplied wrongly makes the rate structure throw
+        // IllegalArgumentException; that is the caller's mistake, a 400 - not a server error. The
+        // message is fixed text, never the exception's.
+        val result = try {
+            computeTaxUseCase.execute(
+                ComputeTaxUseCase.Request(
+                    companyId = companyId,
+                    periodId = PeriodId(periodUuid),
+                    taxRule = taxRule,
+                    currency = company.baseCurrency,
+                    inputs = TaxComputationInputs(category = request.category, turnover = turnover, fixedAssets = fixedAssets)
+                )
             )
-        )
+        } catch (e: IllegalArgumentException) {
+            call.respond(
+                HttpStatusCode.BadRequest,
+                ErrorResponseDto(
+                    "invalid_tax_inputs",
+                    "This jurisdiction's tax rule needs category, turnover or fixedAssets, and one is missing or not recognised"
+                )
+            )
+            return@post
+        }
 
         when (result) {
             is ComputeTaxResult.Success -> call.respond(HttpStatusCode.Created, result.computation.toDto())

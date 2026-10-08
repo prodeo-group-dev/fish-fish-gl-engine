@@ -253,6 +253,88 @@ class TaxRoutesTest {
         body.currency shouldBe "GBP"
     }
 
+    private suspend fun io.ktor.client.HttpClient.computeTax(fixture: Fixture, body: String) =
+        post("/api/companies/${fixture.company.id.value}/tax") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+
+    private fun Fixture.saveCategoryRule() {
+        taxRuleRepository.save(
+            TaxRule.create(
+                Jurisdiction.UK, TaxType.CORPORATE_INCOME_TAX,
+                com.theprodeogroup.fish.domain.tax.RateStructure.CategorySplit(mapOf("TRADING" to BigDecimal("0.125"), "PASSIVE" to BigDecimal("0.25")))
+            )
+        )
+    }
+
+    @Test
+    fun `given a category rule and a known category, when tax is computed, then the category's rate applies`() = testApplication {
+        // UAT v2.2: Ireland's seeded rule is a CategorySplit (TRADING 12.5% / PASSIVE 25%).
+        val fixture = Fixture()
+        fixture.postSampleActivity()
+        fixture.saveCategoryRule()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.computeTax(fixture, """{"periodId": "${fixture.period.id.value}", "category": "TRADING"}""")
+
+        response.status shouldBe HttpStatusCode.Created
+        response.body<TaxComputationDto>().taxDue shouldBe "37.50"
+    }
+
+    @Test
+    fun `given a category rule and no category, when tax is computed, then it returns 400 invalid_tax_inputs, not a server error`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleActivity()
+        fixture.saveCategoryRule()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.computeTax(fixture, """{"periodId": "${fixture.period.id.value}"}""")
+
+        response.status shouldBe HttpStatusCode.BadRequest
+        response.body<ErrorResponseDto>().error shouldBe "invalid_tax_inputs"
+    }
+
+    @Test
+    fun `given a category rule and an unknown category, when tax is computed, then it returns 400 invalid_tax_inputs`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleActivity()
+        fixture.saveCategoryRule()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.computeTax(fixture, """{"periodId": "${fixture.period.id.value}", "category": "SOMETHING_ELSE"}""")
+
+        response.status shouldBe HttpStatusCode.BadRequest
+        response.body<ErrorResponseDto>().error shouldBe "invalid_tax_inputs"
+    }
+
+    @Test
+    fun `given the seeded UK tiered rule, when tax is computed on a small profit, then the small profits rate applies`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleActivity()
+        fixture.taxRuleRepository.save(
+            TaxRule.create(
+                Jurisdiction.UK, TaxType.CORPORATE_INCOME_TAX,
+                com.theprodeogroup.fish.domain.tax.RateStructure.Tiered(
+                    listOf(com.theprodeogroup.fish.domain.tax.Tier(BigDecimal("50000"), BigDecimal("0.19")), com.theprodeogroup.fish.domain.tax.Tier(null, BigDecimal("0.25"))),
+                    com.theprodeogroup.fish.domain.tax.MarginalRelief(BigDecimal("50000"), BigDecimal("250000"), BigDecimal("0.015"))
+                )
+            )
+        )
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.computeTax(fixture, """{"periodId": "${fixture.period.id.value}"}""")
+
+        response.status shouldBe HttpStatusCode.Created
+        response.body<TaxComputationDto>().taxDue shouldBe "57.00"
+    }
+
     @Test
     fun `given no bearer token, when tax is computed, then it returns 401`() = testApplication {
         val fixture = Fixture()
