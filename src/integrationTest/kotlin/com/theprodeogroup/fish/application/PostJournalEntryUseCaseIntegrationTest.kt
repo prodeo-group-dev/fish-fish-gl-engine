@@ -71,7 +71,7 @@ class PostJournalEntryUseCaseIntegrationTest {
             JournalLine(revenue.id, Money(BigDecimal("250.00"), GBP), TransactionSide.CREDIT)
         )
 
-        val result = useCase.execute(PostJournalEntryUseCase.Request(period.id, TODAY, lines, JournalSource.MANUAL, "Integration test sale"))
+        val result = useCase.execute(PostJournalEntryUseCase.Request(period.companyId, period.id, TODAY, lines, JournalSource.MANUAL, "Integration test sale"))
 
         val success = result.shouldBeInstanceOf<PostJournalEntryResult.Success>()
         val reloadedEntry = requireNotNull(journalEntryRepository.findById(success.entry.id))
