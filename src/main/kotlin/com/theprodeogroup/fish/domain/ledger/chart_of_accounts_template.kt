@@ -89,6 +89,9 @@ object ChartOfAccountsTemplate {
      * tagging step; a Company created before this existed re-tags or creates
      * its own through the account routes.
      */
+    const val ACCUMULATED_DEPRECIATION_CODE = "1210"
+    const val INVENTORY_CODE = "1300"
+    const val DEPRECIATION_EXPENSE_CODE = "5500"
     const val COST_OF_SALES_CODE = "5010"
     const val INTEREST_EXPENSE_CODE = "5600"
     const val INCOME_TAX_EXPENSE_CODE = "5700"
@@ -165,6 +168,7 @@ object ChartOfAccountsTemplate {
         ),
         payrollAccounts(companyId),
         reportingExpenseAccounts(companyId),
+        fixedAssetAndInventoryAccounts(companyId),
         facilityLiabilityAccounts(companyId),
         vatAccounts(companyId),
     ).flatten()
@@ -185,6 +189,7 @@ object ChartOfAccountsTemplate {
         ),
         payrollAccounts(companyId),
         reportingExpenseAccounts(companyId),
+        fixedAssetAndInventoryAccounts(companyId),
         facilityLiabilityAccounts(companyId),
         vatAccounts(companyId),
     ).flatten()
@@ -206,6 +211,7 @@ object ChartOfAccountsTemplate {
         ),
         payrollAccounts(companyId),
         reportingExpenseAccounts(companyId),
+        fixedAssetAndInventoryAccounts(companyId),
         facilityLiabilityAccounts(companyId),
         vatAccounts(companyId),
     ).flatten()
@@ -227,9 +233,27 @@ object ChartOfAccountsTemplate {
         ),
         payrollAccounts(companyId),
         reportingExpenseAccounts(companyId),
+        fixedAssetAndInventoryAccounts(companyId),
         facilityLiabilityAccounts(companyId),
         vatAccounts(companyId),
     ).flatten()
+
+    /**
+     * Accumulated Depreciation (a contra-asset: an ASSET account that normally carries a
+     * credit balance, shown against Fixed Assets), Inventory and Depreciation Expense (added
+     * 2026-10-08, UAT v2.2 W-M4/W-L4). Depreciation used to credit Fixed Assets (1200)
+     * directly because no contra account existed, and stock had no asset account to post to.
+     * Seeded on every business template, same scoping as [payrollAccounts]; personal
+     * finance ([ClientType.INDIVIDUAL]) holds neither. A Company created before this
+     * existed needs 1210, 1300 and 5500 created through the account routes.
+     * Note for any future overdraft reclassification: [TrialBalance.overdraftLines] flags
+     * every negative ASSET balance, which 1210 will normally be - it is not an overdraft.
+     */
+    private fun fixedAssetAndInventoryAccounts(companyId: CompanyId): List<Account> = listOf(
+        asset(companyId, ACCUMULATED_DEPRECIATION_CODE, "Accumulated Depreciation", AccountClassification.NON_CURRENT),
+        asset(companyId, INVENTORY_CODE, "Inventory", AccountClassification.CURRENT),
+        expense(companyId, DEPRECIATION_EXPENSE_CODE, "Depreciation Expense"),
+    )
 
     private fun facilityLiabilityAccounts(companyId: CompanyId): List<Account> = listOf(
         liability(companyId, FACILITY_LIABILITY_CODE, "Trade Finance Facility Payable", AccountClassification.CURRENT),
