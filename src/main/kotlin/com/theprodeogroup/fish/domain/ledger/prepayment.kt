@@ -72,7 +72,7 @@ class Prepayment private constructor(
         )
         return JournalEntry.create(
             periodId, date, lines, JournalSource.SYSTEM,
-            "Prepayment release - $description ($id)", journalEntryId
+            "Prepayment release - $description", journalEntryId
         )
     }
 

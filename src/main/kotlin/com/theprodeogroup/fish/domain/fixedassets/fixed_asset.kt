@@ -121,7 +121,7 @@ class FixedAsset private constructor(
         )
         return JournalEntry.create(
             periodId, date, lines, JournalSource.SYSTEM,
-            "Depreciation - $name ($id)", journalEntryId
+            "Depreciation - $name", journalEntryId
         )
     }
 
@@ -180,7 +180,7 @@ class FixedAsset private constructor(
         accumulatedImpairmentLoss = target
         return JournalEntry.create(
             periodId, date, lines, JournalSource.SYSTEM,
-            "Impairment assessment - $name ($id)", journalEntryId
+            "Impairment assessment - $name", journalEntryId
         )
     }
 
@@ -272,7 +272,7 @@ class FixedAsset private constructor(
         isDisposed = true
         return JournalEntry.create(
             periodId, date, lines, JournalSource.MANUAL,
-            "Disposal - $name ($id)", journalEntryId
+            "Disposal - $name", journalEntryId
         )
     }
 
