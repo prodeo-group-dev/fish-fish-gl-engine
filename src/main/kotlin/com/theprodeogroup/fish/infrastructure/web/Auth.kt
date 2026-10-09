@@ -590,10 +590,20 @@ suspend fun ApplicationCall.resolveTenantForCompany(companyId: CompanyId, compan
  * as a private helper in `PayrollRoutes`; this is the shared version
  * every route in `infrastructure.web` should call from here on.
  * Responds 400/403 and returns `false` on failure.
+ *
+ * Contract (T15 / G4, Femi's D5 via CM, 2026-10-09):
+ * - A person must send `X-Tenant-Id`: absent is 400, a malformed value is 400, a Tenant that does not own the
+ *   Company is 403.
+ * - A service login (sop/pop/im/hr) MAY omit it. Its credential is valid for every Tenant by design (and the
+ *   G3 allow-list already limits which routes it may reach), so the header adds nothing for it; GL's own
+ *   `companies.tenant_id`, already resolved into [actualTenantId] by [resolveTenantForCompany], is the
+ *   authority and the request proceeds. A header that IS sent is still checked exactly as above (malformed
+ *   400, mismatch 403), and an unknown Company is still 404 before this point.
  */
 suspend fun ApplicationCall.verifyClaimedTenant(actualTenantId: TenantId): Boolean {
     val claimedTenantIdRaw = request.header("X-Tenant-Id")
     if (claimedTenantIdRaw == null) {
+        if (principal<AuthenticatedCaller>()?.isServiceAccount == true) return true
         respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "X-Tenant-Id header is required"))
         return false
     }

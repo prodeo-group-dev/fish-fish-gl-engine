@@ -361,9 +361,10 @@ class CrossCompanyPostingIsolationRouteTest {
 
     @Test
     fun `every service credential is held to the claimed Tenant on the posting routes it uses`() = testApplication {
-        // T15 / G2 (Femi's D5): service logins are valid for all Tenants, but the Company a request names must
-        // belong to the Tenant it claims in X-Tenant-Id: absent header 400, either wrong pairing 403, unknown
-        // Company 404. Each credential is exercised on the routes it really calls.
+        // T15 / G2 (Femi's D5): service logins are valid for all Tenants, but a Tenant a request CLAIMS in
+        // X-Tenant-Id must own the Company it names: either wrong pairing 403, unknown Company 404.
+        // T15 / G4: a service may also OMIT the header; GL then derives the Tenant from the Company and posts.
+        // Each credential is exercised on the routes it really calls.
         val fixture = Fixture()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
@@ -373,9 +374,10 @@ class CrossCompanyPostingIsolationRouteTest {
         val tenantB = b.company.tenantId.value
         val failures = mutableListOf<String>()
 
-        suspend fun send(route: Route, token: String, header: java.util.UUID?, body: String) = client.post(route.path) {
+        suspend fun send(route: Route, token: String, header: java.util.UUID?, body: String, rawHeader: String? = null) = client.post(route.path) {
             header(HttpHeaders.Authorization, "Bearer $token")
             if (header != null) header("X-Tenant-Id", header.toString())
+            if (rawHeader != null) header("X-Tenant-Id", rawHeader)
             contentType(ContentType.Application.Json)
             setBody(body)
         }
@@ -389,7 +391,9 @@ class CrossCompanyPostingIsolationRouteTest {
                 val bodyA = route.body(fixture.company.id.value, a, a)
                 val bodyB = route.body(b.company.id.value, b, b)
                 expect("Company A with Tenant A's header (control)", HttpStatusCode.OK, send(route, token, tenantA, bodyA).status)
-                expect("no tenant header", HttpStatusCode.BadRequest, send(route, token, null, bodyA).status)
+                expect("no tenant header (G4: derived from the Company)", HttpStatusCode.OK, send(route, token, null, route.body(fixture.company.id.value, a, a)).status)
+                expect("no tenant header, unknown Company", HttpStatusCode.NotFound, send(route, token, null, route.body(java.util.UUID.randomUUID(), a, a)).status)
+                expect("malformed tenant header", HttpStatusCode.BadRequest, send(route, token, null, bodyA, rawHeader = "not-a-uuid").status)
                 expect("Company of Tenant A, header of Tenant B", HttpStatusCode.Forbidden, send(route, token, tenantB, bodyA).status)
                 expect("Company of Tenant B, header of Tenant A", HttpStatusCode.Forbidden, send(route, token, tenantA, bodyB).status)
                 expect("unknown Company", HttpStatusCode.NotFound, send(route, token, tenantA, route.body(java.util.UUID.randomUUID(), a, a)).status)
@@ -398,6 +402,25 @@ class CrossCompanyPostingIsolationRouteTest {
 
         b.entries(fixture).shouldBeEmpty()
         withClue("${failures.size} service-credential Tenant checks failed:\n" + failures.joinToString("\n")) { failures.shouldBeEmpty() }
+    }
+
+    @Test
+    fun `a person must still send X-Tenant-Id on every posting route, and nothing is posted without it`() {
+        for (route in postingRoutes) {
+            testApplication {
+                val fixture = Fixture()
+                application { fixture.installInto(this) }
+                val client = createClient { install(ContentNegotiation) { json() } }
+                val a = fixture.worldA()
+                val response = client.post(route.path) {
+                    header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+                    contentType(ContentType.Application.Json)
+                    setBody(route.body(fixture.company.id.value, a, a))
+                }
+                withClue("${route.name} -> ${response.bodyAsText()}") { response.status shouldBe HttpStatusCode.BadRequest }
+                a.entries(fixture).shouldBeEmpty()
+            }
+        }
     }
 
     @Test

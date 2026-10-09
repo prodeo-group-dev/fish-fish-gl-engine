@@ -299,6 +299,20 @@ class TenantIsolationMatrixRouteTest {
         withClue("known unscoped routes that no longer exist (remove them from the list): $gone") { gone.shouldBeEmpty() }
     }
 
+    /**
+     * T15 / G4: the rule "a person must send X-Tenant-Id, a service may omit it" lives in ONE place,
+     * `verifyClaimedTenant`. A route that read the header itself (JournalEntryRoutes once did) would keep
+     * demanding it of services, or skip the mismatch check, without any test noticing.
+     */
+    @Test
+    fun `only verifyClaimedTenant reads the X-Tenant-Id header`() {
+        val dir = File("src/main/kotlin/com/theprodeogroup/fish/infrastructure/web")
+        val readers = dir.listFiles { f -> f.extension == "kt" && f.name != "Auth.kt" }!!
+            .filter { Regex("""header\(\s*"X-Tenant-Id"\s*\)""").containsMatchIn(it.readText()) }
+            .map { it.name }
+        withClue("files reading X-Tenant-Id themselves instead of calling verifyClaimedTenant: $readers") { readers.shouldBeEmpty() }
+    }
+
     // ---- a second Tenant ---------------------------------------------------------------------------
 
     private class OtherTenant(val tenantId: TenantId, val company: Company, val email: String)
@@ -380,7 +394,8 @@ class TenantIsolationMatrixRouteTest {
 
     @Test
     fun `every service credential is held to the claimed Tenant on the Company-in-path routes it uses`() = testApplication {
-        // T15 / G2 (Femi's D5): valid for all Tenants, but the Company must belong to the Tenant claimed.
+        // T15 / G2 (Femi's D5): valid for all Tenants, but a Tenant CLAIMED in X-Tenant-Id must own the Company.
+        // T15 / G4: the header may be omitted; GL then derives the Tenant from the Company.
         val fixture = Fixture(role = Role.OWNER_ADMIN)
         val other = fixture.otherTenant()
         application { fixture.installInto(this) }
@@ -394,7 +409,17 @@ class TenantIsolationMatrixRouteTest {
             val token = TestJwtSupport.signServiceToken(service)
             for (route in routes) {
                 withClue("$service ${route.path} is no longer a declared route") { (route in declarations) shouldBe true }
-                expect(service, route, "no tenant header", setOf(400), client.call(route, fixture.company.id.value, token, null).status)
+                // The only Company-in-path POST a service uses is customer-balances; give it a valid (empty) body.
+                val noHeader = if (route.method == "GET") client.call(route, fixture.company.id.value, token, null)
+                else client.request("/api" + fill(route.path, fixture.company.id.value)) {
+                    method = HttpMethod.Post
+                    header(HttpHeaders.Authorization, "Bearer $token")
+                    contentType(ContentType.Application.Json)
+                    setBody("""{"customerIds": []}""")
+                }
+                expect(service, route, "no tenant header (G4: derived from the Company)", setOf(200, 409), noHeader.status)
+                expect(service, route, "no tenant header, unknown Company", setOf(404), client.call(route, UUID.randomUUID(), token, null).status)
+                expect(service, route, "malformed tenant header", setOf(400), client.rawHeader(route, fixture.company.id.value, token, "not-a-uuid").status)
                 expect(service, route, "Company of Tenant A, header of Tenant B", setOf(403), client.call(route, fixture.company.id.value, token, other.tenantId.value).status)
                 expect(service, route, "Company of Tenant B, header of Tenant A", setOf(403), client.call(route, other.company.id.value, token, fixture.tenantId.value).status)
                 expect(service, route, "unknown Company", setOf(404), client.call(route, UUID.randomUUID(), token, fixture.tenantId.value).status)
@@ -409,6 +434,35 @@ class TenantIsolationMatrixRouteTest {
     }
 
     // ---- guessing ids, and reading across Tenants --------------------------------------------------
+
+    private suspend fun io.ktor.client.HttpClient.rawHeader(route: RouteDeclaration, companyId: UUID, token: String, tenantHeader: String) =
+        request(fill(route.path, companyId).let { "/api$it" }) {
+            method = HttpMethod.parse(route.method)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header("X-Tenant-Id", tenantHeader)
+            if (route.method != "GET") {
+                contentType(ContentType.Application.Json)
+                setBody("{}")
+            }
+        }
+
+    @Test
+    fun `G4 - omitting the header never widens a service beyond its allow-list`() = testApplication {
+        val fixture = Fixture(role = Role.OWNER_ADMIN)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val failures = mutableListOf<String>()
+        for ((service, listed) in ServiceEndpointAllowList.allowed) {
+            val token = TestJwtSupport.signServiceToken(service)
+            for (route in companyScoped.filter { r -> "${r.method} ${r.path}" !in listed }) {
+                val response = client.call(route, fixture.company.id.value, token, null)
+                if (response.status != HttpStatusCode.Forbidden || "forbidden_endpoint" !in response.bodyAsText()) {
+                    failures += "$service ${route.method} ${route.path}: off its list and no header -> ${response.status.value}"
+                }
+            }
+        }
+        withClue("${failures.size} off-list calls were not refused:\n" + failures.joinToString("\n")) { failures.shouldBeEmpty() }
+    }
 
     private suspend fun io.ktor.client.HttpClient.raw(method: HttpMethod, path: String, token: String, tenantHeader: UUID, body: String? = null) =
         request("/api$path") {

@@ -270,16 +270,7 @@ fun Route.journalEntryRoutes(
         }
         val tenantId = call.resolveTenantForCompany(period.companyId, companyRepository) ?: return@post
 
-        val claimedTenantIdRaw = call.request.header("X-Tenant-Id")
-        if (claimedTenantIdRaw == null) {
-            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "X-Tenant-Id header is required"))
-            return@post
-        }
-        val claimedTenantId = call.parseUuid(claimedTenantIdRaw) ?: return@post
-        if (claimedTenantId != tenantId.value) {
-            call.respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "X-Tenant-Id does not own the requested Period"))
-            return@post
-        }
+        if (!call.verifyClaimedTenant(tenantId)) return@post
         call.authorizeTenantForWrite(tenantId, period.companyId) ?: return@post
 
         val lines = call.parseJournalLines(request.lines) ?: return@post
