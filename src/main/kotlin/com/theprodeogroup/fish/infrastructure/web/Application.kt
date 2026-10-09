@@ -254,12 +254,21 @@ fun Application.productionModule() {
     val eaHttpClient = HttpClient(CIO) { install(ClientContentNegotiation) { clientJson(Json) } }
     val eaMembershipGateway = KtorEaMembershipGateway(eaHttpClient, eaApiBaseUrl)
 
+    // A service provider whose audience variable is unset is DENY-ALL (T15 / G0): that service's calls are
+    // refused with 401 until the variable is set. Say so loudly at start-up instead of failing quietly.
+    fun serviceVerifierOrWarn(service: String, variable: String, verifier: JWTVerifier?): JWTVerifier? {
+        if (verifier == null) {
+            log.warn("$variable is not set: the $service service-account provider is DENY-ALL, so every $service call to GL will be refused (401) until it is configured")
+        }
+        return verifier
+    }
+
     fishModule(
         verifier = buildJwksVerifier(),
-        serviceVerifier = buildJwksServiceVerifier(),
-        imServiceVerifier = buildJwksServiceVerifierForIm(),
-        hrServiceVerifier = buildJwksServiceVerifierForHr(),
-        popServiceVerifier = buildJwksServiceVerifierForPop(),
+        serviceVerifier = serviceVerifierOrWarn("SOP", "FISH_JWT_SERVICE_AUDIENCE", buildJwksServiceVerifier()),
+        imServiceVerifier = serviceVerifierOrWarn("IM", "FISH_JWT_SERVICE_AUDIENCE_IM", buildJwksServiceVerifierForIm()),
+        hrServiceVerifier = serviceVerifierOrWarn("HR", "FISH_JWT_SERVICE_AUDIENCE_HR", buildJwksServiceVerifierForHr()),
+        popServiceVerifier = serviceVerifierOrWarn("POP", "FISH_JWT_SERVICE_AUDIENCE_POP", buildJwksServiceVerifierForPop()),
         eaMembershipGateway = eaMembershipGateway,
         companyRepository = companyRepository,
         addCompanyToTenantUseCase = addCompanyToTenantUseCase,
@@ -506,7 +515,7 @@ fun Application.fishModule(
     }
     installFishJwtAuth(
         verifier, eaMembershipGateway,
-        serviceVerifier ?: verifier, imServiceVerifier ?: verifier, hrServiceVerifier ?: verifier, popServiceVerifier ?: verifier
+        serviceVerifier ?: DenyAllJwtVerifier, imServiceVerifier ?: DenyAllJwtVerifier, hrServiceVerifier ?: DenyAllJwtVerifier, popServiceVerifier ?: DenyAllJwtVerifier
     )
 
     routing {
