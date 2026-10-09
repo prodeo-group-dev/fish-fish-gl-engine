@@ -56,6 +56,10 @@ class ImportGlBalancesUseCaseTest {
             .also { accountRepository.save(it) }
         val fixedAssetAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.NON_CURRENT, "1200", "Fixed Assets")
             .also { accountRepository.save(it) }
+        val inventoryAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, ChartOfAccountsTemplate.INVENTORY_CODE, "Inventory")
+            .also { accountRepository.save(it) }
+        val accumulatedDepreciationAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.NON_CURRENT, ChartOfAccountsTemplate.ACCUMULATED_DEPRECIATION_CODE, "Accumulated Depreciation")
+            .also { accountRepository.save(it) }
         val openingBalanceEquity = Account.create(company.id, AccountType.EQUITY, null, ChartOfAccountsTemplate.OPENING_BALANCE_EQUITY_CODE, "Opening Balance Equity")
             .also { accountRepository.save(it) }
         val suspenseAccount = Account.create(company.id, AccountType.EQUITY, null, ChartOfAccountsTemplate.SUSPENSE_ACCOUNT_CODE, "Suspense Account")
@@ -152,6 +156,39 @@ class ImportGlBalancesUseCaseTest {
 
         val success = result.shouldBeInstanceOf<ImportGlBalancesUseCase.Result.Success>()
         success.rowResults.single().status shouldBe OpeningImportRowStatus.NEEDS_ITEMIZATION
+    }
+
+    @Test
+    fun `given a row targeting the Inventory account, when committed, then it's redirected to Suspense too, its detail being itemized through IM`() {
+        // The default chart now has a company-wide Inventory account (1300, UAT v2.2), so the fourth
+        // "itemized-elsewhere" category can finally be recognised like AR, AP and Fixed Assets.
+        val fixture = Fixture()
+
+        val result = fixture.useCase.commit(
+            fixture.request(ImportGlBalancesUseCase.Row(1, fixture.inventoryAccount.code, BigDecimal("4000.00")))
+        )
+
+        val success = result.shouldBeInstanceOf<ImportGlBalancesUseCase.Result.Success>()
+        success.rowResults.single().status shouldBe OpeningImportRowStatus.NEEDS_ITEMIZATION
+        success.batch.needsItemizationCount shouldBe 1
+        val posted = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).single()
+        posted.lines.any { it.accountId == fixture.inventoryAccount.id } shouldBe false
+        posted.lines.single { it.accountId == fixture.suspenseAccount.id }
+    }
+
+    @Test
+    fun `given a row targeting the Accumulated Depreciation account, when committed, then it's redirected to Suspense too, its detail being the per-asset register`() {
+        val fixture = Fixture()
+
+        val result = fixture.useCase.commit(
+            fixture.request(ImportGlBalancesUseCase.Row(1, fixture.accumulatedDepreciationAccount.code, BigDecimal("2500.00")))
+        )
+
+        val success = result.shouldBeInstanceOf<ImportGlBalancesUseCase.Result.Success>()
+        success.rowResults.single().status shouldBe OpeningImportRowStatus.NEEDS_ITEMIZATION
+        val posted = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).single()
+        posted.lines.any { it.accountId == fixture.accumulatedDepreciationAccount.id } shouldBe false
+        posted.lines.single { it.accountId == fixture.suspenseAccount.id }
     }
 
     @Test

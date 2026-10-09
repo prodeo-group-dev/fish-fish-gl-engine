@@ -44,25 +44,24 @@ import java.time.LocalDate
  * ([com.theprodeogroup.fish.domain.opening.OpeningImportBatchStatus]'s
  * own KDoc) stays explicitly unbuilt.
  *
- * **The Suspense-redirect (Section 2) only covers 3 of the 4
- * "itemized-elsewhere" account categories the design doc names - AR
- * control (code "1100"), AP control ("2000"), and Fixed Assets
- * ("1200"), resolved the same fixed-code-lookup way
+ * **The Suspense-redirect (Section 2) covers all four "itemized-elsewhere"
+ * account categories the design doc names, plus one contra account** -
+ * AR control (code "1100"), AP control ("2000"), Fixed Assets ("1200"),
+ * and, since 2026-10-09, Inventory ("1300") and Accumulated Depreciation
+ * ("1210"), all resolved the same fixed-code-lookup way
  * [ComputePurchasePostingContextUseCase]/[ComputeInventoryPostingContextUseCase]
- * already resolve their own control accounts.** The fourth, Inventory,
- * is a real, confirmed gap found while building this: the design doc's
- * own Section 2.1 claims it's "already referenced by
- * `CreateItemUseCase.Request.inventoryAssetAccountId`," but that id is
- * supplied per-`Item` on IM's own side (confirmed by reading
- * [ComputeInventoryPostingContextUseCase] directly - it has no company-
- * wide inventory account to resolve, only an AP control account), not a
- * single company-wide default GL can resolve on its own the way AR/AP/FA
- * are. A GL-balance row targeting a Company's actual inventory account
- * (if a business even has one as a *named* GL account, rather than only
- * ever being written to via IM's own postings) will NOT be redirected to
- * Suspense by this increment - flagged here rather than guessed at, per
- * house convention, pending a real decision on how (or whether) GL can
- * learn what "the" inventory account is without a cross-service call.
+ * already resolve their own control accounts.
+ *
+ * Inventory used to be a flagged gap: the design doc's Section 2.1 claims it's
+ * "already referenced by `CreateItemUseCase.Request.inventoryAssetAccountId`,"
+ * but that id is supplied per-`Item` on IM's own side, and the default chart had
+ * no company-wide inventory account for GL to recognise. The default chart now
+ * seeds one (code "1300", UAT v2.2 W-L4), so without this a lump opening balance
+ * imported to it was silently accepted instead of itemized through IM. Accumulated
+ * Depreciation ("1210", same change) is the contra to Fixed Assets: its detail is
+ * the per-asset register's depreciation, so it is redirected for the same reason.
+ * A Company created before the 2026-10-08 chart change has neither code unless it
+ * made them itself, in which case nothing is redirected for it, as before.
  */
 class ImportGlBalancesUseCase(
     private val companyRepository: CompanyRepository,
@@ -106,11 +105,13 @@ class ImportGlBalancesUseCase(
         val defaultContraAccount = accountsByCode[ChartOfAccountsTemplate.OPENING_BALANCE_EQUITY_CODE]
         val suspenseAccount = accountsByCode[ChartOfAccountsTemplate.SUSPENSE_ACCOUNT_CODE]
 
-        // The 3 of 4 "itemized elsewhere" categories GL can resolve on its own - see this class's own KDoc on the Inventory gap.
+        // The "itemized elsewhere" categories GL can resolve on its own, by fixed code - see this class's own KDoc.
         val itemizedElsewhereIds = setOfNotNull(
             accounts.firstOrNull { it.type == AccountType.ASSET && it.code == "1100" }?.id,
             accounts.firstOrNull { it.type == AccountType.LIABILITY && it.code == "2000" }?.id,
-            accounts.firstOrNull { it.type == AccountType.ASSET && it.code == "1200" }?.id
+            accounts.firstOrNull { it.type == AccountType.ASSET && it.code == "1200" }?.id,
+            accounts.firstOrNull { it.type == AccountType.ASSET && it.code == ChartOfAccountsTemplate.INVENTORY_CODE }?.id,
+            accounts.firstOrNull { it.type == AccountType.ASSET && it.code == ChartOfAccountsTemplate.ACCUMULATED_DEPRECIATION_CODE }?.id
         )
 
         val batch = OpeningImportBatch.create(
