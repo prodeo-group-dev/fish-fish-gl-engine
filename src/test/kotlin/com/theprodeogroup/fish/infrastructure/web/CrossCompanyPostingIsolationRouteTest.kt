@@ -199,7 +199,10 @@ class CrossCompanyPostingIsolationRouteTest {
                 disposeFixedAssetUseCase = disposeFixedAssetUseCase,
                 computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase,
                 vatRateRepository = FakeVatRateRepository(),
-                popServiceVerifier = TestJwtSupport.popServiceVerifier(),
+                serviceVerifier = TestJwtSupport.serviceVerifier("sop"),
+                popServiceVerifier = TestJwtSupport.serviceVerifier("pop"),
+                imServiceVerifier = TestJwtSupport.serviceVerifier("im"),
+                hrServiceVerifier = TestJwtSupport.serviceVerifier("hr"),
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
                 computeTaxUseCase = computeTaxUseCase,
                 taxRuleRepository = taxRuleRepository,
@@ -337,6 +340,58 @@ class CrossCompanyPostingIsolationRouteTest {
     @Test
     fun `a service credential cannot post into a sibling Company's period via any posting route`() =
         every("service, sibling company", { TestJwtSupport.signPopServiceToken("pop-gl-service@theprodeogroup.com") }) { worldOfASiblingCompany() }
+
+    /**
+     * The posting routes each service credential actually calls (the G3 allow-list in
+     * docs/T15_GL_G2_G3_Design.md, read from each service's GL client).
+     */
+    private val postingRoutesByService = mapOf(
+        "sop" to listOf("record-sale", "record-collection", "record-sales-return"),
+        "pop" to listOf("record-obligation", "record-payment"),
+        "im" to listOf("record-receipt", "record-issue"),
+        "hr" to listOf("record-pay-run")
+    )
+
+    @Test
+    fun `every service credential is held to the claimed Tenant on the posting routes it uses`() = testApplication {
+        // T15 / G2 (Femi's D5): service logins are valid for all Tenants, but the Company a request names must
+        // belong to the Tenant it claims in X-Tenant-Id: absent header 400, either wrong pairing 403, unknown
+        // Company 404. Each credential is exercised on the routes it really calls.
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val a = fixture.worldA()
+        val b = fixture.worldOfAnotherTenant()
+        val tenantA = fixture.tenantId.value
+        val tenantB = b.company.tenantId.value
+        val failures = mutableListOf<String>()
+
+        suspend fun send(route: Route, token: String, header: java.util.UUID?, body: String) = client.post(route.path) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            if (header != null) header("X-Tenant-Id", header.toString())
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+
+        for ((service, names) in postingRoutesByService) {
+            val token = TestJwtSupport.signServiceToken(service)
+            for (route in postingRoutes.filter { it.name in names }) {
+                fun expect(what: String, expected: HttpStatusCode, actual: HttpStatusCode) {
+                    if (actual != expected) failures += "$service ${route.name}: $what -> expected ${expected.value}, got ${actual.value}"
+                }
+                val bodyA = route.body(fixture.company.id.value, a, a)
+                val bodyB = route.body(b.company.id.value, b, b)
+                expect("Company A with Tenant A's header (control)", HttpStatusCode.OK, send(route, token, tenantA, bodyA).status)
+                expect("no tenant header", HttpStatusCode.BadRequest, send(route, token, null, bodyA).status)
+                expect("Company of Tenant A, header of Tenant B", HttpStatusCode.Forbidden, send(route, token, tenantB, bodyA).status)
+                expect("Company of Tenant B, header of Tenant A", HttpStatusCode.Forbidden, send(route, token, tenantA, bodyB).status)
+                expect("unknown Company", HttpStatusCode.NotFound, send(route, token, tenantA, route.body(java.util.UUID.randomUUID(), a, a)).status)
+            }
+        }
+
+        b.entries(fixture).shouldBeEmpty()
+        withClue("${failures.size} service-credential Tenant checks failed:\n" + failures.joinToString("\n")) { failures.shouldBeEmpty() }
+    }
 
     @Test
     fun `A's own period with B's accounts is refused and nothing is posted`() {

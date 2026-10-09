@@ -240,7 +240,10 @@ class TenantIsolationMatrixRouteTest {
                 cancelBankReconciliationUseCase = CancelBankReconciliationUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository),
                 computeBankReconciliationUseCase = ComputeBankReconciliationUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository),
                 listBankReconciliationsUseCase = ListBankReconciliationsUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository),
-                popServiceVerifier = TestJwtSupport.popServiceVerifier(),
+                serviceVerifier = TestJwtSupport.serviceVerifier("sop"),
+                popServiceVerifier = TestJwtSupport.serviceVerifier("pop"),
+                imServiceVerifier = TestJwtSupport.serviceVerifier("im"),
+                hrServiceVerifier = TestJwtSupport.serviceVerifier("hr"),
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
                 computeTaxUseCase = computeTaxUseCase,
                 taxRuleRepository = taxRuleRepository,
@@ -357,6 +360,51 @@ class TenantIsolationMatrixRouteTest {
 
     private fun List<RouteDeclaration>.shouldBeEmptyNot() {
         size shouldBeGreaterThanOrEqual 35 // the scan found the Company-scoped routes at all
+    }
+
+    /**
+     * The Company-in-path routes each service credential actually calls (the G3 allow-list in
+     * docs/T15_GL_G2_G3_Design.md, read from each service's GL client).
+     */
+    private val pathRoutesByService = mapOf(
+        "sop" to listOf(
+            RouteDeclaration("GET", "/companies/{companyId}/sales-posting-context"),
+            RouteDeclaration("GET", "/companies/{companyId}/sales-invoices"),
+            RouteDeclaration("POST", "/companies/{companyId}/customer-balances")
+        ),
+        "pop" to listOf(RouteDeclaration("GET", "/companies/{companyId}/purchase-posting-context")),
+        "im" to listOf(RouteDeclaration("GET", "/companies/{companyId}/inventory-posting-context")),
+        "hr" to listOf(RouteDeclaration("GET", "/companies/{companyId}/payroll-posting-context"))
+    )
+
+    @Test
+    fun `every service credential is held to the claimed Tenant on the Company-in-path routes it uses`() = testApplication {
+        // T15 / G2 (Femi's D5): valid for all Tenants, but the Company must belong to the Tenant claimed.
+        val fixture = Fixture(role = Role.OWNER_ADMIN)
+        val other = fixture.otherTenant()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val failures = mutableListOf<String>()
+        fun expect(service: String, route: RouteDeclaration, what: String, expected: Set<Int>, actual: HttpStatusCode) {
+            if (actual.value !in expected) failures += "$service ${route.method} ${route.path}: $what -> expected $expected, got ${actual.value}"
+        }
+
+        for ((service, routes) in pathRoutesByService) {
+            val token = TestJwtSupport.signServiceToken(service)
+            for (route in routes) {
+                withClue("$service ${route.path} is no longer a declared route") { (route in declarations) shouldBe true }
+                expect(service, route, "no tenant header", setOf(400), client.call(route, fixture.company.id.value, token, null).status)
+                expect(service, route, "Company of Tenant A, header of Tenant B", setOf(403), client.call(route, fixture.company.id.value, token, other.tenantId.value).status)
+                expect(service, route, "Company of Tenant B, header of Tenant A", setOf(403), client.call(route, other.company.id.value, token, fixture.tenantId.value).status)
+                expect(service, route, "unknown Company", setOf(404), client.call(route, UUID.randomUUID(), token, fixture.tenantId.value).status)
+                if (route.method == "GET") {
+                    // Control: the right pairing passes the Tenant check (200, or 409 where the Company has no chart yet).
+                    expect(service, route, "right Company and Tenant (control)", setOf(200, 409), client.call(route, fixture.company.id.value, token, fixture.tenantId.value).status)
+                }
+            }
+        }
+
+        withClue("${failures.size} service-credential Tenant checks failed:\n" + failures.joinToString("\n")) { failures.shouldBeEmpty() }
     }
 
     // ---- guessing ids, and reading across Tenants --------------------------------------------------
