@@ -101,27 +101,28 @@ fun Application.installFishJwtAuth(
     // own KDoc), the same Option B already shipped for IM's inbound
     // POP/SOP callers.
     eaMembershipGateway: EaMembershipGateway,
-    // Defaults to reusing [verifier] - every existing test call site
-    // (fishModule, 18 route test files) passes only the primary
-    // verifier, and registering the service provider against the same
-    // verifier is harmless (it just accepts the same single audience
-    // twice, under two names) rather than a hard requirement to update
-    // every test. Production always passes a real, distinct one.
-    serviceVerifier: JWTVerifier = verifier,
-    // IM's own service-account verifier - same default-to-[verifier]
-    // escape hatch as [serviceVerifier], added once IM needed its own
+    // Every service verifier DEFAULTS TO DENY-ALL (T15 / G0, F-T15-1), never to
+    // [verifier]: a service provider whose audience is not configured accepts
+    // nothing. It used to reuse the human verifier, which made that provider
+    // classify a human token as a service account (skipping the EA membership
+    // check) the moment a route authenticated against it alone or the provider
+    // order changed; the combined `fishAuthenticated` list only hid it because
+    // the human provider is listed first. Production passes a real, distinct
+    // verifier per service; a fixture that wants a service caller passes one.
+    serviceVerifier: JWTVerifier = DenyAllJwtVerifier,
+    // IM's own service-account verifier - same deny-all default as [serviceVerifier], added once IM needed its own
     // GL-Engine-calling service account (a distinct Cognito app client
     // from SOP's, since [buildJwksVerifier]'s own KDoc already
     // established that one verifier can't accept either-of-two
     // audiences - each service caller needs its own verifier/provider).
-    imServiceVerifier: JWTVerifier = verifier,
+    imServiceVerifier: JWTVerifier = DenyAllJwtVerifier,
     // HR/Payroll's own service-account verifier, same shape as
     // [imServiceVerifier] - HR gained a real HTTP layer and its own
     // outbound-calling Cognito identity 2026-09-02.
-    hrServiceVerifier: JWTVerifier = verifier,
+    hrServiceVerifier: JWTVerifier = DenyAllJwtVerifier,
     // POP's own service-account verifier, same shape as [imServiceVerifier]/
     // [hrServiceVerifier] - closes docs/POP_GL_Service_Account_Closure_Plan.md.
-    popServiceVerifier: JWTVerifier = verifier
+    popServiceVerifier: JWTVerifier = DenyAllJwtVerifier
 ) {
     attributes.put(EaMembershipGatewayKey, eaMembershipGateway)
 
@@ -166,6 +167,19 @@ fun Application.installFishJwtAuth(
             }
         }
     }
+}
+
+/**
+ * The verifier for a service provider whose audience is not configured (T15 / G0): it verifies
+ * nothing, so that provider rejects every token. A missing configuration must close the door,
+ * never open it by borrowing the human verifier.
+ */
+object DenyAllJwtVerifier : JWTVerifier {
+    private fun refuse(): Nothing =
+        throw com.auth0.jwt.exceptions.JWTVerificationException("This service provider has no audience configured; it accepts no tokens")
+
+    override fun verify(token: String?): com.auth0.jwt.interfaces.DecodedJWT = refuse()
+    override fun verify(jwt: com.auth0.jwt.interfaces.DecodedJWT?): com.auth0.jwt.interfaces.DecodedJWT = refuse()
 }
 
 /**
