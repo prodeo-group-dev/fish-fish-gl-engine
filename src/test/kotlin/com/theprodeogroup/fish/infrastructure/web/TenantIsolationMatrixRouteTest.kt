@@ -465,4 +465,107 @@ class TenantIsolationMatrixRouteTest {
         client.raw(HttpMethod.Get, "$base/reports/profit-and-loss", theirs, other.tenantId.value).body<ProfitAndLossResponseDto>().totalRevenue shouldBe "0.00"
         client.raw(HttpMethod.Get, "$base/reports/cash-flow", theirs, other.tenantId.value).body<CashFlowResponseDto>().netCashFlow shouldBe "0.00"
     }
+
+    // ---- the second wall: Company against Company inside ONE Tenant -------------------------------
+    //
+    // Femi's two-walls definition (via CM, 2026-10-09): Tenant against Tenant, AND Company against Company
+    // inside one Tenant - each business has its own GL, consolidation comes later and on purpose. The same
+    // owner holds Companies A and B; nothing of A may show under B, and B's path with A's id finds nothing.
+
+    @Test
+    fun `one owner's second Company never shows the first Company's records`() = testApplication {
+        val fixture = Fixture(role = Role.OWNER_ADMIN)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val owner = TestJwtSupport.signToken(TEST_EMAIL)
+
+        // The owner's Company A has real records.
+        val periodA = Period.create(fixture.company.id, PeriodType.MONTH, TODAY, TODAY.plusDays(30)).also { it.open(); fixture.periodRepository.save(it) }
+        val cashA = Account.create(fixture.company.id, AccountType.ASSET, AccountClassification.CURRENT, "1000", "A Cash").also { fixture.accountRepository.save(it) }
+        val salesA = Account.create(fixture.company.id, AccountType.REVENUE, null, "4000", "A Sales").also { fixture.accountRepository.save(it) }
+        JournalEntry.create(
+            periodA.id, TODAY,
+            listOf(JournalLine(cashA.id, money("777.00"), TransactionSide.DEBIT), JournalLine(salesA.id, money("777.00"), TransactionSide.CREDIT)),
+            JournalSource.MANUAL
+        ).also { it.post(); fixture.journalEntryRepository.save(it) }
+        FixedAsset.create(fixture.company.id, "A Van", AssetCategory.VEHICLES, money("5000.00"), TODAY, 5).also { fixture.fixedAssetRepository.save(it) }
+        BankReconciliation.create(cashA.id, TODAY, money("0.00"), emptyList(), emptyList(), GBP)
+            .also { fixture.bankReconciliationRepository.save(it, fixture.company.id) }
+
+        // The same owner's Company B, in the same Tenant, with a chart but no activity.
+        val companyB = Company.create(fixture.tenantId, "Sibling Co", ClientType.NON_PROFIT, Jurisdiction.UK, GBP).also { fixture.companyRepository.save(it) }
+        Account.create(companyB.id, AccountType.ASSET, AccountClassification.CURRENT, "1000", "B Cash").also { fixture.accountRepository.save(it) }
+        Account.create(companyB.id, AccountType.REVENUE, null, "4000", "B Sales").also { fixture.accountRepository.save(it) }
+        Period.create(companyB.id, PeriodType.MONTH, TODAY, TODAY.plusDays(30)).also { it.open(); fixture.periodRepository.save(it) }
+
+        val base = "/companies/${companyB.id.value}"
+        val trial: TrialBalanceResponseDto = client.raw(HttpMethod.Get, "$base/reports/trial-balance", owner, fixture.tenantId.value).body()
+        trial.totalDebits shouldBe "0.00"
+        trial.lines.map { it.name } shouldBe listOf("B Cash", "B Sales")
+        client.raw(HttpMethod.Get, "$base/journal-entries", owner, fixture.tenantId.value).bodyAsText() shouldBe "[]"
+        val accounts = client.raw(HttpMethod.Get, "$base/accounts", owner, fixture.tenantId.value).bodyAsText()
+        withClue("B's account list: $accounts") { accounts.contains("A Cash") shouldBe false }
+        client.raw(HttpMethod.Get, "$base/reports/balance-sheet", owner, fixture.tenantId.value).body<BalanceSheetResponseDto>().totalAssets shouldBe "0.00"
+        client.raw(HttpMethod.Get, "$base/reports/profit-and-loss", owner, fixture.tenantId.value).body<ProfitAndLossResponseDto>().totalRevenue shouldBe "0.00"
+        client.raw(HttpMethod.Get, "$base/reports/cash-flow", owner, fixture.tenantId.value).body<CashFlowResponseDto>().netCashFlow shouldBe "0.00"
+        client.raw(HttpMethod.Get, "$base/reports/fixed-asset-register", owner, fixture.tenantId.value).bodyAsText().contains("A Van") shouldBe false
+        client.raw(HttpMethod.Get, "$base/bank-reconciliations", owner, fixture.tenantId.value).bodyAsText().contains("reconciliations\":[]") shouldBe true
+    }
+
+    @Test
+    fun `under the second Company, the first Company's record ids find nothing and nothing is posted`() = testApplication {
+        val fixture = Fixture(role = Role.OWNER_ADMIN)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val owner = TestJwtSupport.signToken(TEST_EMAIL)
+        val failures = mutableListOf<String>()
+        fun check(what: String, expected: Set<Int>, actual: HttpStatusCode) {
+            if (actual.value !in expected) failures += "$what -> expected $expected, got ${actual.value}"
+        }
+
+        val cashA = Account.create(fixture.company.id, AccountType.ASSET, AccountClassification.CURRENT, "1000", "A Cash").also { fixture.accountRepository.save(it) }
+        val recA = BankReconciliation.create(cashA.id, TODAY, money("0.00"), emptyList(), emptyList(), GBP)
+            .also { fixture.bankReconciliationRepository.save(it, fixture.company.id) }
+        val assetA = FixedAsset.create(fixture.company.id, "A Van", AssetCategory.VEHICLES, money("1000.00"), TODAY, 5).also { fixture.fixedAssetRepository.save(it) }
+        val periodA = Period.create(fixture.company.id, PeriodType.MONTH, TODAY, TODAY.plusDays(30)).also { it.open(); fixture.periodRepository.save(it) }
+
+        val companyB = Company.create(fixture.tenantId, "Sibling Co", ClientType.NON_PROFIT, Jurisdiction.UK, GBP).also { fixture.companyRepository.save(it) }
+        // The owner holds B too, with WRITE there: otherwise every write below would stop at 403 before it
+        // reached the data wall this test is about.
+        fixture.membershipRepository.save(Membership.grant(fixture.user.id, fixture.tenantId, Role.OWNER_ADMIN, companyB.id))
+        val periodB = Period.create(companyB.id, PeriodType.MONTH, TODAY, TODAY.plusDays(30)).also { it.open(); fixture.periodRepository.save(it) }
+        val expenseB = Account.create(companyB.id, AccountType.EXPENSE, null, "6100", "B Depreciation").also { fixture.accountRepository.save(it) }
+        val accumB = Account.create(companyB.id, AccountType.ASSET, AccountClassification.NON_CURRENT, "1210", "B Accumulated").also { fixture.accountRepository.save(it) }
+
+        // A's bank reconciliation id through B's Company path: the owner may use B, but there is no such record there.
+        val recViaB = "/companies/${companyB.id.value}/bank-reconciliations/${recA.id.value}"
+        check("GET A's reconciliation via B", setOf(404), client.raw(HttpMethod.Get, recViaB, owner, fixture.tenantId.value).status)
+        for (action in listOf("match", "unmatch", "complete", "cancel")) {
+            check(
+                "POST $action on A's reconciliation via B", setOf(403, 404),
+                client.raw(
+                    HttpMethod.Post, "$recViaB/$action", owner, fixture.tenantId.value,
+                    """{"statementLineId": "${UUID.randomUUID()}", "journalEntryId": "${UUID.randomUUID()}"}"""
+                ).status
+            )
+        }
+        // A's fixed asset with B's Period and accounts, and B's posting built from A's Period: not found, nothing posted.
+        val depreciation = """{"depreciationExpenseAccountId": "${expenseB.id.value}", "accumulatedDepreciationAccountId": "${accumB.id.value}", "periodId": "${periodB.id.value}", "date": "$TODAY"}"""
+        check("depreciate A's asset with B's Period", setOf(403, 404), client.raw(HttpMethod.Post, "/fixed-assets/${assetA.id.value}/record-depreciation", owner, fixture.tenantId.value, depreciation).status)
+        // A well-formed sale for Company B built entirely from A's Period and A's accounts: the only thing
+        // that can stop it is the wall between the two Companies.
+        val arA = Account.create(fixture.company.id, AccountType.ASSET, AccountClassification.CURRENT, "1100", "A Receivable").also { fixture.accountRepository.save(it) }
+        val revenueA = Account.create(fixture.company.id, AccountType.REVENUE, null, "4000", "A Sales").also { fixture.accountRepository.save(it) }
+        val vatA = Account.create(fixture.company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2150", "A VAT").also { fixture.accountRepository.save(it) }
+        val saleInB = """{"companyId": "${companyB.id.value}", "periodId": "${periodA.id.value}", "date": "$TODAY", "arControlAccountId": "${arA.id.value}", "revenueAccountId": "${revenueA.id.value}", "vatControlAccountId": "${vatA.id.value}", "lines": [{"netAmount": "10.00", "vatCategory": "EXEMPT"}], "currency": "GBP", "customerId": "${UUID.randomUUID()}"}"""
+        check("sale for B using A's Period and accounts", setOf(404), client.raw(HttpMethod.Post, "/sales/record-sale", owner, fixture.tenantId.value, saleInB).status)
+        // Control: the same sale for A itself is fine, so the 404 above is the wall and not a malformed body.
+        val saleInA = saleInB.replace(companyB.id.value.toString(), fixture.company.id.value.toString())
+        check("the same sale for A itself", setOf(200), client.raw(HttpMethod.Post, "/sales/record-sale", owner, fixture.tenantId.value, saleInA).status)
+
+        // A holds only the control sale made for A itself; B holds nothing.
+        fixture.journalEntryRepository.findAllByPeriod(periodA.id).size shouldBe 1
+        fixture.journalEntryRepository.findAllByPeriod(periodB.id).shouldBeEmpty()
+        withClue("${failures.size} same-owner cross-Company checks failed:\n" + failures.joinToString("\n")) { failures.shouldBeEmpty() }
+    }
 }
