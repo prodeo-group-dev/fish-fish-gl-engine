@@ -53,11 +53,20 @@ class FakeJournalEntryRepository : JournalEntryRepository {
      * The real `ExposedJournalEntryRepository` derives this by joining
      * through `Period` (a Company's Periods, then those Periods' entries)
      * since `journal_entries` has no `company_id` of its own (Section
-     * 10.2). This fake has no `PeriodRepository` to replicate that with,
-     * and no test in this package needs it - returns everything, not a
-     * faithful reproduction, deliberately simplified since it's unused.
+     * 10.2). By default this fake has no `PeriodRepository` to replicate that
+     * with and returns everything, which is only right for a test with one
+     * Company. A test that needs the real behaviour - above all a Tenant
+     * isolation test, where returning another Company's entries would hide
+     * exactly the leak it exists to catch (T15 / G1) - sets [periodSource]
+     * to the `PeriodRepository` its entries' Periods were saved to, and then
+     * only entries whose Period belongs to [companyId] come back.
      */
-    override fun findAllByCompany(companyId: CompanyId): List<JournalEntry> = store.values.toList()
+    var periodSource: PeriodRepository? = null
+
+    override fun findAllByCompany(companyId: CompanyId): List<JournalEntry> {
+        val periods = periodSource ?: return store.values.toList()
+        return store.values.filter { entry -> periods.findById(entry.periodId)?.companyId == companyId }
+    }
 }
 
 class FakeBankReconciliationRepository : BankReconciliationRepository {
