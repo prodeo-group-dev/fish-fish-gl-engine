@@ -2,6 +2,7 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
 import com.theprodeogroup.fish.application.ComputeCashFlowUseCase
+import com.theprodeogroup.fish.application.ComputeProfitAndLossForDatesUseCase
 import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
 import com.theprodeogroup.fish.application.ComputeTrialBalanceUseCase
 import com.theprodeogroup.fish.application.ComputeWorkingCapitalUseCase
@@ -24,6 +25,7 @@ import io.ktor.server.routing.get
 fun Route.reportsRoutes(
     computeBalanceSheetUseCase: ComputeBalanceSheetUseCase,
     computeProfitAndLossUseCase: ComputeProfitAndLossUseCase,
+    computeProfitAndLossForDatesUseCase: ComputeProfitAndLossForDatesUseCase,
     computeCashFlowUseCase: ComputeCashFlowUseCase,
     computeWorkingCapitalUseCase: ComputeWorkingCapitalUseCase,
     computeTrialBalanceUseCase: ComputeTrialBalanceUseCase,
@@ -125,6 +127,35 @@ fun Route.reportsRoutes(
         if (!call.verifyClaimedTenant(tenantId)) return@get
         call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
+        // `?from=YYYY-MM-DD&to=YYYY-MM-DD` (both, inclusive; UAT v2.2): a month- or year-end pack,
+        // spanning Periods, in its own response type. Without them: the open Period, as before.
+        when (val range = call.parseDateRange()) {
+            DateRangeParams.Invalid -> return@get
+            is DateRangeParams.Range -> {
+                when (val result = computeProfitAndLossForDatesUseCase.execute(companyId, range.from, range.to)) {
+                    is ComputeProfitAndLossForDatesUseCase.Result.Success -> {
+                        val pnl = result.profitAndLoss
+                        call.respond(
+                            ProfitAndLossRangeResponseDto(
+                                currency = pnl.currency.currencyCode,
+                                from = pnl.from.toString(),
+                                to = pnl.to.toString(),
+                                totalRevenue = pnl.totalRevenue.amount.toPlainString(),
+                                totalExpense = pnl.totalExpense.amount.toPlainString(),
+                                netIncome = pnl.netIncome.amount.toPlainString()
+                            )
+                        )
+                    }
+                    ComputeProfitAndLossForDatesUseCase.Result.CompanyNotFound ->
+                        call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
+                    ComputeProfitAndLossForDatesUseCase.Result.NoAccountsForCompany ->
+                        call.respond(HttpStatusCode.Conflict, ErrorResponseDto("no_accounts", "This Company has no Chart of Accounts"))
+                }
+                return@get
+            }
+            DateRangeParams.None -> Unit
+        }
+
         when (val result = computeProfitAndLossUseCase.execute(companyId)) {
             is ComputeProfitAndLossUseCase.Result.Success -> {
                 val pnl = result.profitAndLoss
@@ -153,7 +184,14 @@ fun Route.reportsRoutes(
         if (!call.verifyClaimedTenant(tenantId)) return@get
         call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
-        when (val result = computeCashFlowUseCase.execute(companyId)) {
+        // `?from=&to=` (both, inclusive; UAT v2.2) replaces the open Period's dates; same response shape.
+        val range = when (val parsed = call.parseDateRange()) {
+            DateRangeParams.Invalid -> return@get
+            is DateRangeParams.Range -> parsed
+            DateRangeParams.None -> null
+        }
+
+        when (val result = computeCashFlowUseCase.execute(companyId, range?.from, range?.to)) {
             is ComputeCashFlowUseCase.Result.Success -> {
                 val cf = result.statementOfCashFlows
                 call.respond(
@@ -204,6 +242,34 @@ fun Route.reportsRoutes(
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("no_accounts", "This Company has no Chart of Accounts"))
         }
     }
+}
+
+/** The optional `?from=&to=` of a ranged report: neither (None), both and valid (Range), or already answered with a 400 (Invalid). */
+private sealed class DateRangeParams {
+    data object None : DateRangeParams()
+    data class Range(val from: java.time.LocalDate, val to: java.time.LocalDate) : DateRangeParams()
+    data object Invalid : DateRangeParams()
+}
+
+private suspend fun io.ktor.server.application.ApplicationCall.parseDateRange(): DateRangeParams {
+    val fromRaw = request.queryParameters["from"]
+    val toRaw = request.queryParameters["to"]
+    if (fromRaw == null && toRaw == null) return DateRangeParams.None
+    if (fromRaw == null || toRaw == null) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_range", "from and to must be given together, as YYYY-MM-DD"))
+        return DateRangeParams.Invalid
+    }
+    val from = try { java.time.LocalDate.parse(fromRaw) } catch (e: java.time.format.DateTimeParseException) { null }
+    val to = try { java.time.LocalDate.parse(toRaw) } catch (e: java.time.format.DateTimeParseException) { null }
+    if (from == null || to == null) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_range", "from and to must be dates, YYYY-MM-DD"))
+        return DateRangeParams.Invalid
+    }
+    if (to.isBefore(from)) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_range", "to cannot be before from"))
+        return DateRangeParams.Invalid
+    }
+    return DateRangeParams.Range(from, to)
 }
 
 private suspend fun io.ktor.server.application.ApplicationCall.parseCompanyId(): CompanyId? {

@@ -9,6 +9,7 @@ import com.theprodeogroup.fish.application.ComputeTrialBalanceUseCase
 import com.theprodeogroup.fish.application.ComputeWorkingCapitalUseCase
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeFixedAssetRegisterUseCase
+import com.theprodeogroup.fish.application.ComputeProfitAndLossForDatesUseCase
 import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
 import com.theprodeogroup.fish.application.CreateFixedAssetUseCase
 import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
@@ -563,7 +564,7 @@ fun Application.fishModule(
                 )
                 expenseVelocityRoutes(computeExpenseVelocityUseCase, companyRepository)
                 salesToExpenseRatioRoutes(computeSalesToExpenseRatioUseCase, companyRepository)
-                reportsRoutes(computeBalanceSheetUseCase, computeProfitAndLossUseCase, computeCashFlowUseCase, computeWorkingCapitalUseCase, ComputeTrialBalanceUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository)
+                reportsRoutes(computeBalanceSheetUseCase, computeProfitAndLossUseCase, ComputeProfitAndLossForDatesUseCase(companyRepository, accountRepository, journalEntryRepository), computeCashFlowUseCase, computeWorkingCapitalUseCase, ComputeTrialBalanceUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository)
                 taxRoutes(computeTaxUseCase, companyRepository, taxRuleRepository, taxComputationRepository)
                 if (vatReturnRepository != null) {
                     vatReturnRoutes(
