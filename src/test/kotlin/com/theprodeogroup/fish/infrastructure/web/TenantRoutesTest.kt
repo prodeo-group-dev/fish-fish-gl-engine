@@ -189,7 +189,8 @@ class TenantRoutesTest {
                 assessFixedAssetImpairmentUseCase = assessFixedAssetImpairmentUseCase,
                 disposeFixedAssetUseCase = disposeFixedAssetUseCase,
                 computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase,
-                jurisdictionRepository = jurisdictionRepository
+                jurisdictionRepository = jurisdictionRepository,
+                popServiceVerifier = TestJwtSupport.popServiceVerifier()
             )
         }
     }
@@ -210,6 +211,29 @@ class TenantRoutesTest {
         response.status shouldBe HttpStatusCode.Created
         val body: AddCompanyToTenantResponseDto = response.body()
         body.tenantId shouldBe fixture.existingTenantId.value.toString()
+    }
+
+    @Test
+    fun `given a service credential, when add-company is posted for any Tenant id, then it returns 403 and creates no Company`() = testApplication {
+        // T15 / F-T15-2: a Company is added to a Tenant by that Tenant's Owner-Admin (a person), never by a
+        // service account. The service-account bypass used to let any service credential create a Company
+        // under any Tenant id - even one that does not exist - because the use case trusts the auth layer.
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val serviceToken = TestJwtSupport.signPopServiceToken("pop-gl-service@theprodeogroup.com")
+        val companiesBefore = fixture.companyRepository.findAllByTenant(fixture.existingTenantId).size
+
+        for (tenantId in listOf(fixture.existingTenantId.value, java.util.UUID.randomUUID())) {
+            val response = client.post("/api/tenants/$tenantId/companies") {
+                header(HttpHeaders.Authorization, "Bearer $serviceToken")
+                header("X-Tenant-Id", tenantId.toString())
+                contentType(ContentType.Application.Json)
+                setBody("""{"companyName": "Planted Co", "clientType": "NON_PROFIT", "jurisdiction": "SL", "companyBaseCurrency": "GBP", "fiscalYearStartMonth": 1}""")
+            }
+            response.status shouldBe HttpStatusCode.Forbidden
+        }
+        fixture.companyRepository.findAllByTenant(fixture.existingTenantId).size shouldBe companiesBefore
     }
 
     @Test

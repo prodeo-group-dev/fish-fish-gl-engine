@@ -524,8 +524,13 @@ suspend fun ApplicationCall.authorizeTenantOwnerAdmin(tenantId: TenantId): Autho
         respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "No authenticated caller"))
         return null
     }
+    // A service account is never a Tenant's Owner-Admin (T15 / F-T15-2): unlike the per-Company gates above, this
+    // one has no Company to scope a module-to-module call to, and the use behind it trusts this check to have
+    // proved the Tenant is real and the caller owns it. The service bypass would let any service credential add a
+    // Company under ANY Tenant id, even one that does not exist. Refused: only a person can pass.
     if (caller.isServiceAccount) {
-        return AuthorizedCaller(caller.email, caller.email)
+        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "Only the Tenant's Owner-Admin, signed in as a person, can perform this action"))
+        return null
     }
     val token = rawBearerToken()
     if (token == null) {
