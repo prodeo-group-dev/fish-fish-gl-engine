@@ -383,6 +383,78 @@ class ReportsRoutesTest {
     }
 
     @Test
+    fun `given activity dated today, when profit and loss is read for a range around today, then it covers the activity`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleActivity()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val body: ProfitAndLossRangeResponseDto = client.report(fixture, "profit-and-loss?from=${TODAY.minusDays(30)}&to=$TODAY").body()
+
+        body.from shouldBe TODAY.minusDays(30).toString()
+        body.to shouldBe TODAY.toString()
+        body.currency shouldBe "GBP"
+        body.totalRevenue shouldBe "500.00"
+        body.totalExpense shouldBe "300.00"
+        body.netIncome shouldBe "200.00"
+    }
+
+    @Test
+    fun `given activity dated today, when profit and loss is read for a range ending yesterday, then it is zero`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleActivity()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val body: ProfitAndLossRangeResponseDto = client.report(fixture, "profit-and-loss?from=${TODAY.minusDays(30)}&to=${TODAY.minusDays(1)}").body()
+
+        body.totalRevenue shouldBe "0.00"
+        body.netIncome shouldBe "0.00"
+    }
+
+    @Test
+    fun `given only one of from and to, or a reversed or invalid range, when profit and loss is requested, then it returns 400`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.report(fixture, "profit-and-loss?from=$TODAY").status shouldBe HttpStatusCode.BadRequest
+        client.report(fixture, "profit-and-loss?to=$TODAY").status shouldBe HttpStatusCode.BadRequest
+        client.report(fixture, "profit-and-loss?from=$TODAY&to=${TODAY.minusDays(1)}").status shouldBe HttpStatusCode.BadRequest
+        client.report(fixture, "profit-and-loss?from=soon&to=later").status shouldBe HttpStatusCode.BadRequest
+        client.report(fixture, "cash-flow?from=$TODAY").status shouldBe HttpStatusCode.BadRequest
+    }
+
+    @Test
+    fun `given activity dated today, when cash flow is read for a range around today, then it covers the activity`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleActivity()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val body: CashFlowResponseDto = client.report(fixture, "cash-flow?from=${TODAY.minusDays(30)}&to=$TODAY").body()
+
+        body.startDate shouldBe TODAY.minusDays(30).toString()
+        body.endDate shouldBe TODAY.toString()
+        body.openingBalance shouldBe "0.00"
+        body.closingBalance shouldBe "1300.00"
+        body.netCashFlow shouldBe "1300.00"
+    }
+
+    @Test
+    fun `given activity dated today, when cash flow is read for a range ending yesterday, then nothing moved`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleActivity()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val body: CashFlowResponseDto = client.report(fixture, "cash-flow?from=${TODAY.minusDays(30)}&to=${TODAY.minusDays(1)}").body()
+
+        body.netCashFlow shouldBe "0.00"
+        body.closingBalance shouldBe "0.00"
+    }
+
+    @Test
     fun `given the sample activity, when GET reports profit-and-loss is called, then it returns revenue, expense and net income`() = testApplication {
         val fixture = Fixture()
         fixture.postSampleActivity()

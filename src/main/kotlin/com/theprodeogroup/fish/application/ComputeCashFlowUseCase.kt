@@ -8,16 +8,22 @@ import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.ledger.StatementOfCashFlows
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
+import java.time.LocalDate
 
 /**
  * The GL page's "Cash flow" report sub-page (2026-08-29, "the GL should
  * also have a reports subpage") - a thin read wrapping
- * [StatementOfCashFlows.of] over the Company's currently open Period,
- * same "Compute*UseCase, sealed Result" shape as the other two report
- * use cases. The "which Account is cash" question is resolved the same
- * way [OnboardTenantUseCase]/[AddCompanyToTenantUseCase] already do it -
+ * [StatementOfCashFlows.of], same "Compute*UseCase, sealed Result" shape
+ * as the other two report use cases. By default it covers the Company's
+ * currently open Period; with [execute]'s `from` and `to` (UAT v2.2,
+ * month-end and year-end packs) it covers exactly that inclusive range and
+ * needs no open Period. The "which Account is cash" question is resolved the
+ * same way [OnboardTenantUseCase]/[AddCompanyToTenantUseCase] already do it -
  * `code == ChartOfAccountsTemplate.CASH_CODE` - rather than inventing a
- * second convention.
+ * second convention. Because the report has that one cash account, a
+ * transfer between two cash/bank accounts (a current-asset counter line)
+ * would be inferred as Operating; fine now, to be revisited if a second
+ * cash account is ever added.
  */
 class ComputeCashFlowUseCase(
     private val companyRepository: CompanyRepository,
@@ -32,19 +38,30 @@ class ComputeCashFlowUseCase(
         data object NoCashAccount : Result()
     }
 
-    fun execute(companyId: CompanyId): Result {
+    /** Both [from] and [to], or neither (the route enforces that); neither means the open Period. */
+    fun execute(companyId: CompanyId, from: LocalDate? = null, to: LocalDate? = null): Result {
+        require((from == null) == (to == null)) { "from and to must be given together" }
         val company = companyRepository.findById(companyId) ?: return Result.CompanyNotFound
 
-        val openPeriod = periodRepository.findAllByCompany(companyId)
-            .firstOrNull { it.status == PeriodStatus.OPEN }
-            ?: return Result.NoOpenPeriod
+        val startDate: LocalDate
+        val endDate: LocalDate
+        if (from != null && to != null) {
+            startDate = from
+            endDate = to
+        } else {
+            val openPeriod = periodRepository.findAllByCompany(companyId)
+                .firstOrNull { it.status == PeriodStatus.OPEN }
+                ?: return Result.NoOpenPeriod
+            startDate = openPeriod.startDate
+            endDate = openPeriod.endDate
+        }
 
         val accounts = accountRepository.findAllByCompany(companyId)
         val cashAccount = accounts.find { it.code == ChartOfAccountsTemplate.CASH_CODE } ?: return Result.NoCashAccount
         val entries = journalEntryRepository.findAllByCompany(companyId)
 
         return Result.Success(
-            StatementOfCashFlows.of(cashAccount, entries, openPeriod.startDate, openPeriod.endDate, company.baseCurrency, accounts)
+            StatementOfCashFlows.of(cashAccount, entries, startDate, endDate, company.baseCurrency, accounts)
         )
     }
 }

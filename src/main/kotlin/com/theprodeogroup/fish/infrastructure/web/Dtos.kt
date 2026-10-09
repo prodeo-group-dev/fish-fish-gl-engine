@@ -765,6 +765,21 @@ data class ProfitAndLossResponseDto(
     val netIncome: String
 )
 
+/**
+ * `GET /companies/{companyId}/reports/profit-and-loss?from=YYYY-MM-DD&to=YYYY-MM-DD` (UAT v2.2) - a
+ * separate type from [ProfitAndLossResponseDto], which names one Period and which EA decodes strictly.
+ * Both ends inclusive; the range may span Periods.
+ */
+@Serializable
+data class ProfitAndLossRangeResponseDto(
+    val currency: String,
+    val from: String,
+    val to: String,
+    val totalRevenue: String,
+    val totalExpense: String,
+    val netIncome: String
+)
+
 /** One IAS 7 activity category's net movement within a [CashFlowResponseDto]. */
 @Serializable
 data class CashFlowActivityAmountDto(
