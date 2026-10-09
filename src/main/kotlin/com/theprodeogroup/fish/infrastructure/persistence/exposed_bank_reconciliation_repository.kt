@@ -5,6 +5,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.BankReconciliation
 import com.theprodeogroup.fish.domain.ledger.BankReconciliationId
 import com.theprodeogroup.fish.domain.ledger.BankReconciliationRepository
+import com.theprodeogroup.fish.domain.ledger.BankReconciliationStatus
 import com.theprodeogroup.fish.domain.ledger.BankStatementLine
 import com.theprodeogroup.fish.domain.ledger.BankStatementLineId
 import com.theprodeogroup.fish.domain.ledger.CashDirection
@@ -19,6 +20,7 @@ import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.update
 import java.util.Currency
 
 /**
@@ -46,6 +48,7 @@ class ExposedBankReconciliationRepository : BankReconciliationRepository {
                 statement[statementDate] = reconciliation.statementDate
                 statement[statementEndingBalanceAmount] = reconciliation.statementEndingBalance.amount
                 statement[currency] = reconciliation.currency.currencyCode
+                statement[BankReconciliationsTable.status] = reconciliation.status.name
             }
             reconciliation.statementLines.forEach { line ->
                 BankStatementLinesTable.insert { statement ->
@@ -56,6 +59,10 @@ class ExposedBankReconciliationRepository : BankReconciliationRepository {
                     statement[direction] = line.direction.name
                     statement[description] = line.description
                 }
+            }
+        } else {
+            BankReconciliationsTable.update({ BankReconciliationsTable.id eq reconciliation.id.value }) { statement ->
+                statement[BankReconciliationsTable.status] = reconciliation.status.name
             }
         }
 
@@ -121,7 +128,8 @@ class ExposedBankReconciliationRepository : BankReconciliationRepository {
             statementLines = statementLines,
             postedEntries = postedEntries,
             currency = currency,
-            matches = matches
+            matches = matches,
+            status = BankReconciliationStatus.valueOf(this[BankReconciliationsTable.status])
         )
     }
 }

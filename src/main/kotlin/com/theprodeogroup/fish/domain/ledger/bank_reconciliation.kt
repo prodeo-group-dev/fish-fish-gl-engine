@@ -18,6 +18,37 @@ value class BankReconciliationId(val value: UUID) {
 }
 
 /**
+ * Where a [BankReconciliation] is in its life (UAT v2.2 W-M2): only [OPEN] accepts matches;
+ * [COMPLETED] and [CANCELLED] are final.
+ */
+enum class BankReconciliationStatus { OPEN, COMPLETED, CANCELLED }
+
+/**
+ * The standard bank-reconciliation tie-out: the statement's ending balance, plus the book entries
+ * still outstanding (deposits in transit are receipts, unpresented cheques are payments, both
+ * dated on or before the statement date and not matched to a statement line), should equal the
+ * ledger balance of the account on the statement date. [difference] is what is left over;
+ * zero means it ties out.
+ */
+data class BalanceTieOut(
+    val statementEndingBalance: Money,
+    val ledgerBalance: Money,
+    val outstandingNet: Money
+) {
+    val difference: Money
+        get() = statementEndingBalance + outstandingNet - ledgerBalance
+}
+
+/** The outcome of [BankReconciliation.complete]. */
+sealed class BankReconciliationCompletion {
+    data object Completed : BankReconciliationCompletion()
+    /** Already completed or cancelled. */
+    data object NotOpen : BankReconciliationCompletion()
+    data class NotFullyMatched(val unmatchedStatementLineIds: List<BankStatementLineId>) : BankReconciliationCompletion()
+    data class BalanceDifference(val tieOut: BalanceTieOut) : BankReconciliationCompletion()
+}
+
+/**
  * Reconciles one Cash/Bank `Account`'s posted activity against an
  * external bank statement (docs/DDD_Design.md Section 2.1's confirmed
  * GL Engine scope). Confirmed scope 2026-08-12, since no spec document
@@ -43,8 +74,12 @@ class BankReconciliation private constructor(
     val statementLines: List<BankStatementLine>,
     val postedEntries: List<JournalEntry>,
     val currency: Currency,
-    initialMatches: Set<Pair<BankStatementLineId, JournalEntryId>> = emptySet()
+    initialMatches: Set<Pair<BankStatementLineId, JournalEntryId>> = emptySet(),
+    status: BankReconciliationStatus = BankReconciliationStatus.OPEN
 ) {
+    var status: BankReconciliationStatus = status
+        private set
+
     /**
      * The actual pairing, not two independent sets of "already used" ids
      * - `unmatch()` needs to know *which* entry a given statement line
@@ -75,6 +110,7 @@ class BankReconciliation private constructor(
      * (the caller already chose this specific pair).
      */
     fun match(statementLineId: BankStatementLineId, journalEntryId: JournalEntryId): ValidationResult {
+        if (status != BankReconciliationStatus.OPEN) return notOpenFailure()
         val statementLine = statementLines.find { it.id == statementLineId }
             ?: return ValidationResult.failure("No such bank statement line on this reconciliation")
         if (matches.any { it.first == statementLineId }) {
@@ -112,12 +148,60 @@ class BankReconciliation private constructor(
      * correction model.
      */
     fun unmatch(statementLineId: BankStatementLineId, journalEntryId: JournalEntryId): ValidationResult {
+        if (status != BankReconciliationStatus.OPEN) return notOpenFailure()
         val pair = statementLineId to journalEntryId
         if (pair !in matches) {
             return ValidationResult.failure("This statement line and JournalEntry are not currently matched to each other")
         }
         matches.remove(pair)
         return ValidationResult.success()
+    }
+
+    private fun notOpenFailure(): ValidationResult =
+        ValidationResult.failure("This reconciliation is $status and can no longer be changed")
+
+    /** Abandons an [BankReconciliationStatus.OPEN] reconciliation; final. Its lines and matches stay readable. */
+    fun cancel(): ValidationResult {
+        if (status != BankReconciliationStatus.OPEN) return notOpenFailure()
+        status = BankReconciliationStatus.CANCELLED
+        return ValidationResult.success()
+    }
+
+    /**
+     * The tie-out for the statement date (see [BalanceTieOut]). Entries dated after
+     * the statement date are not part of it; the account is assumed to be an Asset, so a debit
+     * is a positive movement, as [match] already assumes.
+     */
+    fun balanceTieOut(): BalanceTieOut {
+        val zero = Money(java.math.BigDecimal.ZERO, currency)
+        fun movement(entry: JournalEntry): Money = entry.lines
+            .filter { it.accountId == accountId }
+            .fold(zero) { sum, line -> if (line.side == TransactionSide.DEBIT) sum + line.amount else sum - line.amount }
+
+        val upToStatement = postedEntries.filter { it.status.hasHistoricalEffect() && !it.date.isAfter(statementDate) }
+        val ledgerBalance = upToStatement.fold(zero) { sum, entry -> sum + movement(entry) }
+        val outstanding = upToStatement.filter { entry -> matches.none { it.second == entry.id } }
+            .fold(zero) { sum, entry -> sum + movement(entry) }
+        return BalanceTieOut(statementEndingBalance, ledgerBalance, outstanding)
+    }
+
+    /**
+     * Finishes the reconciliation; final. Needs every statement line matched. With
+     * [enforceBalanceTieOut], it also needs the [balanceTieOut] to agree (difference zero); book entries
+     * still outstanding are fine either way - they are how a real tie-out is explained.
+     */
+    fun complete(enforceBalanceTieOut: Boolean = false): BankReconciliationCompletion {
+        if (status != BankReconciliationStatus.OPEN) return BankReconciliationCompletion.NotOpen
+        val unmatchedLines = unmatchedStatementLines
+        if (unmatchedLines.isNotEmpty()) {
+            return BankReconciliationCompletion.NotFullyMatched(unmatchedLines.map { it.id })
+        }
+        if (enforceBalanceTieOut) {
+            val tieOut = balanceTieOut()
+            if (tieOut.difference.amount.signum() != 0) return BankReconciliationCompletion.BalanceDifference(tieOut)
+        }
+        status = BankReconciliationStatus.COMPLETED
+        return BankReconciliationCompletion.Completed
     }
 
     companion object {
@@ -159,9 +243,10 @@ class BankReconciliation private constructor(
             statementLines: List<BankStatementLine>,
             postedEntries: List<JournalEntry>,
             currency: Currency,
-            matches: Set<Pair<BankStatementLineId, JournalEntryId>>
+            matches: Set<Pair<BankStatementLineId, JournalEntryId>>,
+            status: BankReconciliationStatus = BankReconciliationStatus.OPEN
         ): BankReconciliation = BankReconciliation(
-            id, accountId, statementDate, statementEndingBalance, statementLines, postedEntries, currency, matches
+            id, accountId, statementDate, statementEndingBalance, statementLines, postedEntries, currency, matches, status
         )
     }
 }
