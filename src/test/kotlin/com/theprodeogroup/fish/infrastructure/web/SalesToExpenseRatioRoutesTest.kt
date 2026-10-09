@@ -235,7 +235,8 @@ class SalesToExpenseRatioRoutesTest {
     }
 
     @Test
-    fun `given no operating expense posted yet, when GET sales-to-expense-ratio is called, then it returns 409`() = testApplication {
+    fun `given no operating expense posted yet, when GET sales-to-expense-ratio is called, then it returns 200 with a null ratio`() = testApplication {
+        // UAT 2026-10-08 L6: "no data yet" is a normal dashboard state, not an error - 409 logged on every load.
         val fixture = Fixture()
         fixture.post(fixture.revenueAccount, "1000.00", isRevenue = true)
         application { fixture.installInto(this) }
@@ -246,7 +247,11 @@ class SalesToExpenseRatioRoutesTest {
             header("X-Tenant-Id", fixture.tenant.value.toString())
         }
 
-        response.status shouldBe HttpStatusCode.Conflict
+        response.status shouldBe HttpStatusCode.OK
+        val body: SalesToExpenseRatioResponseDto = response.body()
+        body.ratio shouldBe null
+        body.totalRevenue shouldBe "1000.00"
+        body.operatingExpense shouldBe "0.00"
     }
 
     @Test

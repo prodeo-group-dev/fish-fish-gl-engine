@@ -13,9 +13,10 @@ import io.ktor.server.routing.get
  * `GET /companies/{companyId}/sales-to-expense-ratio` - the third
  * dashboard KPI (see `ComputeSalesToExpenseRatioUseCase`'s own KDoc).
  * Mirrors `moneyVelocityRoutes`/`expenseVelocityRoutes` exactly, including
- * their read-only authorization; 409 covers all three "nothing to show
- * yet" states (no open Period, no Chart of Accounts, no operating
- * expense posted yet).
+ * their read-only authorization; 409 covers the two "not set up" states
+ * (no open Period, no Chart of Accounts). No operating expense posted yet
+ * is a normal state: 200 with the revenue and a `null` ratio (UAT
+ * 2026-10-08 L6 - the 409 was logged on every dashboard load).
  */
 fun Route.salesToExpenseRatioRoutes(
     computeSalesToExpenseRatioUseCase: ComputeSalesToExpenseRatioUseCase,
@@ -51,8 +52,18 @@ fun Route.salesToExpenseRatioRoutes(
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("no_open_period", "This Company has no open Period"))
             ComputeSalesToExpenseRatioUseCase.Result.NoAccountsForCompany ->
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("no_accounts", "This Company has no Chart of Accounts"))
-            ComputeSalesToExpenseRatioUseCase.Result.NoOperatingExpenseYet ->
-                call.respond(HttpStatusCode.Conflict, ErrorResponseDto("no_operating_expense", "No operating expense posted yet this Period"))
+            // UAT 2026-10-08 L6: no operating expense yet is a normal dashboard state, not an error -
+            // 200 with a null ratio (it was a 409 that every dashboard load logged).
+            is ComputeSalesToExpenseRatioUseCase.Result.NoOperatingExpenseYet -> call.respond(
+                SalesToExpenseRatioResponseDto(
+                    periodId = result.period.id.value.toString(),
+                    periodStartDate = result.period.startDate.toString(),
+                    totalRevenue = result.totalRevenue.amount.toPlainString(),
+                    operatingExpense = result.operatingExpense.amount.toPlainString(),
+                    currency = result.totalRevenue.currency.currencyCode,
+                    ratio = null
+                )
+            )
         }
     }
 }

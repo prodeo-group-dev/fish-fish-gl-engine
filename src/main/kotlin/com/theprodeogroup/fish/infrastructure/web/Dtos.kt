@@ -692,7 +692,8 @@ data class SalesToExpenseRatioResponseDto(
     val totalRevenue: String,
     val operatingExpense: String,
     val currency: String,
-    val ratio: String
+    /** `null` while no operating expense is posted this Period (the ratio is undefined, not zero). */
+    val ratio: String?
 )
 
 /** One line within a [BalanceSheetResponseDto]'s asset/liability/equity section. */
