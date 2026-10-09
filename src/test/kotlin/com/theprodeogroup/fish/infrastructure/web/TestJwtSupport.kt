@@ -66,4 +66,26 @@ object TestJwtSupport {
             .withClaim("email", email)
             .withExpiresAt(Date(System.currentTimeMillis() + 3_600_000))
             .sign(Algorithm.RSA256(publicKey, privateKey))
+
+    /**
+     * The four service accounts GL knows (T15 / G2, 2026-10-09), each with its own audience exactly as in
+     * production, where every service has its own Cognito app client: SOP, POP, IM, HR.
+     */
+    val SERVICES = listOf("sop", "pop", "im", "hr")
+
+    fun serviceAudience(service: String): String =
+        if (service == "pop") POP_SERVICE_AUDIENCE else "fish-gl-engine-test-service-$service"
+
+    /** The verifier for [service]'s audience, to be passed as that service's `*ServiceVerifier` in `fishModule`. */
+    fun serviceVerifier(service: String): JWTVerifier =
+        JWT.require(Algorithm.RSA256(publicKey, null)).withIssuer(ISSUER).withAudience(serviceAudience(service)).build()
+
+    /** A token for [service]'s own audience, as that service's Cognito client would obtain. */
+    fun signServiceToken(service: String, email: String = "$service-gl-service@theprodeogroup.com"): String =
+        JWT.create()
+            .withIssuer(ISSUER)
+            .withAudience(serviceAudience(service))
+            .withClaim("email", email)
+            .withExpiresAt(Date(System.currentTimeMillis() + 3_600_000))
+            .sign(Algorithm.RSA256(publicKey, privateKey))
 }
