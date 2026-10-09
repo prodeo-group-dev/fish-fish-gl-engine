@@ -31,6 +31,8 @@ import com.theprodeogroup.fish.application.ImportFixedAssetsUseCase
 import com.theprodeogroup.fish.application.StartBankReconciliationUseCase
 import com.theprodeogroup.fish.application.MatchBankReconciliationLineUseCase
 import com.theprodeogroup.fish.application.UnmatchBankReconciliationLineUseCase
+import com.theprodeogroup.fish.application.CompleteBankReconciliationUseCase
+import com.theprodeogroup.fish.application.CancelBankReconciliationUseCase
 import com.theprodeogroup.fish.application.ComputeBankReconciliationUseCase
 import com.theprodeogroup.fish.application.ListBankReconciliationsUseCase
 import com.theprodeogroup.fish.application.ImportGlBalancesUseCase
@@ -218,6 +220,9 @@ fun Application.productionModule() {
     val startBankReconciliationUseCase = StartBankReconciliationUseCase(companyRepository, accountRepository, journalEntryRepository, bankReconciliationRepository)
     val matchBankReconciliationLineUseCase = MatchBankReconciliationLineUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
     val unmatchBankReconciliationLineUseCase = UnmatchBankReconciliationLineUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
+    // Whether Complete also requires the statement balance to tie out to the ledger is Femi's call (UAT v2.2 W-M2, put to him via WEB 2026-10-09); off until he says yes, with the 409 balance_difference contract already in place.
+    val completeBankReconciliationUseCase = CompleteBankReconciliationUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository, enforceBalanceTieOut = false)
+    val cancelBankReconciliationUseCase = CancelBankReconciliationUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
     val computeBankReconciliationUseCase = ComputeBankReconciliationUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
     val listBankReconciliationsUseCase = ListBankReconciliationsUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
 
@@ -269,6 +274,8 @@ fun Application.productionModule() {
         startBankReconciliationUseCase = startBankReconciliationUseCase,
         matchBankReconciliationLineUseCase = matchBankReconciliationLineUseCase,
         unmatchBankReconciliationLineUseCase = unmatchBankReconciliationLineUseCase,
+        completeBankReconciliationUseCase = completeBankReconciliationUseCase,
+        cancelBankReconciliationUseCase = cancelBankReconciliationUseCase,
         computeBankReconciliationUseCase = computeBankReconciliationUseCase,
         listBankReconciliationsUseCase = listBankReconciliationsUseCase,
         periodRepository = periodRepository,
@@ -357,6 +364,8 @@ fun Application.fishModule(
     startBankReconciliationUseCase: StartBankReconciliationUseCase? = null,
     matchBankReconciliationLineUseCase: MatchBankReconciliationLineUseCase? = null,
     unmatchBankReconciliationLineUseCase: UnmatchBankReconciliationLineUseCase? = null,
+    completeBankReconciliationUseCase: CompleteBankReconciliationUseCase? = null,
+    cancelBankReconciliationUseCase: CancelBankReconciliationUseCase? = null,
     computeBankReconciliationUseCase: ComputeBankReconciliationUseCase? = null,
     listBankReconciliationsUseCase: ListBankReconciliationsUseCase? = null,
     periodRepository: PeriodRepository,
@@ -575,12 +584,13 @@ fun Application.fishModule(
                     openingImportRoutes(importGlBalancesUseCase, importFixedAssetsUseCase, companyRepository)
                 }
                 if (startBankReconciliationUseCase != null && matchBankReconciliationLineUseCase != null &&
-                    unmatchBankReconciliationLineUseCase != null && computeBankReconciliationUseCase != null &&
+                    unmatchBankReconciliationLineUseCase != null && completeBankReconciliationUseCase != null &&
+                    cancelBankReconciliationUseCase != null && computeBankReconciliationUseCase != null &&
                     listBankReconciliationsUseCase != null
                 ) {
                     bankReconciliationRoutes(
                         startBankReconciliationUseCase, matchBankReconciliationLineUseCase,
-                        unmatchBankReconciliationLineUseCase, computeBankReconciliationUseCase,
+                        unmatchBankReconciliationLineUseCase, completeBankReconciliationUseCase, cancelBankReconciliationUseCase, computeBankReconciliationUseCase,
                         listBankReconciliationsUseCase, companyRepository
                     )
                 }

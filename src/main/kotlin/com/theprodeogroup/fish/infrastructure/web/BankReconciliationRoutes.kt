@@ -1,5 +1,9 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import com.theprodeogroup.fish.application.CancelBankReconciliationResult
+import com.theprodeogroup.fish.application.CancelBankReconciliationUseCase
+import com.theprodeogroup.fish.application.CompleteBankReconciliationResult
+import com.theprodeogroup.fish.application.CompleteBankReconciliationUseCase
 import com.theprodeogroup.fish.application.ComputeBankReconciliationResult
 import com.theprodeogroup.fish.application.ComputeBankReconciliationUseCase
 import com.theprodeogroup.fish.application.ListBankReconciliationsResult
@@ -43,6 +47,8 @@ fun Route.bankReconciliationRoutes(
     startBankReconciliationUseCase: StartBankReconciliationUseCase,
     matchBankReconciliationLineUseCase: MatchBankReconciliationLineUseCase,
     unmatchBankReconciliationLineUseCase: UnmatchBankReconciliationLineUseCase,
+    completeBankReconciliationUseCase: CompleteBankReconciliationUseCase,
+    cancelBankReconciliationUseCase: CancelBankReconciliationUseCase,
     computeBankReconciliationUseCase: ComputeBankReconciliationUseCase,
     listBankReconciliationsUseCase: ListBankReconciliationsUseCase,
     companyRepository: CompanyRepository
@@ -110,6 +116,7 @@ fun Route.bankReconciliationRoutes(
             is MatchBankReconciliationLineResult.Success -> call.respond(HttpStatusCode.OK, result.reconciliation.toDto())
             MatchBankReconciliationLineResult.CompanyNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
             MatchBankReconciliationLineResult.ReconciliationNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("reconciliation_not_found", "Bank Reconciliation not found"))
+            MatchBankReconciliationLineResult.NotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("not_open", "This reconciliation is no longer open"))
             is MatchBankReconciliationLineResult.InvalidMatch -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("invalid_match", result.message))
         }
     }
@@ -132,7 +139,55 @@ fun Route.bankReconciliationRoutes(
             is UnmatchBankReconciliationLineResult.Success -> call.respond(HttpStatusCode.OK, result.reconciliation.toDto())
             UnmatchBankReconciliationLineResult.CompanyNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
             UnmatchBankReconciliationLineResult.ReconciliationNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("reconciliation_not_found", "Bank Reconciliation not found"))
+            UnmatchBankReconciliationLineResult.NotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("not_open", "This reconciliation is no longer open"))
             is UnmatchBankReconciliationLineResult.InvalidUnmatch -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("invalid_unmatch", result.message))
+        }
+    }
+
+    // UAT v2.2 W-M2: finish or abandon a reconciliation. Both are final. Complete needs every statement
+    // line matched (409 not_fully_matched with the line ids) and, once the balance tie-out is enforced,
+    // a statement balance that ties out to the ledger (409 balance_difference with the figures).
+    post("/companies/{companyId}/bank-reconciliations/{id}/complete") {
+        val companyId = call.parseBankReconciliationCompanyId() ?: return@post
+        val reconciliationId = call.parseBankReconciliationId() ?: return@post
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
+        if (!call.verifyClaimedTenant(tenantId)) return@post
+        call.authorizeTenantForWrite(tenantId, companyId) ?: return@post
+
+        when (val result = completeBankReconciliationUseCase.execute(companyId, reconciliationId)) {
+            is CompleteBankReconciliationResult.Success -> call.respond(HttpStatusCode.OK, result.reconciliation.toDto())
+            CompleteBankReconciliationResult.CompanyNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
+            CompleteBankReconciliationResult.ReconciliationNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("reconciliation_not_found", "Bank Reconciliation not found for this Company"))
+            CompleteBankReconciliationResult.NotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("not_open", "This reconciliation is no longer open"))
+            is CompleteBankReconciliationResult.NotFullyMatched -> call.respond(
+                HttpStatusCode.Conflict,
+                BankReconciliationNotFullyMatchedDto("not_fully_matched", result.unmatchedStatementLineIds.map { it.value.toString() })
+            )
+            is CompleteBankReconciliationResult.BalanceDifference -> call.respond(
+                HttpStatusCode.Conflict,
+                BankReconciliationBalanceDifferenceDto(
+                    "balance_difference",
+                    result.tieOut.statementEndingBalance.amount.toPlainString(),
+                    result.tieOut.ledgerBalance.amount.toPlainString(),
+                    result.tieOut.outstandingNet.amount.toPlainString(),
+                    result.tieOut.difference.amount.toPlainString()
+                )
+            )
+        }
+    }
+
+    post("/companies/{companyId}/bank-reconciliations/{id}/cancel") {
+        val companyId = call.parseBankReconciliationCompanyId() ?: return@post
+        val reconciliationId = call.parseBankReconciliationId() ?: return@post
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
+        if (!call.verifyClaimedTenant(tenantId)) return@post
+        call.authorizeTenantForWrite(tenantId, companyId) ?: return@post
+
+        when (val result = cancelBankReconciliationUseCase.execute(companyId, reconciliationId)) {
+            is CancelBankReconciliationResult.Success -> call.respond(HttpStatusCode.OK, result.reconciliation.toDto())
+            CancelBankReconciliationResult.CompanyNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
+            CancelBankReconciliationResult.ReconciliationNotFound -> call.respond(HttpStatusCode.NotFound, ErrorResponseDto("reconciliation_not_found", "Bank Reconciliation not found for this Company"))
+            CancelBankReconciliationResult.NotOpen -> call.respond(HttpStatusCode.Conflict, ErrorResponseDto("not_open", "This reconciliation is no longer open"))
         }
     }
 
@@ -156,10 +211,11 @@ private fun BankReconciliation.toSummaryDto(): BankReconciliationSummaryDto = Ba
     accountId = accountId.value.toString(),
     statementDate = statementDate.toString(),
     currency = currency.currencyCode,
-    isFullyReconciled = isFullyReconciled
+    isFullyReconciled = isFullyReconciled,
+    status = status.name
 )
 
-private fun BankReconciliation.toDto(): BankReconciliationResponseDto = BankReconciliationResponseDto(
+private fun BankReconciliation.toDto(): BankReconciliationResponseDto = balanceTieOut().let { tieOut -> BankReconciliationResponseDto(
     id = id.value.toString(),
     accountId = accountId.value.toString(),
     statementDate = statementDate.toString(),
@@ -173,8 +229,12 @@ private fun BankReconciliation.toDto(): BankReconciliationResponseDto = BankReco
     matches = currentMatches.map { (statementLineId, journalEntryId) ->
         BankReconciliationMatchDto(statementLineId.value.toString(), journalEntryId.value.toString())
     },
-    isFullyReconciled = isFullyReconciled
-)
+    isFullyReconciled = isFullyReconciled,
+    status = status.name,
+    ledgerBalance = tieOut.ledgerBalance.amount.toPlainString(),
+    outstandingNet = tieOut.outstandingNet.amount.toPlainString(),
+    balanceDifference = tieOut.difference.amount.toPlainString()
+) }
 
 private suspend fun ApplicationCall.parseBankReconciliationCompanyId(): CompanyId? {
     val raw = parameters["companyId"]

@@ -6,6 +6,7 @@ import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.ledger.AccountType
 import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.BankReconciliation
+import com.theprodeogroup.fish.domain.ledger.BankReconciliationStatus
 import com.theprodeogroup.fish.domain.ledger.BankStatementLine
 import com.theprodeogroup.fish.domain.ledger.CashDirection
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
@@ -98,6 +99,41 @@ class BankReconciliationRepositoryIntegrationTest {
         loaded.statementLines.single().description shouldBe "Card settlement"
         loaded.statementLines.single().amount shouldBe Money(BigDecimal("500.00"), GBP)
         loaded.statementLines.single().direction shouldBe CashDirection.RECEIVED
+    }
+
+    @Test
+    fun `given a new reconciliation, when saved and reloaded, then it is OPEN (V32 status column)`() {
+        val companyId = newCompany()
+        val cashAccount = newCashAccount(companyId)
+        val reconciliation = BankReconciliation.create(cashAccount.id, TODAY, Money(BigDecimal("0.00"), GBP), emptyList(), emptyList(), GBP)
+
+        bankReconciliationRepository.save(reconciliation, companyId)
+
+        bankReconciliationRepository.findById(reconciliation.id, companyId, emptyList())!!.status shouldBe BankReconciliationStatus.OPEN
+    }
+
+    @Test
+    fun `given a completed or cancelled reconciliation, when saved again and reloaded, then the final status persists and refuses further changes`() {
+        val companyId = newCompany()
+        val cashAccount = newCashAccount(companyId)
+        val entry = postedEntry(companyId, cashAccount.id, "500.00")
+        val statementLine = BankStatementLine(date = TODAY, amount = Money(BigDecimal("500.00"), GBP), direction = CashDirection.RECEIVED, description = "Card settlement")
+        val toComplete = BankReconciliation.create(cashAccount.id, TODAY, Money(BigDecimal("500.00"), GBP), listOf(statementLine), listOf(entry), GBP)
+        bankReconciliationRepository.save(toComplete, companyId) // first save inserts it OPEN
+        toComplete.match(statementLine.id, entry.id)
+        toComplete.complete()
+        bankReconciliationRepository.save(toComplete, companyId) // second save must UPDATE the status
+
+        val reloaded = bankReconciliationRepository.findById(toComplete.id, companyId, listOf(entry))!!
+        reloaded.status shouldBe BankReconciliationStatus.COMPLETED
+        reloaded.currentMatches shouldBe setOf(statementLine.id to entry.id)
+        reloaded.unmatch(statementLine.id, entry.id).isValid shouldBe false
+
+        val toCancel = BankReconciliation.create(cashAccount.id, TODAY, Money(BigDecimal("0.00"), GBP), emptyList(), emptyList(), GBP)
+        bankReconciliationRepository.save(toCancel, companyId)
+        toCancel.cancel()
+        bankReconciliationRepository.save(toCancel, companyId)
+        bankReconciliationRepository.findById(toCancel.id, companyId, emptyList())!!.status shouldBe BankReconciliationStatus.CANCELLED
     }
 
     @Test

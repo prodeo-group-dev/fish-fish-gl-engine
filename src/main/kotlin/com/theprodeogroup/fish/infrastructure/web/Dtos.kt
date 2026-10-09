@@ -933,7 +933,27 @@ data class BankReconciliationResponseDto(
     val unmatchedStatementLineIds: List<String>,
     val unmatchedJournalEntryIds: List<String>,
     val matches: List<BankReconciliationMatchDto>,
-    val isFullyReconciled: Boolean
+    val isFullyReconciled: Boolean,
+    /** OPEN, COMPLETED or CANCELLED (UAT v2.2 W-M2); match and unmatch are accepted only while OPEN. */
+    val status: String,
+    /** The tie-out at the statement date: ledger balance of the account, the net of book entries not yet matched, and what is left over (zero = it ties out). */
+    val ledgerBalance: String,
+    val outstandingNet: String,
+    val balanceDifference: String
+)
+
+/** 409 `not_fully_matched` from `.../complete`: the statement lines still to match. */
+@Serializable
+data class BankReconciliationNotFullyMatchedDto(val error: String, val unmatchedStatementLineIds: List<String>)
+
+/** 409 `balance_difference` from `.../complete` once the balance tie-out is enforced. */
+@Serializable
+data class BankReconciliationBalanceDifferenceDto(
+    val error: String,
+    val statementEndingBalance: String,
+    val ledgerBalance: String,
+    val outstandingNet: String,
+    val difference: String
 )
 
 @Serializable
@@ -945,7 +965,7 @@ data class MatchBankReconciliationLineRequestDto(val statementLineId: String, va
 
 /** `GET /companies/{companyId}/bank-reconciliations` - a lightweight summary per reconciliation, not the full statement-line/match detail (that's `GET .../{id}`). */
 @Serializable
-data class BankReconciliationSummaryDto(val id: String, val accountId: String, val statementDate: String, val currency: String, val isFullyReconciled: Boolean)
+data class BankReconciliationSummaryDto(val id: String, val accountId: String, val statementDate: String, val currency: String, val isFullyReconciled: Boolean, val status: String)
 
 @Serializable
 data class ListBankReconciliationsResponseDto(val reconciliations: List<BankReconciliationSummaryDto>)

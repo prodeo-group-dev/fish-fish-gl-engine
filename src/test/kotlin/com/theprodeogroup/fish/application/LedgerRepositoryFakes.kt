@@ -68,7 +68,8 @@ class FakeBankReconciliationRepository : BankReconciliationRepository {
         val statementEndingBalance: com.theprodeogroup.common.Money,
         val statementLines: List<com.theprodeogroup.fish.domain.ledger.BankStatementLine>,
         val currency: java.util.Currency,
-        val matches: Set<Pair<com.theprodeogroup.fish.domain.ledger.BankStatementLineId, JournalEntryId>>
+        val matches: Set<Pair<com.theprodeogroup.fish.domain.ledger.BankStatementLineId, JournalEntryId>>,
+        val status: com.theprodeogroup.fish.domain.ledger.BankReconciliationStatus
     )
 
     private val store = mutableMapOf<BankReconciliationId, Record>()
@@ -76,7 +77,7 @@ class FakeBankReconciliationRepository : BankReconciliationRepository {
     override fun save(reconciliation: BankReconciliation, companyId: CompanyId) {
         store[reconciliation.id] = Record(
             companyId, reconciliation.accountId, reconciliation.statementDate, reconciliation.statementEndingBalance,
-            reconciliation.statementLines, reconciliation.currency, reconciliation.currentMatches
+            reconciliation.statementLines, reconciliation.currency, reconciliation.currentMatches, reconciliation.status
         )
     }
 
@@ -85,7 +86,7 @@ class FakeBankReconciliationRepository : BankReconciliationRepository {
         if (record.companyId != companyId) return null
         return BankReconciliation.reconstitute(
             id, record.accountId, record.statementDate, record.statementEndingBalance,
-            record.statementLines, postedEntries, record.currency, record.matches
+            record.statementLines, postedEntries, record.currency, record.matches, record.status
         )
     }
 
@@ -95,7 +96,7 @@ class FakeBankReconciliationRepository : BankReconciliationRepository {
             .map { (id, record) ->
                 BankReconciliation.reconstitute(
                     id, record.accountId, record.statementDate, record.statementEndingBalance,
-                    record.statementLines, postedEntries, record.currency, record.matches
+                    record.statementLines, postedEntries, record.currency, record.matches, record.status
                 )
             }
 }

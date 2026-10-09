@@ -2,6 +2,7 @@ package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.fish.domain.ledger.BankReconciliationId
 import com.theprodeogroup.fish.domain.ledger.BankReconciliationRepository
+import com.theprodeogroup.fish.domain.ledger.BankReconciliationStatus
 import com.theprodeogroup.fish.domain.ledger.BankStatementLineId
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
@@ -12,6 +13,8 @@ sealed class MatchBankReconciliationLineResult {
     data class Success(val reconciliation: com.theprodeogroup.fish.domain.ledger.BankReconciliation) : MatchBankReconciliationLineResult()
     data object CompanyNotFound : MatchBankReconciliationLineResult()
     data object ReconciliationNotFound : MatchBankReconciliationLineResult()
+    /** The reconciliation is COMPLETED or CANCELLED, so it no longer accepts matches. */
+    data object NotOpen : MatchBankReconciliationLineResult()
     data class InvalidMatch(val message: String) : MatchBankReconciliationLineResult()
 }
 
@@ -31,6 +34,7 @@ class MatchBankReconciliationLineUseCase(
         val reconciliation = bankReconciliationRepository.findById(reconciliationId, companyId, postedEntries)
             ?: return MatchBankReconciliationLineResult.ReconciliationNotFound
 
+        if (reconciliation.status != BankReconciliationStatus.OPEN) return MatchBankReconciliationLineResult.NotOpen
         val result = reconciliation.match(statementLineId, journalEntryId)
         if (!result.isValid) return MatchBankReconciliationLineResult.InvalidMatch(result.errors.joinToString("; "))
 

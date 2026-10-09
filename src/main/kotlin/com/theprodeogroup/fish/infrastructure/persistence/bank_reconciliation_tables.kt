@@ -15,6 +15,7 @@ object BankReconciliationsTable : Table("bank_reconciliations") {
     val statementDate = date("statement_date")
     val statementEndingBalanceAmount = decimal("statement_ending_balance_amount", 19, 4)
     val currency = varchar("currency", 3)
+    val status = varchar("status", 20)
 
     override val primaryKey = PrimaryKey(id)
 }

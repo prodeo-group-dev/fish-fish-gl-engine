@@ -10,6 +10,8 @@ import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
 import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
 import com.theprodeogroup.fish.application.ComputeCashFlowUseCase
+import com.theprodeogroup.fish.application.CancelBankReconciliationUseCase
+import com.theprodeogroup.fish.application.CompleteBankReconciliationUseCase
 import com.theprodeogroup.fish.application.ComputeBankReconciliationUseCase
 import com.theprodeogroup.fish.application.FakeBankReconciliationRepository
 import com.theprodeogroup.fish.application.ListBankReconciliationsUseCase
@@ -93,7 +95,7 @@ private val TODAY: LocalDate = LocalDate.now()
 /** `/companies/{companyId}/bank-reconciliations` - see BankReconciliationRoutes.kt's own KDoc. */
 class BankReconciliationRoutesTest {
 
-    private class Fixture {
+    private class Fixture(enforceTieOut: Boolean = false) {
         val userRepository = FakeUserRepository()
         val membershipRepository = FakeMembershipRepository()
         val companyRepository = FakeCompanyRepository()
@@ -143,6 +145,8 @@ class BankReconciliationRoutesTest {
         val startBankReconciliationUseCase = StartBankReconciliationUseCase(companyRepository, accountRepository, journalEntryRepository, bankReconciliationRepository)
         val matchBankReconciliationLineUseCase = MatchBankReconciliationLineUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
         val unmatchBankReconciliationLineUseCase = UnmatchBankReconciliationLineUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
+        val completeBankReconciliationUseCase = CompleteBankReconciliationUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository, enforceBalanceTieOut = enforceTieOut)
+        val cancelBankReconciliationUseCase = CancelBankReconciliationUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
         val computeBankReconciliationUseCase = ComputeBankReconciliationUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
         val listBankReconciliationsUseCase = ListBankReconciliationsUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
 
@@ -223,6 +227,8 @@ class BankReconciliationRoutesTest {
                 startBankReconciliationUseCase = startBankReconciliationUseCase,
                 matchBankReconciliationLineUseCase = matchBankReconciliationLineUseCase,
                 unmatchBankReconciliationLineUseCase = unmatchBankReconciliationLineUseCase,
+                completeBankReconciliationUseCase = completeBankReconciliationUseCase,
+                cancelBankReconciliationUseCase = cancelBankReconciliationUseCase,
                 computeBankReconciliationUseCase = computeBankReconciliationUseCase,
                 listBankReconciliationsUseCase = listBankReconciliationsUseCase
             )
@@ -230,6 +236,161 @@ class BankReconciliationRoutesTest {
     }
 
     private val startBody = """{"accountId": "%s", "statementDate": "%s", "statementEndingBalance": "500.00", "currency": "GBP", "lines": [{"date": "%s", "amount": "500.00", "direction": "RECEIVED", "description": "Card settlement"}]}"""
+
+    // ---- UAT v2.2 W-M2: status, complete, cancel -------------------------------------------------------
+
+    private suspend fun io.ktor.client.HttpClient.recPost(fixture: Fixture, path: String, body: String? = null) =
+        post("/api/companies/${fixture.company.id.value}/bank-reconciliations$path") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+            contentType(ContentType.Application.Json)
+            if (body != null) setBody(body)
+        }
+
+    private suspend fun io.ktor.client.HttpClient.startRec(fixture: Fixture, endingBalance: String = "500.00"): BankReconciliationResponseDto =
+        recPost(fixture, "", startBody.replace("\"500.00\", \"currency\"", "\"$endingBalance\", \"currency\"").format(fixture.cashAccount.id.value, TODAY, TODAY)).body()
+
+    private suspend fun io.ktor.client.HttpClient.matchRec(fixture: Fixture, rec: BankReconciliationResponseDto, entryId: String) =
+        recPost(fixture, "/${rec.id}/match", """{"statementLineId": "${rec.statementLines.single().id}", "journalEntryId": "$entryId"}""")
+
+    @Test
+    fun `a new reconciliation is OPEN`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.startRec(fixture).status shouldBe "OPEN"
+    }
+
+    @Test
+    fun `when every statement line is matched, complete returns the reconciliation as COMPLETED, and a read shows it`() = testApplication {
+        val fixture = Fixture()
+        val entry = fixture.postCashReceipt()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val rec = client.startRec(fixture)
+        client.matchRec(fixture, rec, entry.id.value.toString())
+
+        val completed = client.recPost(fixture, "/${rec.id}/complete")
+
+        completed.status shouldBe HttpStatusCode.OK
+        completed.body<BankReconciliationResponseDto>().status shouldBe "COMPLETED"
+        client.get("/api/companies/${fixture.company.id.value}/bank-reconciliations/${rec.id}") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }.body<BankReconciliationResponseDto>().status shouldBe "COMPLETED"
+    }
+
+    @Test
+    fun `complete with a statement line unmatched answers 409 not_fully_matched with the line ids`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val rec = client.startRec(fixture)
+
+        val response = client.recPost(fixture, "/${rec.id}/complete")
+
+        response.status shouldBe HttpStatusCode.Conflict
+        val body: BankReconciliationNotFullyMatchedDto = response.body()
+        body.error shouldBe "not_fully_matched"
+        body.unmatchedStatementLineIds shouldBe listOf(rec.statementLines.single().id)
+    }
+
+    @Test
+    fun `cancel ends an OPEN reconciliation, which then refuses match, unmatch, complete and a second cancel`() = testApplication {
+        val fixture = Fixture()
+        val entry = fixture.postCashReceipt()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val rec = client.startRec(fixture)
+
+        val cancelled = client.recPost(fixture, "/${rec.id}/cancel")
+        cancelled.status shouldBe HttpStatusCode.OK
+        cancelled.body<BankReconciliationResponseDto>().status shouldBe "CANCELLED"
+
+        client.matchRec(fixture, rec, entry.id.value.toString()).status shouldBe HttpStatusCode.Conflict
+        client.recPost(fixture, "/${rec.id}/unmatch", """{"statementLineId": "${rec.statementLines.single().id}", "journalEntryId": "${entry.id.value}"}""").status shouldBe HttpStatusCode.Conflict
+        client.recPost(fixture, "/${rec.id}/complete").status shouldBe HttpStatusCode.Conflict
+        val again = client.recPost(fixture, "/${rec.id}/cancel")
+        again.status shouldBe HttpStatusCode.Conflict
+        again.body<ErrorResponseDto>().error shouldBe "not_open"
+    }
+
+    @Test
+    fun `a completed reconciliation can no longer be changed or cancelled`() = testApplication {
+        val fixture = Fixture()
+        val entry = fixture.postCashReceipt()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val rec = client.startRec(fixture)
+        client.matchRec(fixture, rec, entry.id.value.toString())
+        client.recPost(fixture, "/${rec.id}/complete").status shouldBe HttpStatusCode.OK
+
+        client.recPost(fixture, "/${rec.id}/unmatch", """{"statementLineId": "${rec.statementLines.single().id}", "journalEntryId": "${entry.id.value}"}""").status shouldBe HttpStatusCode.Conflict
+        client.recPost(fixture, "/${rec.id}/cancel").status shouldBe HttpStatusCode.Conflict
+        client.recPost(fixture, "/${rec.id}/complete").status shouldBe HttpStatusCode.Conflict
+    }
+
+    @Test
+    fun `the read reports the tie-out figures, and a wrong statement balance is a balance_difference once enforced`() = testApplication {
+        val enforced = Fixture(enforceTieOut = true)
+        val entry = enforced.postCashReceipt()
+        application { enforced.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val rec = client.startRec(enforced, endingBalance = "450.00") // statement says 450, ledger says 500 (the line itself is 500)
+        client.matchRec(enforced, rec, entry.id.value.toString())
+
+        val response = client.recPost(enforced, "/${rec.id}/complete")
+
+        response.status shouldBe HttpStatusCode.Conflict
+        val body: BankReconciliationBalanceDifferenceDto = response.body()
+        body.error shouldBe "balance_difference"
+        body.statementEndingBalance shouldBe "450.00"
+        body.ledgerBalance shouldBe "500.00"
+        body.difference shouldBe "-50.00"
+    }
+
+    @Test
+    fun `with the tie-out not enforced, the same wrong balance still completes, and the read still reports the difference`() = testApplication {
+        val fixture = Fixture(enforceTieOut = false)
+        val entry = fixture.postCashReceipt()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val rec = client.startRec(fixture, endingBalance = "450.00")
+        client.matchRec(fixture, rec, entry.id.value.toString())
+
+        val completed: BankReconciliationResponseDto = client.recPost(fixture, "/${rec.id}/complete").body()
+
+        completed.status shouldBe "COMPLETED"
+        completed.ledgerBalance shouldBe "500.00"
+        completed.balanceDifference shouldBe "-50.00"
+    }
+
+    @Test
+    fun `complete and cancel need a bearer token and a Tenant that owns the Company`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val rec = client.startRec(fixture)
+
+        client.post("/api/companies/${fixture.company.id.value}/bank-reconciliations/${rec.id}/complete") {
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }.status shouldBe HttpStatusCode.Unauthorized
+        client.post("/api/companies/${fixture.company.id.value}/bank-reconciliations/${rec.id}/cancel") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", TenantId.generate().value.toString())
+        }.status shouldBe HttpStatusCode.Forbidden
+    }
+
+    @Test
+    fun `complete and cancel of an unknown reconciliation answer 404`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.recPost(fixture, "/${UUID.randomUUID()}/complete").status shouldBe HttpStatusCode.NotFound
+        client.recPost(fixture, "/${UUID.randomUUID()}/cancel").status shouldBe HttpStatusCode.NotFound
+    }
 
     @Test
     fun `given a valid statement, when started, then it returns the reconciliation with one unmatched line`() = testApplication {
