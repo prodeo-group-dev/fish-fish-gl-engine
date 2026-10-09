@@ -16,6 +16,10 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.ApplicationCallPipeline
+import io.ktor.server.application.log
+import io.ktor.server.request.httpMethod
+import io.ktor.server.request.path
 import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.auth.Authentication
@@ -122,9 +126,13 @@ fun Application.installFishJwtAuth(
     hrServiceVerifier: JWTVerifier = DenyAllJwtVerifier,
     // POP's own service-account verifier, same shape as [imServiceVerifier]/
     // [hrServiceVerifier] - closes docs/POP_GL_Service_Account_Closure_Plan.md.
-    popServiceVerifier: JWTVerifier = DenyAllJwtVerifier
+    popServiceVerifier: JWTVerifier = DenyAllJwtVerifier,
+    // Whether a service call off its credential's allow-list is refused (the default) or only logged
+    // (T15 / G3, [ServiceEndpointAllowList]); production reads FISH_SERVICE_ALLOWLIST_MODE.
+    serviceAllowListMode: ServiceAllowListMode = ServiceAllowListMode.ENFORCE
 ) {
     attributes.put(EaMembershipGatewayKey, eaMembershipGateway)
+    attributes.put(ServiceAllowListModeKey, serviceAllowListMode)
 
     install(Authentication) {
         jwt(FISH_JWT_AUTH_NAME) {
@@ -137,7 +145,7 @@ fun Application.installFishJwtAuth(
 
         jwt(FISH_JWT_SERVICE_AUTH_NAME) {
             this.verifier(serviceVerifier)
-            validate { credential -> credential.toAuthenticatedCaller(isServiceAccount = true) }
+            validate { credential -> credential.toAuthenticatedCaller(isServiceAccount = true, service = "sop") }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
@@ -145,7 +153,7 @@ fun Application.installFishJwtAuth(
 
         jwt(FISH_JWT_SERVICE_AUTH_NAME_IM) {
             this.verifier(imServiceVerifier)
-            validate { credential -> credential.toAuthenticatedCaller(isServiceAccount = true) }
+            validate { credential -> credential.toAuthenticatedCaller(isServiceAccount = true, service = "im") }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
@@ -153,7 +161,7 @@ fun Application.installFishJwtAuth(
 
         jwt(FISH_JWT_SERVICE_AUTH_NAME_HR) {
             this.verifier(hrServiceVerifier)
-            validate { credential -> credential.toAuthenticatedCaller(isServiceAccount = true) }
+            validate { credential -> credential.toAuthenticatedCaller(isServiceAccount = true, service = "hr") }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
@@ -161,7 +169,7 @@ fun Application.installFishJwtAuth(
 
         jwt(FISH_JWT_SERVICE_AUTH_NAME_POP) {
             this.verifier(popServiceVerifier)
-            validate { credential -> credential.toAuthenticatedCaller(isServiceAccount = true) }
+            validate { credential -> credential.toAuthenticatedCaller(isServiceAccount = true, service = "pop") }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
@@ -194,9 +202,9 @@ object DenyAllJwtVerifier : JWTVerifier {
  * is set once here, per named provider, rather than inferred later from
  * which provider matched.
  */
-private fun JWTCredential.toAuthenticatedCaller(isServiceAccount: Boolean): AuthenticatedCaller? {
+private fun JWTCredential.toAuthenticatedCaller(isServiceAccount: Boolean, service: String? = null): AuthenticatedCaller? {
     val email = payload.getClaim("email").asString() ?: return null
-    return AuthenticatedCaller(email, isServiceAccount)
+    return AuthenticatedCaller(email, isServiceAccount, service)
 }
 
 /**
@@ -314,7 +322,31 @@ private fun buildJwksVerifierFor(issuer: String, audience: String): JWTVerifier 
  * itself is a [Route], so every existing call site still resolves.
  */
 fun Route.fishAuthenticated(build: Route.() -> Unit): Route =
-    authenticate(FISH_JWT_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME_IM, FISH_JWT_SERVICE_AUTH_NAME_HR, FISH_JWT_SERVICE_AUTH_NAME_POP, build = build)
+    authenticate(FISH_JWT_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME_IM, FISH_JWT_SERVICE_AUTH_NAME_HR, FISH_JWT_SERVICE_AUTH_NAME_POP) {
+        // T15 / G3: after authentication and before any handler, a service credential may reach only the
+        // routes on its own allow-list. People are not touched. A new route is unreachable by services
+        // until it is listed.
+        intercept(ApplicationCallPipeline.Call) {
+            val caller = call.principal<AuthenticatedCaller>()
+            if (caller != null && caller.isServiceAccount) {
+                val method = call.request.httpMethod.value
+                val path = call.request.path()
+                if (!ServiceEndpointAllowList.isAllowed(caller.service, method, path)) {
+                    if (call.application.attributes.getOrNull(ServiceAllowListModeKey) == ServiceAllowListMode.LOG) {
+                        call.application.log.warn(ServiceEndpointAllowList.wouldBlockMessage(caller.service, method, path))
+                    } else {
+                        call.application.log.warn(ServiceEndpointAllowList.blockedMessage(caller.service, method, path))
+                        call.respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden_endpoint", "This service credential may not call this endpoint"))
+                        finish()
+                    }
+                }
+            }
+        }
+        build()
+    }
+
+/** Carries [ServiceAllowListMode] from [installFishJwtAuth] to the interceptor in [fishAuthenticated]. */
+val ServiceAllowListModeKey = AttributeKey<ServiceAllowListMode>("ServiceAllowListMode")
 
 /**
  * The authorized identity a successful `authorizeTenantFor*` call
