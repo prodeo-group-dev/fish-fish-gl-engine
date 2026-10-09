@@ -190,7 +190,7 @@ class TenantIsolationMatrixRouteTest {
 
 
 
-        fun installInto(app: Application) {
+        fun installInto(app: Application, serviceAllowListMode: ServiceAllowListMode = ServiceAllowListMode.ENFORCE) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
                 eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository),
@@ -240,6 +240,7 @@ class TenantIsolationMatrixRouteTest {
                 cancelBankReconciliationUseCase = CancelBankReconciliationUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository),
                 computeBankReconciliationUseCase = ComputeBankReconciliationUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository),
                 listBankReconciliationsUseCase = ListBankReconciliationsUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository),
+                serviceAllowListMode = serviceAllowListMode,
                 serviceVerifier = TestJwtSupport.serviceVerifier("sop"),
                 popServiceVerifier = TestJwtSupport.serviceVerifier("pop"),
                 imServiceVerifier = TestJwtSupport.serviceVerifier("im"),
@@ -512,6 +513,122 @@ class TenantIsolationMatrixRouteTest {
         client.raw(HttpMethod.Get, "$base/reports/balance-sheet", theirs, other.tenantId.value).body<BalanceSheetResponseDto>().totalAssets shouldBe "0.00"
         client.raw(HttpMethod.Get, "$base/reports/profit-and-loss", theirs, other.tenantId.value).body<ProfitAndLossResponseDto>().totalRevenue shouldBe "0.00"
         client.raw(HttpMethod.Get, "$base/reports/cash-flow", theirs, other.tenantId.value).body<CashFlowResponseDto>().netCashFlow shouldBe "0.00"
+    }
+
+    // ---- T15 G3: each service credential may call only the GL endpoints it needs --------------------
+
+    /**
+     * Declared routes that no service credential may call: reachable by people only, or not by anyone
+     * authenticated at all. A NEW route has to be added to a service's allow-list in `ServiceEndpointAllowList`
+     * or to this set, so no route is ever left unclassified.
+     */
+    private val peopleOnlyRoutes = setOf(
+        "GET /health", "GET /me", "GET /jurisdictions", "POST /tenants/{tenantId}/companies",
+        "POST /sales/create-invoice", "POST /fixed-assets",
+        "POST /fixed-assets/{fixedAssetId}/record-depreciation", "POST /fixed-assets/{fixedAssetId}/assess-impairment",
+        "POST /fixed-assets/{fixedAssetId}/dispose",
+        "GET /companies/{companyId}/accounts", "POST /companies/{companyId}/accounts",
+        "POST /companies/{companyId}/accounts/{accountId}/opening-balance",
+        "PUT /companies/{companyId}/accounts/{accountId}/expense-classification",
+        "GET /companies/{companyId}/journal-entries", "GET /companies/{companyId}/customers",
+        "GET /companies/{companyId}/fixed-assets", "GET /companies/{companyId}/money-velocity",
+        "GET /companies/{companyId}/expense-velocity", "GET /companies/{companyId}/sales-to-expense-ratio",
+        "GET /companies/{companyId}/vat-categories",
+        "GET /companies/{companyId}/reports/balance-sheet", "GET /companies/{companyId}/reports/profit-and-loss",
+        "GET /companies/{companyId}/reports/cash-flow", "GET /companies/{companyId}/reports/working-capital",
+        "GET /companies/{companyId}/reports/trial-balance", "GET /companies/{companyId}/reports/trading-profit-and-loss",
+        "GET /companies/{companyId}/reports/fixed-asset-register",
+        "POST /companies/{companyId}/accounts-payable-aging", "POST /companies/{companyId}/accounts-receivable-aging",
+        "POST /companies/{companyId}/supplier-balances",
+        "GET /companies/{companyId}/tax", "POST /companies/{companyId}/tax", "POST /companies/{companyId}/vat-return",
+        "GET /companies/{companyId}/bank-reconciliations", "POST /companies/{companyId}/bank-reconciliations",
+        "GET /companies/{companyId}/bank-reconciliations/{id}", "POST /companies/{companyId}/bank-reconciliations/{id}/match",
+        "POST /companies/{companyId}/bank-reconciliations/{id}/unmatch", "POST /companies/{companyId}/bank-reconciliations/{id}/complete",
+        "POST /companies/{companyId}/bank-reconciliations/{id}/cancel",
+        "POST /companies/{companyId}/opening-imports/gl-balances", "POST /companies/{companyId}/opening-imports/gl-balances/validate",
+        "POST /companies/{companyId}/opening-imports/fixed-assets", "POST /companies/{companyId}/opening-imports/fixed-assets/validate"
+    )
+
+    private val allowListedRoutes get() = ServiceEndpointAllowList.allowed.values.flatten().toSet()
+
+    @Test
+    fun `every declared route is on a service allow-list or classified people-only, and every allow-list entry is a real route`() {
+        val declared = declarations.map { "${it.method} ${it.path}" }.toSet()
+
+        val unclassified = declared - allowListedRoutes - peopleOnlyRoutes
+        val notDeclared = (allowListedRoutes + peopleOnlyRoutes) - declared
+
+        withClue("declared routes on no service allow-list and not classified people-only (add each to one): $unclassified") { unclassified.shouldBeEmpty() }
+        withClue("allow-list or people-only entries that are not declared routes (stale): $notDeclared") { notDeclared.shouldBeEmpty() }
+        withClue("a route cannot be both allow-listed for a service and people-only") { (allowListedRoutes intersect peopleOnlyRoutes).shouldBeEmpty() }
+    }
+
+    @Test
+    fun `a service credential reaches exactly the routes on its list and is refused everywhere else`() = testApplication {
+        val fixture = Fixture(role = Role.OWNER_ADMIN)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val failures = mutableListOf<String>()
+
+        for (service in TestJwtSupport.SERVICES) {
+            val token = TestJwtSupport.signServiceToken(service)
+            val allowed = ServiceEndpointAllowList.allowed.getValue(service)
+            for (route in declarations.filter { it.path != "/health" }) {
+                val key = "${route.method} ${route.path}"
+                val response = client.call(route, fixture.company.id.value, token, fixture.tenantId.value)
+                val refused = response.status == HttpStatusCode.Forbidden && response.bodyAsText().contains("forbidden_endpoint")
+                if (key in allowed && refused) failures += "$service was refused on its own route $key"
+                if (key !in allowed && !refused) failures += "$service was NOT refused on $key (got ${response.status.value})"
+            }
+        }
+        withClue("${failures.size} allow-list checks failed:\n" + failures.joinToString("\n")) { failures.shouldBeEmpty() }
+    }
+
+    @Test
+    fun `people are not affected by the service allow-list`() = testApplication {
+        val fixture = Fixture(role = Role.OWNER_ADMIN)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val person = TestJwtSupport.signToken(TEST_EMAIL)
+
+        // A route no service may call, used by a person: reaches the handler (a report, 200 or 409 for no chart).
+        val response = client.call(RouteDeclaration("GET", "/companies/{companyId}/reports/trial-balance"), fixture.company.id.value, person, fixture.tenantId.value)
+        (response.status.value in setOf(200, 409)) shouldBe true
+        response.bodyAsText().contains("forbidden_endpoint") shouldBe false
+    }
+
+    @Test
+    fun `in log mode an off-list service call is answered normally instead of refused`() = testApplication {
+        val fixture = Fixture(role = Role.OWNER_ADMIN)
+        application { fixture.installInto(this, ServiceAllowListMode.LOG) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.call(
+            RouteDeclaration("GET", "/companies/{companyId}/reports/trial-balance"),
+            fixture.company.id.value, TestJwtSupport.signServiceToken("hr"), fixture.tenantId.value
+        )
+
+        response.bodyAsText().contains("forbidden_endpoint") shouldBe false
+    }
+
+    @Test
+    fun `the would-block log line names the service, method and path template, and carries no id or token`() {
+        val id = UUID.randomUUID()
+        val line = ServiceEndpointAllowList.wouldBlockMessage("sop", "GET", "/api/companies/$id/reports/trial-balance")
+
+        line.contains("sop") shouldBe true
+        line.contains("GET") shouldBe true
+        line.contains("/companies/{id}/reports/trial-balance") shouldBe true
+        line.contains(id.toString()) shouldBe false
+    }
+
+    @Test
+    fun `an unknown service name, or a service caller with no name, is never allowed`() {
+        ServiceEndpointAllowList.isAllowed("nobody", "GET", "/api/companies/${UUID.randomUUID()}/sales-posting-context") shouldBe false
+        ServiceEndpointAllowList.isAllowed(null, "GET", "/api/companies/${UUID.randomUUID()}/sales-posting-context") shouldBe false
+        ServiceEndpointAllowList.isAllowed("sop", "GET", "/api/companies/${UUID.randomUUID()}/sales-posting-context") shouldBe true
+        ServiceEndpointAllowList.isAllowed("sop", "POST", "/api/companies/${UUID.randomUUID()}/sales-posting-context") shouldBe false
+        ServiceEndpointAllowList.isAllowed("pop", "GET", "/api/companies/${UUID.randomUUID()}/sales-posting-context") shouldBe false
     }
 
     // ---- the second wall: Company against Company inside ONE Tenant -------------------------------

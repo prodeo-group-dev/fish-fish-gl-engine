@@ -300,8 +300,8 @@ class CrossCompanyPostingIsolationRouteTest {
             setBody(body)
         }
 
-    private fun every(variant: String, token: () -> String, world: Fixture.() -> World) {
-        for (route in postingRoutes) {
+    private fun every(variant: String, token: (Route) -> String, world: Fixture.() -> World, routes: List<Route> = postingRoutes) {
+        for (route in routes) {
             testApplication {
                 val fixture = Fixture()
                 application { fixture.installInto(this) }
@@ -310,11 +310,11 @@ class CrossCompanyPostingIsolationRouteTest {
                 val b = fixture.world()
 
                 // Control: the caller's own period and accounts still post.
-                val own = client.postJson(route.path, fixture.tenantId, token(), route.body(fixture.company.id.value, a, a))
+                val own = client.postJson(route.path, fixture.tenantId, token(route), route.body(fixture.company.id.value, a, a))
                 withClue("${route.name} control ($variant) -> ${own.bodyAsText()}") { own.status shouldBe HttpStatusCode.OK }
 
                 // Attack: authorized at A, but B's period and B's accounts.
-                val response = client.postJson(route.path, fixture.tenantId, token(), route.body(fixture.company.id.value, b, b))
+                val response = client.postJson(route.path, fixture.tenantId, token(route), route.body(fixture.company.id.value, b, b))
                 val text = response.bodyAsText()
                 withClue("${route.name} cross-company ($variant) -> $text") {
                     response.status shouldBe HttpStatusCode.NotFound
@@ -325,21 +325,28 @@ class CrossCompanyPostingIsolationRouteTest {
         }
     }
 
+    /** The posting routes a service credential may call at all (T15 / G3): the ones on some service's allow-list. */
+    private fun routesServicesUse(): List<Route> = postingRoutes.filter { route -> postingRoutesByService.values.any { route.name in it } }
+
+    /** The token of the one service whose allow-list holds [route]. */
+    private fun tokenOfTheServiceThatOwns(route: Route): String =
+        TestJwtSupport.signServiceToken(postingRoutesByService.entries.first { route.name in it.value }.key)
+
     @Test
     fun `a person authorized at Company A cannot post into another Tenant's period via any posting route`() =
-        every("person, other tenant", { TestJwtSupport.signToken(TEST_EMAIL) }) { worldOfAnotherTenant() }
+        every("person, other tenant", { TestJwtSupport.signToken(TEST_EMAIL) }, { worldOfAnotherTenant() })
 
     @Test
     fun `a person authorized at Company A cannot post into a sibling Company's period via any posting route`() =
-        every("person, sibling company", { TestJwtSupport.signToken(TEST_EMAIL) }) { worldOfASiblingCompany() }
+        every("person, sibling company", { TestJwtSupport.signToken(TEST_EMAIL) }, { worldOfASiblingCompany() })
 
     @Test
     fun `a service credential authorized at Company A cannot post into another Tenant's period via any posting route`() =
-        every("service, other tenant", { TestJwtSupport.signPopServiceToken("pop-gl-service@theprodeogroup.com") }) { worldOfAnotherTenant() }
+        every("service, other tenant", ::tokenOfTheServiceThatOwns, { worldOfAnotherTenant() }, routesServicesUse())
 
     @Test
     fun `a service credential cannot post into a sibling Company's period via any posting route`() =
-        every("service, sibling company", { TestJwtSupport.signPopServiceToken("pop-gl-service@theprodeogroup.com") }) { worldOfASiblingCompany() }
+        every("service, sibling company", ::tokenOfTheServiceThatOwns, { worldOfASiblingCompany() }, routesServicesUse())
 
     /**
      * The posting routes each service credential actually calls (the G3 allow-list in

@@ -30,4 +30,9 @@ import io.ktor.server.auth.Principal
  * audience (`FISH_JWT_SERVICE_AUDIENCE_SOP`/`_IM`/`_HR`/`_POP`) - that's
  * the real authorization boundary for inter-module calls, not EA.
  */
-data class AuthenticatedCaller(val email: String, val isServiceAccount: Boolean = false) : Principal
+data class AuthenticatedCaller(
+    val email: String,
+    val isServiceAccount: Boolean = false,
+    /** Which service credential this is ("sop", "pop", "im", "hr"); null for a person. Set once, by the provider that authenticated the token (T15 / G3). */
+    val service: String? = null
+) : Principal

@@ -269,6 +269,9 @@ fun Application.productionModule() {
         imServiceVerifier = serviceVerifierOrWarn("IM", "FISH_JWT_SERVICE_AUDIENCE_IM", buildJwksServiceVerifierForIm()),
         hrServiceVerifier = serviceVerifierOrWarn("HR", "FISH_JWT_SERVICE_AUDIENCE_HR", buildJwksServiceVerifierForHr()),
         popServiceVerifier = serviceVerifierOrWarn("POP", "FISH_JWT_SERVICE_AUDIENCE_POP", buildJwksServiceVerifierForPop()),
+        serviceAllowListMode = ServiceAllowListMode.fromEnvironment(System.getenv("FISH_SERVICE_ALLOWLIST_MODE")).also {
+            if (it == ServiceAllowListMode.LOG) log.warn("FISH_SERVICE_ALLOWLIST_MODE=log: service calls off a credential's endpoint allow-list are ANSWERED and logged as WOULD BLOCK, not refused")
+        },
         eaMembershipGateway = eaMembershipGateway,
         companyRepository = companyRepository,
         addCompanyToTenantUseCase = addCompanyToTenantUseCase,
@@ -340,6 +343,9 @@ fun Application.fishModule(
     imServiceVerifier: JWTVerifier? = null,
     hrServiceVerifier: JWTVerifier? = null,
     popServiceVerifier: JWTVerifier? = null,
+    // T15 / G3: whether a service call off its credential's endpoint allow-list is refused (the default) or only
+    // logged as WOULD BLOCK. Production reads FISH_SERVICE_ALLOWLIST_MODE; unset or anything but "log" enforces.
+    serviceAllowListMode: ServiceAllowListMode = ServiceAllowListMode.ENFORCE,
     eaMembershipGateway: EaMembershipGateway,
     companyRepository: CompanyRepository,
     addCompanyToTenantUseCase: AddCompanyToTenantUseCase,
@@ -515,7 +521,8 @@ fun Application.fishModule(
     }
     installFishJwtAuth(
         verifier, eaMembershipGateway,
-        serviceVerifier ?: DenyAllJwtVerifier, imServiceVerifier ?: DenyAllJwtVerifier, hrServiceVerifier ?: DenyAllJwtVerifier, popServiceVerifier ?: DenyAllJwtVerifier
+        serviceVerifier ?: DenyAllJwtVerifier, imServiceVerifier ?: DenyAllJwtVerifier, hrServiceVerifier ?: DenyAllJwtVerifier, popServiceVerifier ?: DenyAllJwtVerifier,
+        serviceAllowListMode
     )
 
     routing {
