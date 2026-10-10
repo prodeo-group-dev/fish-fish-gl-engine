@@ -75,7 +75,12 @@ class JournalEntry private constructor(
      * [TransactionSide.opposite] sides, which preserves the balance
      * invariant by construction, so it bypasses [create]'s validation.
      */
-    fun reverse(now: Instant = Instant.now(), reversalId: JournalEntryId = JournalEntryId.generate()): JournalEntry? {
+    fun reverse(
+        now: Instant = Instant.now(),
+        reversalId: JournalEntryId = JournalEntryId.generate(),
+        /** What the reversing entry says about itself; null reads "Reversal of <this entry's id>". */
+        reversalDescription: String? = null
+    ): JournalEntry? {
         if (!status.canTransitionTo(PostingStatus.REVERSED)) {
             return null
         }
@@ -88,7 +93,7 @@ class JournalEntry private constructor(
             date = now.atZone(ZoneOffset.UTC).toLocalDate(),
             lines = reversalLines,
             source = JournalSource.REVERSAL,
-            description = "Reversal of $id",
+            description = reversalDescription ?: "Reversal of ${id.value}",
             initialStatus = PostingStatus.POSTED,
             reversalOfEntryId = id
         )

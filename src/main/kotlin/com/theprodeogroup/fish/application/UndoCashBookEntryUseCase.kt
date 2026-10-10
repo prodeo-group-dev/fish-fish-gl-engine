@@ -73,7 +73,7 @@ class UndoCashBookEntryUseCase(
         if (!period.allowsPosting()) return Result.PeriodNotOpen
 
         val reversalId = JournalEntryId(UUID.nameUUIDFromBytes("undo|${entry.id.value}".toByteArray(Charsets.UTF_8)))
-        val reversal = entry.reverse(now, reversalId)
+        val reversal = entry.reverse(now, reversalId, "Undo of ${entry.description?.takeIf { it.isNotBlank() } ?: "an earlier entry"}")
             ?: return if (entry.status == PostingStatus.REVERSED) Result.AlreadyUndone else Result.NotUndoable
         // One transaction: the reversal is stored and the original is marked REVERSED together, or neither.
         if (!journalEntryRepository.recordReversal(entry, reversal)) return Result.AlreadyUndone

@@ -210,4 +210,26 @@ class UndoCashBookEntryUseCaseTest {
         results.count { it == UndoCashBookEntryUseCase.Result.AlreadyUndone } shouldBe 7
         entries.findAllByAccount(cash.id).count { it.reversalOfEntryId == entry.id } shouldBe 1
     }
+
+    @Test
+    fun `given an entry with a description, when it is undone, then the reversal says Undo of that description in plain words`() {
+        val entry = receipt()
+
+        val result = useCase.execute(company.id, cash.id, entry.id, now).shouldBeInstanceOf<UndoCashBookEntryUseCase.Result.Undone>()
+
+        result.reversal.description shouldBe "Undo of Takings"
+    }
+
+    @Test
+    fun `given an entry with no description, when it is undone, then the reversal says Undo of an earlier entry`() {
+        val entry = JournalEntry.create(
+            period.id, LocalDate.of(2026, 10, 5),
+            listOf(JournalLine(cash.id, money("5.00"), TransactionSide.DEBIT), JournalLine(sales.id, money("5.00"), TransactionSide.CREDIT)),
+            JournalSource.CASH_BOOK
+        ).also { it.post(); entries.save(it) }
+
+        val result = useCase.execute(company.id, cash.id, entry.id, now).shouldBeInstanceOf<UndoCashBookEntryUseCase.Result.Undone>()
+
+        result.reversal.description shouldBe "Undo of an earlier entry"
+    }
 }

@@ -82,7 +82,7 @@ class ReverseJournalEntryUseCase(
         for (accountId in reversalEntry.lines.map { it.accountId }.distinct()) {
             val account = accountRepository.findById(accountId)
             checkNotNull(account) {
-                "ReverseJournalEntryUseCase's reversal entry referenced Account ($accountId) that no longer exists"
+                "ReverseJournalEntryUseCase's reversal entry referenced Account (${accountId.value}) that no longer exists"
             }
             account.recordActivity()
             accountRepository.save(account)
