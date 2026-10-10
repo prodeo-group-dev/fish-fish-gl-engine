@@ -118,6 +118,7 @@ fun Route.cashBookRoutes(
                                 runningBalance = row.balance.amount.toPlainString(),
                                 reversalOf = row.reversalOfEntryId?.value?.toString(),
                                 reversedBy = row.reversedByEntryId?.value?.toString(),
+                                reconciled = result.reconciledEntryIds?.let { row.entryId in it },
                                 canUndo = result.canUndo.getValue(row.entryId)
                             )
                         }

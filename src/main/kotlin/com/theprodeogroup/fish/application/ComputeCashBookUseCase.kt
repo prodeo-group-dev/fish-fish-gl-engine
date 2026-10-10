@@ -4,7 +4,10 @@ import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.PostingStatus
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
+import com.theprodeogroup.fish.domain.ledger.BankReconciliationRepository
+import com.theprodeogroup.fish.domain.ledger.BankReconciliationStatus
 import com.theprodeogroup.fish.domain.ledger.CashBook
+import com.theprodeogroup.fish.domain.ledger.CashBookKind
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
@@ -30,10 +33,12 @@ class ComputeCashBookUseCase(
     private val companyRepository: CompanyRepository,
     private val accountRepository: AccountRepository,
     private val journalEntryRepository: JournalEntryRepository,
-    private val periodRepository: PeriodRepository
+    private val periodRepository: PeriodRepository,
+    private val bankReconciliationRepository: BankReconciliationRepository
 ) {
     sealed class Result {
-        data class Success(val book: CashBook, val canUndo: Map<JournalEntryId, Boolean>) : Result()
+        /** [reconciledEntryIds] is null for a cash book (it is not reconcilable) and, for a bank account, every entry matched in a COMPLETED reconciliation. */
+        data class Success(val book: CashBook, val canUndo: Map<JournalEntryId, Boolean>, val reconciledEntryIds: Set<JournalEntryId>?) : Result()
         data object CompanyNotFound : Result()
         data object AccountNotFound : Result()
         data object NotACashBook : Result()
@@ -74,7 +79,16 @@ class ComputeCashBookUseCase(
                     open
                 )
         }
-        return Result.Success(book, canUndo)
+        // Only a bank account is reconciled, and only a COMPLETED reconciliation clears an entry: one still open or
+        // cancelled has not confirmed anything against the statement.
+        val reconciled = if (account.cashBookKind == CashBookKind.BANK) {
+            bankReconciliationRepository.findAllByCompany(companyId, emptyList(), account.id)
+                .filter { it.status == BankReconciliationStatus.COMPLETED }
+                .flatMap { it.currentMatches }
+                .map { it.second }
+                .toSet()
+        } else null
+        return Result.Success(book, canUndo, reconciled)
     }
 
     companion object {

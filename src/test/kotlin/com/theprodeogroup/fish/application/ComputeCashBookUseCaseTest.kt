@@ -9,7 +9,12 @@ import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountType
+import com.theprodeogroup.fish.domain.ledger.BankReconciliation
+import com.theprodeogroup.fish.domain.ledger.BankStatementLine
+import com.theprodeogroup.fish.domain.ledger.BankStatementLineId
 import com.theprodeogroup.fish.domain.ledger.CashBookKind
+import com.theprodeogroup.fish.domain.ledger.CashDirection
+import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.Period
@@ -33,7 +38,8 @@ class ComputeCashBookUseCaseTest {
     private val accounts = FakeAccountRepository()
     private val periods = FakePeriodRepository()
     private val entries = FakeJournalEntryRepository()
-    private val useCase = ComputeCashBookUseCase(companies, accounts, entries, periods)
+    private val reconciliations = FakeBankReconciliationRepository()
+    private val useCase = ComputeCashBookUseCase(companies, accounts, entries, periods, reconciliations)
 
     private val company = Company.create(TenantId.generate(), "Co", ClientType.COMPANY_LIMITED, Jurisdiction.UK, gbp).also { companies.save(it) }
     private val period = Period.create(company.id, PeriodType.MONTH, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31)).also { it.open(); periods.save(it) }
@@ -139,5 +145,70 @@ class ComputeCashBookUseCaseTest {
         val result = useCase.execute(company.id, cash.id, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30), today).shouldBeInstanceOf<ComputeCashBookUseCase.Result.Success>()
 
         result.canUndo.getValue(entry.id) shouldBe false
+    }
+
+    // ---- reconciled flag (T8) ----
+
+    private val bank = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1010", "Bank", cashBookKind = CashBookKind.BANK).also { accounts.save(it) }
+
+    private fun bankReceipt(date: String, amount: String): JournalEntry =
+        JournalEntry.create(
+            period.id, LocalDate.parse(date),
+            listOf(JournalLine(bank.id, money(amount), TransactionSide.DEBIT), JournalLine(sales.id, money(amount), TransactionSide.CREDIT)),
+            JournalSource.CASH_BOOK, "Bank receipt"
+        ).also { it.post(); entries.save(it) }
+
+    /** A reconciliation of the bank account that matches [matched] to statement lines, completed or left open. */
+    private fun reconcile(matched: JournalEntry, complete: Boolean, cancel: Boolean = false) {
+        val line = BankStatementLine(BankStatementLineId.generate(), matched.date, money("100.00"), CashDirection.RECEIVED, "Statement line")
+        val rec = BankReconciliation.create(bank.id, LocalDate.of(2026, 10, 31), money("100.00"), listOf(line), listOf(matched), gbp)
+        rec.match(line.id, matched.id)
+        if (complete) rec.complete()
+        if (cancel) rec.cancel()
+        reconciliations.save(rec, company.id)
+    }
+
+    @Test
+    fun `given a bank account with one entry in a completed reconciliation and one not, then only the matched one is reconciled`() {
+        val matched = bankReceipt("2026-10-05", "100.00")
+        val loose = bankReceipt("2026-10-06", "30.00")
+        reconcile(matched, complete = true)
+
+        val result = useCase.execute(company.id, bank.id, today = today).shouldBeInstanceOf<ComputeCashBookUseCase.Result.Success>()
+
+        result.reconciledEntryIds shouldBe setOf(matched.id)
+        (loose.id in result.reconciledEntryIds!!) shouldBe false
+    }
+
+    @Test
+    fun `given matches in a reconciliation that is still open, or cancelled, then nothing is reconciled yet`() {
+        val a = bankReceipt("2026-10-05", "100.00")
+        reconcile(a, complete = false)
+
+        useCase.execute(company.id, bank.id, today = today).shouldBeInstanceOf<ComputeCashBookUseCase.Result.Success>().reconciledEntryIds shouldBe emptySet()
+    }
+
+    @Test
+    fun `given a cash book, then it has no reconciled information at all`() {
+        useCase.execute(company.id, cash.id, today = today).shouldBeInstanceOf<ComputeCashBookUseCase.Result.Success>().reconciledEntryIds shouldBe null
+    }
+
+    @Test
+    fun `given a completed reconciliation of another bank account, then it does not mark this account's entries`() {
+        val other = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1011", "Second bank", cashBookKind = CashBookKind.BANK).also { accounts.save(it) }
+        val mine = bankReceipt("2026-10-05", "100.00")
+        val theirs = JournalEntry.create(
+            period.id, LocalDate.of(2026, 10, 5),
+            listOf(JournalLine(other.id, money("100.00"), TransactionSide.DEBIT), JournalLine(sales.id, money("100.00"), TransactionSide.CREDIT)),
+            JournalSource.CASH_BOOK
+        ).also { it.post(); entries.save(it) }
+        val line = BankStatementLine(BankStatementLineId.generate(), theirs.date, money("100.00"), CashDirection.RECEIVED, "x")
+        val rec = BankReconciliation.create(other.id, LocalDate.of(2026, 10, 31), money("100.00"), listOf(line), listOf(theirs), gbp)
+        rec.match(line.id, theirs.id)
+        rec.complete()
+        reconciliations.save(rec, company.id)
+
+        useCase.execute(company.id, bank.id, today = today).shouldBeInstanceOf<ComputeCashBookUseCase.Result.Success>().reconciledEntryIds shouldBe emptySet()
+        (mine.id in setOf<JournalEntryId>()) shouldBe false
     }
 }

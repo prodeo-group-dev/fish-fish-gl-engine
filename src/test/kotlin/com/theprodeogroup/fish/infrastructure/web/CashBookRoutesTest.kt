@@ -151,8 +151,9 @@ class CashBookRoutesTest {
         val disposeFixedAssetUseCase = DisposeFixedAssetUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeFixedAssetRegisterUseCase = ComputeFixedAssetRegisterUseCase(companyRepository, fixedAssetRepository)
         val listCashBooksUseCase = ListCashBooksUseCase(companyRepository, accountRepository, journalEntryRepository)
-        val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository)
-        val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, FakeBankReconciliationRepository())
+        val cashBookReconciliations = FakeBankReconciliationRepository()
+        val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository, cashBookReconciliations)
+        val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, cashBookReconciliations)
         val addMissingStandardAccountsUseCase = AddMissingStandardAccountsUseCase(companyRepository, accountRepository)
         val recordCashBookEntryUseCase = RecordCashBookEntryUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository, postJournalEntryUseCase)
         val listCounterAccountsUseCase = ListCounterAccountsUseCase(companyRepository, accountRepository)
@@ -329,7 +330,7 @@ class CashBookRoutesTest {
         book.rows[1].counterAccounts.map { it.code } shouldBe listOf("5200")
         // Entries made by the general journal, not in the book, are reversed where they were made.
         book.rows.map { it.canUndo } shouldBe listOf(false, false)
-        book.rows[0].reconciled shouldBe null
+        book.rows.map { it.reconciled } shouldBe listOf(false, false) // a bank account: not yet in a completed reconciliation
         book.rows[0].reference shouldBe null
     }
 
@@ -814,5 +815,33 @@ class CashBookRoutesTest {
         body.error shouldBe "undo_elsewhere"
         body.useInstead shouldBe "ORIGINAL_SCREEN"
         fixture.journalEntryRepository.findById(journal.id)!!.status shouldBe com.theprodeogroup.fish.domain.common.PostingStatus.POSTED
+    }
+
+    @Test
+    fun `given a bank entry matched in a completed reconciliation, when the book is read, then that row is reconciled and the others are not, and a cash book row has no reconciled value`() = testApplication {
+        val fixture = Fixture()
+        val bank = fixture.cashBook("1010", CashBookKind.BANK)
+        val cash = fixture.cashBook("1020", CashBookKind.CASH)
+        val cleared = fixture.post(bank, fixture.revenueAccount!!, "100.00", TODAY.minusDays(3))
+        fixture.post(bank, fixture.revenueAccount!!, "25.00", TODAY.minusDays(2))
+        fixture.post(cash, fixture.revenueAccount!!, "10.00", TODAY.minusDays(1))
+        val gbpMoney = { amount: String -> Money(BigDecimal(amount), GBP) }
+        val line = com.theprodeogroup.fish.domain.ledger.BankStatementLine(
+            com.theprodeogroup.fish.domain.ledger.BankStatementLineId.generate(), cleared.date, gbpMoney("100.00"),
+            com.theprodeogroup.fish.domain.ledger.CashDirection.RECEIVED, "Statement"
+        )
+        val rec = com.theprodeogroup.fish.domain.ledger.BankReconciliation.create(bank.id, TODAY, gbpMoney("100.00"), listOf(line), listOf(cleared), GBP)
+        rec.match(line.id, cleared.id)
+        rec.complete()
+        fixture.cashBookReconciliations.save(rec, fixture.company.id)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val range = "?from=${TODAY.minusDays(10)}&to=$TODAY"
+
+        val bankBook: CashBookResponseDto = client.get("/api/companies/${fixture.company.id.value}/cash-books/${bank.id.value}$range") { signedIn(fixture) }.body()
+        val cashBook: CashBookResponseDto = client.get("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}$range") { signedIn(fixture) }.body()
+
+        bankBook.rows.map { it.reconciled } shouldBe listOf(true, false)
+        cashBook.rows.map { it.reconciled } shouldBe listOf(null)
     }
 }
