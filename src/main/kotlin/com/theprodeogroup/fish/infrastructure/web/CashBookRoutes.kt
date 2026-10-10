@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import com.theprodeogroup.fish.application.AddMissingStandardAccountsUseCase
 import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
 import com.theprodeogroup.fish.application.ComputeCashBookUseCase
 import com.theprodeogroup.fish.application.ListCashBooksUseCase
@@ -14,6 +15,7 @@ import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
@@ -158,6 +160,35 @@ fun Route.cashBookRoutes(
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("reconciliations_exist", "This bank account has bank reconciliations, so it stays a bank account"))
             ChangeCashBookKindUseCase.Result.PrimeCashBookKindFixed ->
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("prime_cash_book_kind_fixed", "Account 1000 is the Cash Book and stays a cash account; add a bank account instead"))
+        }
+    }
+}
+
+/**
+ * `POST /companies/{companyId}/standard-accounts` (docs/GL_Cash_And_Bank_Books_SRS.md, FR-CB60): adds the standard
+ * accounts an older Company's chart is missing (the VAT control account 2150 is the known case) and makes account
+ * 1000 the CASH book. Only adds, never changes an existing account. Idempotent. WRITE; people only.
+ */
+fun Route.standardAccountsRoutes(
+    addMissingStandardAccountsUseCase: AddMissingStandardAccountsUseCase,
+    companyRepository: CompanyRepository
+) {
+    post("/companies/{companyId}/standard-accounts") {
+        val companyId = call.parseCashBookCompanyId() ?: return@post
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
+        if (!call.verifyClaimedTenant(tenantId)) return@post
+        call.authorizeTenantForWrite(tenantId, companyId) ?: return@post
+
+        when (val result = addMissingStandardAccountsUseCase.execute(companyId)) {
+            is AddMissingStandardAccountsUseCase.Result.Success -> call.respond(
+                StandardAccountsResponseDto(
+                    added = result.added.map { StandardAccountsAddedDto(it.code, it.name) },
+                    conflicts = result.conflicts.map { StandardAccountsConflictDto(it.code, it.existingType.name, it.templateType.name) },
+                    cashBookKindSet = result.cashBookKindSet
+                )
+            )
+            AddMissingStandardAccountsUseCase.Result.CompanyNotFound ->
+                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
         }
     }
 }

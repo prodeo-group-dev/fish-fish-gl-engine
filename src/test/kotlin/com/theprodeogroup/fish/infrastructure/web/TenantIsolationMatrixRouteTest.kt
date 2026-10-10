@@ -14,6 +14,7 @@ import com.theprodeogroup.fish.application.FakeSalesInvoiceRecordRepository
 import com.theprodeogroup.fish.application.FakeEaMembershipGateway
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.AddMissingStandardAccountsUseCase
 import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
 import com.theprodeogroup.fish.application.ComputeCashBookUseCase
 import com.theprodeogroup.fish.application.ListCashBooksUseCase
@@ -187,6 +188,7 @@ class TenantIsolationMatrixRouteTest {
         val listCashBooksUseCase = ListCashBooksUseCase(companyRepository, accountRepository, journalEntryRepository)
         val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository)
         val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, FakeBankReconciliationRepository())
+        val addMissingStandardAccountsUseCase = AddMissingStandardAccountsUseCase(companyRepository, accountRepository)
         val vatReturnRepository = FakeVatReturnRepository()
         val openingImportBatchRepository = FakeOpeningImportBatchRepository()
         val openingImportRowResultRepository = FakeOpeningImportRowResultRepository()
@@ -238,6 +240,7 @@ class TenantIsolationMatrixRouteTest {
                 listCashBooksUseCase = listCashBooksUseCase,
                 computeCashBookUseCase = computeCashBookUseCase,
                 changeCashBookKindUseCase = changeCashBookKindUseCase,
+                addMissingStandardAccountsUseCase = addMissingStandardAccountsUseCase,
                 vatRateRepository = FakeVatRateRepository(),
                 vatReturnRepository = vatReturnRepository,
                 importGlBalancesUseCase = importGlBalancesUseCase,
@@ -595,6 +598,7 @@ class TenantIsolationMatrixRouteTest {
         "PUT /companies/{companyId}/accounts/{accountId}/expense-classification",
         "PUT /companies/{companyId}/accounts/{accountId}/cash-book-kind",
         "GET /companies/{companyId}/cash-books", "GET /companies/{companyId}/cash-books/{accountId}",
+        "POST /companies/{companyId}/standard-accounts",
         "GET /companies/{companyId}/journal-entries", "GET /companies/{companyId}/customers",
         "GET /companies/{companyId}/fixed-assets", "GET /companies/{companyId}/money-velocity",
         "GET /companies/{companyId}/expense-velocity", "GET /companies/{companyId}/sales-to-expense-ratio",

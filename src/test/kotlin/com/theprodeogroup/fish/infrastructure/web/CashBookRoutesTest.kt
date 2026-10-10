@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.AddMissingStandardAccountsUseCase
 import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
 import com.theprodeogroup.fish.application.ComputeCashBookUseCase
 import com.theprodeogroup.fish.application.ListCashBooksUseCase
@@ -79,6 +80,7 @@ import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.ExpenseClassification
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalLine
+import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -145,6 +147,7 @@ class CashBookRoutesTest {
         val listCashBooksUseCase = ListCashBooksUseCase(companyRepository, accountRepository, journalEntryRepository)
         val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository)
         val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, FakeBankReconciliationRepository())
+        val addMissingStandardAccountsUseCase = AddMissingStandardAccountsUseCase(companyRepository, accountRepository)
 
         val tenant = TenantId.generate()
         val company = Company.create(tenant, "Purse UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
@@ -220,7 +223,8 @@ class CashBookRoutesTest {
                 computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase,
                 listCashBooksUseCase = listCashBooksUseCase,
                 computeCashBookUseCase = computeCashBookUseCase,
-                changeCashBookKindUseCase = changeCashBookKindUseCase
+                changeCashBookKindUseCase = changeCashBookKindUseCase,
+                addMissingStandardAccountsUseCase = addMissingStandardAccountsUseCase
             )
         }
     }
@@ -454,5 +458,39 @@ class CashBookRoutesTest {
             signedIn(fixture, "reader@example.com"); contentType(ContentType.Application.Json); setBody("""{"cashBookKind":"CASH"}""")
         }.status shouldBe HttpStatusCode.Forbidden
         fixture.accountRepository.findById(extra.id)!!.cashBookKind shouldBe CashBookKind.BANK
+    }
+
+    @Test
+    fun `given an older chart, when standard accounts are added through the route, then the gaps are filled once, 1000 becomes CASH, and a second run adds nothing`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val path = "/api/companies/${fixture.company.id.value}/standard-accounts"
+
+        val first = client.post(path) { signedIn(fixture) }
+        first.status shouldBe HttpStatusCode.OK
+        val firstBody: StandardAccountsResponseDto = first.body()
+        firstBody.added.map { it.code }.contains("3900") shouldBe true
+        firstBody.added.map { it.code }.contains("1000") shouldBe false
+        firstBody.cashBookKindSet shouldBe true
+        fixture.accountRepository.findAllByCompany(fixture.company.id).single { it.code == "1000" }.cashBookKind shouldBe CashBookKind.CASH
+
+        val second: StandardAccountsResponseDto = client.post(path) { signedIn(fixture) }.body()
+        second.added shouldBe emptyList()
+        second.cashBookKindSet shouldBe false
+    }
+
+    @Test
+    fun `given a read-only member, when they ask for standard accounts to be added, then it is refused and nothing is added`() = testApplication {
+        val fixture = Fixture()
+        val reader = User.create("reader2@example.com", "Reader").also { fixture.userRepository.save(it) }
+        fixture.membershipRepository.save(Membership.grant(reader.id, fixture.tenant, Role.ACCOUNTANT, fixture.company.id, accessLevel = AccessLevel.READ))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val before = fixture.accountRepository.findAllByCompany(fixture.company.id).size
+
+        client.post("/api/companies/${fixture.company.id.value}/standard-accounts") { signedIn(fixture, "reader2@example.com") }
+            .status shouldBe HttpStatusCode.Forbidden
+        fixture.accountRepository.findAllByCompany(fixture.company.id).size shouldBe before
     }
 }

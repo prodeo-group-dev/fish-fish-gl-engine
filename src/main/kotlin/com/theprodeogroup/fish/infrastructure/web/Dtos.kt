@@ -1103,3 +1103,17 @@ data class ChangeCashBookKindRequestDto(val cashBookKind: String? = null)
 
 @Serializable
 data class AccountCashBookKindDto(val accountId: String, val code: String, val name: String, val cashBookKind: String? = null)
+
+/** `POST /companies/{companyId}/standard-accounts`: what was added to an older chart, what was left alone because the code is used by a different kind of account, and whether account 1000 became the CASH book. */
+@Serializable
+data class StandardAccountsAddedDto(val code: String, val name: String)
+
+@Serializable
+data class StandardAccountsConflictDto(val code: String, val existingType: String, val templateType: String)
+
+@Serializable
+data class StandardAccountsResponseDto(
+    val added: List<StandardAccountsAddedDto>,
+    val conflicts: List<StandardAccountsConflictDto>,
+    val cashBookKindSet: Boolean
+)
