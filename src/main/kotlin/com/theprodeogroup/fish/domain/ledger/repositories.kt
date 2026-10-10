@@ -59,6 +59,22 @@ interface JournalEntryRepository {
      * must already have checked that the account belongs to the Company it is acting for.
      */
     fun findAllByAccount(accountId: AccountId): List<JournalEntry>
+
+    /**
+     * Stores [entry] only if no entry with its id exists yet; returns whether it did. First writer wins and
+     * nothing is overwritten, which is what makes a caller-chosen (deterministic) entry id a race-safe
+     * idempotency guard for money postings (docs/GL_Cash_And_Bank_Books_SRS.md, Release B): two simultaneous
+     * requests with the same key derive the same id, and exactly one of them inserts.
+     */
+    fun insertIfAbsent(entry: JournalEntry): Boolean
+
+    /**
+     * Records that [original] was reversed by [reversal], atomically: stores [reversal] only if no entry has its id
+     * and, in the SAME transaction, saves [original] (already marked REVERSED). Returns false and changes nothing if
+     * the reversal already exists. One transaction means a crash can never leave a posted reversal beside an original
+     * that still says POSTED, and exactly one of several simultaneous reversals of the same entry wins.
+     */
+    fun recordReversal(original: JournalEntry, reversal: JournalEntry): Boolean
 }
 
 /**

@@ -69,7 +69,7 @@ class CashBookEntryTest {
         JournalEntry.validateLines(journalEntry.lines).isValid shouldBe true
         journalEntry.lines shouldHaveSize 2
         journalEntry.status shouldBe PostingStatus.DRAFT
-        journalEntry.source shouldBe JournalSource.MANUAL
+        journalEntry.source shouldBe JournalSource.CASH_BOOK
     }
 
     @Test

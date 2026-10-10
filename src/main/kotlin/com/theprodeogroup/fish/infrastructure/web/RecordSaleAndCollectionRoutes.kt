@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.application.RecordCollectionResult
 import com.theprodeogroup.fish.application.RecordCollectionUseCase
 import com.theprodeogroup.fish.application.RecordSaleResult
@@ -53,7 +54,9 @@ fun Route.recordSaleAndCollectionRoutes(
     recordCollectionUseCase: RecordCollectionUseCase,
     companyRepository: CompanyRepository,
     vatRateRepository: VatRateRepository,
-    idempotencyKeyRepository: IdempotencyKeyRepository
+    idempotencyKeyRepository: IdempotencyKeyRepository,
+    accountRepository: AccountRepository,
+    cashBookPolicies: CashBookPolicies
 ) {
     post("/sales/record-sale") {
         val request = call.receive<RecordSaleRequestDto>()
@@ -129,6 +132,7 @@ fun Route.recordSaleAndCollectionRoutes(
 
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
         val settlementAccountUuid = call.parseUuid(request.settlementAccountId) ?: return@post
+        if (!call.settlementAccountAllowed(cashBookPolicies, accountRepository, companyId, settlementAccountUuid, "POST /sales/record-collection")) return@post
         val arControlAccountUuid = call.parseUuid(request.arControlAccountId) ?: return@post
         val customerUuid = call.parseUuid(request.customerId) ?: return@post
         val amount = call.parseMoney(request.amount, request.currency) ?: return@post

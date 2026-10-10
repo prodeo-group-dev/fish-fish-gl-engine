@@ -82,6 +82,10 @@ import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
 import com.theprodeogroup.fish.application.ClassifyExpenseAccountUseCase
 import com.theprodeogroup.fish.application.ComputeCashBookUseCase
 import com.theprodeogroup.fish.application.ListCashBooksUseCase
+import com.theprodeogroup.fish.application.ListCounterAccountsUseCase
+import com.theprodeogroup.fish.application.RecordCashBookEntryUseCase
+import com.theprodeogroup.fish.application.RecordCashBookTransferUseCase
+import com.theprodeogroup.fish.application.UndoCashBookEntryUseCase
 import com.theprodeogroup.fish.application.ComputeTradingProfitAndLossUseCase
 import com.theprodeogroup.fish.domain.common.JurisdictionEntry
 import com.theprodeogroup.fish.domain.common.Jurisdiction
@@ -232,9 +236,13 @@ fun Application.productionModule() {
 
     // Cash and bank books (docs/GL_Cash_And_Bank_Books_SRS.md).
     val listCashBooksUseCase = ListCashBooksUseCase(companyRepository, accountRepository, journalEntryRepository)
-    val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository)
+    val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository, bankReconciliationRepository)
     val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, bankReconciliationRepository)
     val addMissingStandardAccountsUseCase = AddMissingStandardAccountsUseCase(companyRepository, accountRepository)
+    val recordCashBookEntryUseCase = RecordCashBookEntryUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository, postJournalEntryUseCase)
+    val listCounterAccountsUseCase = ListCounterAccountsUseCase(companyRepository, accountRepository)
+    val recordCashBookTransferUseCase = RecordCashBookTransferUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository, postJournalEntryUseCase)
+    val undoCashBookEntryUseCase = UndoCashBookEntryUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository)
 
     // EA (Enterprise Administration) - the human-facing half of
     // docs/Tenancy_Administration_Extraction_DDD_Design.md's rewiring.
@@ -282,6 +290,14 @@ fun Application.productionModule() {
         serviceAllowListMode = ServiceAllowListMode.fromEnvironment(System.getenv("FISH_SERVICE_ALLOWLIST_MODE")).also {
             if (it == ServiceAllowListMode.LOG) log.warn("FISH_SERVICE_ALLOWLIST_MODE=log: service calls off a credential's endpoint allow-list are ANSWERED and logged as WOULD BLOCK, not refused")
         },
+        cashBookPolicies = CashBookPolicies(
+            settlementAccount = PolicyMode.fromEnvironment(System.getenv("FISH_SETTLEMENT_ACCOUNT_MODE")),
+            bankOnlyReconciliation = PolicyMode.fromEnvironment(System.getenv("FISH_BANK_RECONCILIATION_MODE"))
+        ).also {
+            // Both are log-first: unset means a violation is logged as WOULD REFUSE and nothing is refused.
+            if (it.settlementAccount == PolicyMode.LOG) log.warn("FISH_SETTLEMENT_ACCOUNT_MODE is not enforce: a settlement account that is not a cash or bank book is only logged as WOULD REFUSE")
+            if (it.bankOnlyReconciliation == PolicyMode.LOG) log.warn("FISH_BANK_RECONCILIATION_MODE is not enforce: reconciling an account that is not a bank account is only logged as WOULD REFUSE")
+        },
         eaMembershipGateway = eaMembershipGateway,
         companyRepository = companyRepository,
         addCompanyToTenantUseCase = addCompanyToTenantUseCase,
@@ -304,6 +320,10 @@ fun Application.productionModule() {
         computeCashBookUseCase = computeCashBookUseCase,
         changeCashBookKindUseCase = changeCashBookKindUseCase,
         addMissingStandardAccountsUseCase = addMissingStandardAccountsUseCase,
+        recordCashBookEntryUseCase = recordCashBookEntryUseCase,
+        listCounterAccountsUseCase = listCounterAccountsUseCase,
+        recordCashBookTransferUseCase = recordCashBookTransferUseCase,
+        undoCashBookEntryUseCase = undoCashBookEntryUseCase,
         periodRepository = periodRepository,
         accountRepository = accountRepository,
         journalEntryRepository = journalEntryRepository,
@@ -401,6 +421,11 @@ fun Application.fishModule(
     computeCashBookUseCase: ComputeCashBookUseCase? = null,
     changeCashBookKindUseCase: ChangeCashBookKindUseCase? = null,
     addMissingStandardAccountsUseCase: AddMissingStandardAccountsUseCase? = null,
+    cashBookPolicies: CashBookPolicies = CashBookPolicies(),
+    recordCashBookEntryUseCase: RecordCashBookEntryUseCase? = null,
+    listCounterAccountsUseCase: ListCounterAccountsUseCase? = null,
+    recordCashBookTransferUseCase: RecordCashBookTransferUseCase? = null,
+    undoCashBookEntryUseCase: UndoCashBookEntryUseCase? = null,
     periodRepository: PeriodRepository,
     accountRepository: AccountRepository,
     journalEntryRepository: JournalEntryRepository,
@@ -566,12 +591,12 @@ fun Application.fishModule(
                 payrollRoutes(
                     remeasureLeaveAccrualUseCase, utilizeLeaveAccrualUseCase, leaveAccrualRepository,
                     recordPayRunUseCase, getOrCreateLeaveAccrualUseCase,
-                    companyRepository, idempotencyKeyRepository
+                    companyRepository, idempotencyKeyRepository, accountRepository, cashBookPolicies
                 )
-                recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, vatRateRepository, idempotencyKeyRepository)
+                recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, vatRateRepository, idempotencyKeyRepository, accountRepository, cashBookPolicies)
                 recordSalesReturnRoutes(recordSalesReturnUseCase, companyRepository, idempotencyKeyRepository)
                 createSalesInvoiceRoutes(createSalesInvoiceUseCase, listSalesInvoicesUseCase, companyRepository, customerRepository, idempotencyKeyRepository)
-                recordSupplierObligationAndPaymentRoutes(recordSupplierObligationUseCase, recordSupplierPaymentUseCase, companyRepository, vatRateRepository, idempotencyKeyRepository)
+                recordSupplierObligationAndPaymentRoutes(recordSupplierObligationUseCase, recordSupplierPaymentUseCase, companyRepository, vatRateRepository, idempotencyKeyRepository, accountRepository, cashBookPolicies)
                 vatCategoriesRoutes(ComputeVatCategoriesUseCase(companyRepository, vatRateRepository), companyRepository)
                 recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
                 meRoutes()
@@ -626,11 +651,16 @@ fun Application.fishModule(
                     bankReconciliationRoutes(
                         startBankReconciliationUseCase, matchBankReconciliationLineUseCase,
                         unmatchBankReconciliationLineUseCase, completeBankReconciliationUseCase, cancelBankReconciliationUseCase, computeBankReconciliationUseCase,
-                        listBankReconciliationsUseCase, companyRepository
+                        listBankReconciliationsUseCase, companyRepository, accountRepository, cashBookPolicies
                     )
                 }
-                if (listCashBooksUseCase != null && computeCashBookUseCase != null && changeCashBookKindUseCase != null) {
-                    cashBookRoutes(listCashBooksUseCase, computeCashBookUseCase, changeCashBookKindUseCase, companyRepository)
+                if (listCashBooksUseCase != null && computeCashBookUseCase != null && changeCashBookKindUseCase != null && recordCashBookEntryUseCase != null && listCounterAccountsUseCase != null &&
+                    recordCashBookTransferUseCase != null && undoCashBookEntryUseCase != null
+                ) {
+                    cashBookRoutes(
+                        listCashBooksUseCase, computeCashBookUseCase, changeCashBookKindUseCase, recordCashBookEntryUseCase,
+                        listCounterAccountsUseCase, recordCashBookTransferUseCase, undoCashBookEntryUseCase, companyRepository
+                    )
                 }
                 if (addMissingStandardAccountsUseCase != null) {
                     standardAccountsRoutes(addMissingStandardAccountsUseCase, companyRepository)

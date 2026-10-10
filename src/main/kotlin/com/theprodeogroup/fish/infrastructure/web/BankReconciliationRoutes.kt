@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.application.CancelBankReconciliationResult
 import com.theprodeogroup.fish.application.CancelBankReconciliationUseCase
 import com.theprodeogroup.fish.application.CompleteBankReconciliationResult
@@ -51,7 +52,9 @@ fun Route.bankReconciliationRoutes(
     cancelBankReconciliationUseCase: CancelBankReconciliationUseCase,
     computeBankReconciliationUseCase: ComputeBankReconciliationUseCase,
     listBankReconciliationsUseCase: ListBankReconciliationsUseCase,
-    companyRepository: CompanyRepository
+    companyRepository: CompanyRepository,
+    accountRepository: AccountRepository,
+    cashBookPolicies: CashBookPolicies
 ) {
     get("/companies/{companyId}/bank-reconciliations") {
         val companyId = call.parseBankReconciliationCompanyId() ?: return@get
@@ -81,6 +84,7 @@ fun Route.bankReconciliationRoutes(
 
         val request = call.receive<StartBankReconciliationRequestDto>()
         val accountUuid = call.parseUuid(request.accountId) ?: return@post
+        if (!call.reconciliationAccountAllowed(cashBookPolicies, accountRepository, companyId, accountUuid, "POST /companies/{companyId}/bank-reconciliations")) return@post
         val statementDate = call.parseBankReconciliationDate(request.statementDate) ?: return@post
         val currency = call.parseBankReconciliationCurrency(request.currency) ?: return@post
         val statementEndingBalance = call.parseBankReconciliationMoney(request.statementEndingBalance, currency) ?: return@post

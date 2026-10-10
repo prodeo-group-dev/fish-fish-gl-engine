@@ -62,5 +62,12 @@ enum class JournalSource {
      * 
      * Example: Closing nominal accounts to retained earnings
      */
-    CLOSING
+    CLOSING,
+
+    /**
+     * An entry recorded in a cash or bank book (docs/GL_Cash_And_Bank_Books_SRS.md, decision D6, Femi
+     * 2026-10-10): a receipt, payment or transfer a person recorded where the money moved, as a book of
+     * original entry. Distinct from [MANUAL] so the audit trail shows where the entry began.
+     */
+    CASH_BOOK
 }

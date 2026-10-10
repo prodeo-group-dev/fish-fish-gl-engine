@@ -75,7 +75,7 @@ class JournalEntry private constructor(
      * [TransactionSide.opposite] sides, which preserves the balance
      * invariant by construction, so it bypasses [create]'s validation.
      */
-    fun reverse(now: Instant = Instant.now()): JournalEntry? {
+    fun reverse(now: Instant = Instant.now(), reversalId: JournalEntryId = JournalEntryId.generate()): JournalEntry? {
         if (!status.canTransitionTo(PostingStatus.REVERSED)) {
             return null
         }
@@ -83,7 +83,7 @@ class JournalEntry private constructor(
 
         val reversalLines = lines.map { it.copy(side = it.side.opposite()) }
         val reversalEntry = JournalEntry(
-            id = JournalEntryId.generate(),
+            id = reversalId,
             periodId = periodId,
             date = now.atZone(ZoneOffset.UTC).toLocalDate(),
             lines = reversalLines,
