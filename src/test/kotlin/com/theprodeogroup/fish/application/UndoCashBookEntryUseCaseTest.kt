@@ -139,12 +139,26 @@ class UndoCashBookEntryUseCaseTest {
         useCase.execute(CompanyId.generate(), cash.id, entry.id, now) shouldBe UndoCashBookEntryUseCase.Result.CompanyNotFound
     }
 
+    /**
+     * A repository that hands out a fresh copy on every read and stores a copy on every write, the way the database
+     * does. The plain fake returns one shared object, so two threads would see each other's in-memory status change
+     * and the race this guards against could not happen.
+     */
+    private class CopyingEntries(private val delegate: FakeJournalEntryRepository) : com.theprodeogroup.fish.domain.ledger.JournalEntryRepository by delegate {
+        private fun JournalEntry.copy() = JournalEntry.reconstitute(id, periodId, date, lines, source, description, status, reversalOfEntryId)
+        override fun findById(id: com.theprodeogroup.fish.domain.ledger.JournalEntryId) = delegate.findById(id)?.copy()
+        override fun save(entry: JournalEntry) = delegate.save(entry.copy())
+        override fun insertIfAbsent(entry: JournalEntry) = delegate.insertIfAbsent(entry.copy())
+    }
+
     @Test
-    fun `given several simultaneous undos of one entry, then exactly one reversal is posted`() {
+    fun `given several simultaneous undos of one entry read as separate copies, then exactly one reversal is posted`() {
         val entry = receipt()
+        val copying = CopyingEntries(entries)
+        val concurrent = UndoCashBookEntryUseCase(companies, accounts, copying, periods)
         val pool = Executors.newFixedThreadPool(8)
         val start = CountDownLatch(1)
-        val futures = (1..8).map { pool.submit<UndoCashBookEntryUseCase.Result> { start.await(); useCase.execute(company.id, cash.id, entry.id, now) } }
+        val futures = (1..8).map { pool.submit<UndoCashBookEntryUseCase.Result> { start.await(); concurrent.execute(company.id, cash.id, entry.id, now) } }
         start.countDown()
         val results = futures.map { it.get(30, TimeUnit.SECONDS) }
         pool.shutdown()
