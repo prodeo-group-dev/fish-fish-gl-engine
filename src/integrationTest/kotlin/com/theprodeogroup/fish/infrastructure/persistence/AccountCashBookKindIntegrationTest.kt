@@ -84,4 +84,40 @@ class AccountCashBookKindIntegrationTest {
 
         refused shouldBe true
     }
+
+    @Test
+    fun `given entries on two accounts, when entries are found by account, then only the entries touching that account come back - with all their lines`() {
+        val companyId = newCompany()
+        val periodRepository = ExposedPeriodRepository()
+        val journalEntryRepository = ExposedJournalEntryRepository()
+        val period = com.theprodeogroup.fish.domain.ledger.Period.create(
+            companyId, com.theprodeogroup.fish.domain.common.PeriodType.MONTH, java.time.LocalDate.now(), java.time.LocalDate.now().plusDays(30)
+        )
+        periodRepository.save(period)
+        val bank = Account.create(companyId, AccountType.ASSET, AccountClassification.CURRENT, "1010", "Bank", cashBookKind = CashBookKind.BANK)
+        val cash = Account.create(companyId, AccountType.ASSET, AccountClassification.CURRENT, "1000", "Cash", cashBookKind = CashBookKind.CASH)
+        val sales = Account.create(companyId, AccountType.REVENUE, null, "4000", "Sales")
+        listOf(bank, cash, sales).forEach { accountRepository.save(it) }
+        val gbp = java.util.Currency.getInstance("GBP")
+        fun post(debit: Account, credit: Account, amount: String) =
+            com.theprodeogroup.fish.domain.ledger.JournalEntry.create(
+                period.id, java.time.LocalDate.now(),
+                listOf(
+                    com.theprodeogroup.fish.domain.ledger.JournalLine(debit.id, com.theprodeogroup.common.Money(java.math.BigDecimal(amount), gbp), com.theprodeogroup.fish.domain.common.TransactionSide.DEBIT),
+                    com.theprodeogroup.fish.domain.ledger.JournalLine(credit.id, com.theprodeogroup.common.Money(java.math.BigDecimal(amount), gbp), com.theprodeogroup.fish.domain.common.TransactionSide.CREDIT)
+                ),
+                com.theprodeogroup.fish.domain.common.JournalSource.MANUAL
+            ).also { it.post(); journalEntryRepository.save(it) }
+        val toBank = post(bank, sales, "100.00")
+        val toCash = post(cash, sales, "40.00")
+        val transfer = post(cash, bank, "10.00")
+
+        val bankEntries = journalEntryRepository.findAllByAccount(bank.id)
+        val cashEntries = journalEntryRepository.findAllByAccount(cash.id)
+
+        bankEntries.map { it.id }.toSet() shouldBe setOf(toBank.id, transfer.id)
+        cashEntries.map { it.id }.toSet() shouldBe setOf(toCash.id, transfer.id)
+        bankEntries.first { it.id == transfer.id }.lines.size shouldBe 2
+        journalEntryRepository.findAllByAccount(com.theprodeogroup.fish.domain.ledger.AccountId.generate()) shouldBe emptyList()
+    }
 }
