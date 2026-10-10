@@ -152,14 +152,7 @@ class RecordCashBookEntryUseCase(
             (description?.takeIf { it.isNotBlank() }) == (request.description?.takeIf { it.isNotBlank() })
     }
 
-    private fun balanceOf(book: Account, currency: Currency): Money {
-        val zero = Money(BigDecimal.ZERO, currency)
-        return journalEntryRepository.findAllByAccount(book.id)
-            .filter { it.status.hasHistoricalEffect() }
-            .flatMap { it.lines }
-            .filter { it.accountId == book.id }
-            .fold(zero) { sum, line -> if (line.side == TransactionSide.DEBIT) sum + line.amount else sum - line.amount }
-    }
+    private fun balanceOf(book: Account, currency: Currency): Money = journalEntryRepository.balanceOfBook(book, currency)
 
     private fun warningsFor(book: Account, direction: CashDirection, balanceAfter: Money): List<Warning> {
         if (direction != CashDirection.PAID || balanceAfter.amount.signum() >= 0) return emptyList()

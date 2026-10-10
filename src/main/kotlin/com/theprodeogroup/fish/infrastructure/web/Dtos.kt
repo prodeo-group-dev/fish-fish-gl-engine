@@ -1154,3 +1154,23 @@ data class CounterAccountNotAllowedDto(val error: String, val detail: String, va
 /** One account a person may pick as the other side of a receipt or payment. [group] is `INCOME`, `EXPENSE_<kind>`, `LOAN`, `OWNERS_MONEY` or `OTHER`. */
 @Serializable
 data class CounterAccountOptionDto(val accountId: String, val code: String, val name: String, val type: String, val group: String)
+
+/** `POST /companies/{companyId}/cash-books/{accountId}/transfers`: move [amount] from this book to [toAccountId], another cash or bank book of the Company. An `Idempotency-Key` header is required. */
+@Serializable
+data class CashBookTransferRequestDto(val toAccountId: String, val date: String, val amount: String, val description: String? = null)
+
+@Serializable
+data class CashBookTransferResponseDto(
+    val entryId: String,
+    val fromAccountId: String,
+    val toAccountId: String,
+    val fromBalanceAfter: String,
+    val toBalanceAfter: String,
+    val currency: String,
+    val warnings: List<CashBookWarningDto>,
+    val replayed: Boolean
+)
+
+/** `POST .../entries/{entryId}/undo`: the reversing entry that was posted and the book's balance after it. */
+@Serializable
+data class CashBookUndoResponseDto(val reversalEntryId: String, val undoneEntryId: String, val balanceAfter: String, val currency: String)

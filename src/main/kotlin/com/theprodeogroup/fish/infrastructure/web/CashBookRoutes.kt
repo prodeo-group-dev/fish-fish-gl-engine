@@ -6,6 +6,8 @@ import com.theprodeogroup.fish.application.ComputeCashBookUseCase
 import com.theprodeogroup.fish.application.ListCashBooksUseCase
 import com.theprodeogroup.fish.application.ListCounterAccountsUseCase
 import com.theprodeogroup.fish.application.RecordCashBookEntryUseCase
+import com.theprodeogroup.fish.application.RecordCashBookTransferUseCase
+import com.theprodeogroup.fish.application.UndoCashBookEntryUseCase
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.CashBookKind
 import com.theprodeogroup.fish.domain.ledger.CashDirection
@@ -45,6 +47,8 @@ fun Route.cashBookRoutes(
     changeCashBookKindUseCase: ChangeCashBookKindUseCase,
     recordCashBookEntryUseCase: RecordCashBookEntryUseCase,
     listCounterAccountsUseCase: ListCounterAccountsUseCase,
+    recordCashBookTransferUseCase: RecordCashBookTransferUseCase,
+    undoCashBookEntryUseCase: UndoCashBookEntryUseCase,
     companyRepository: CompanyRepository
 ) {
     get("/companies/{companyId}/cash-books") {
@@ -177,6 +181,14 @@ fun Route.cashBookRoutes(
         call.handleCashBookEntry(CashDirection.PAID, recordCashBookEntryUseCase, companyRepository)
     }
 
+    post("/companies/{companyId}/cash-books/{accountId}/transfers") {
+        call.handleCashBookTransfer(recordCashBookTransferUseCase, companyRepository)
+    }
+
+    post("/companies/{companyId}/cash-books/{accountId}/entries/{entryId}/undo") {
+        call.handleCashBookUndo(undoCashBookEntryUseCase, companyRepository)
+    }
+
     put("/companies/{companyId}/accounts/{accountId}/cash-book-kind") {
         val companyId = call.parseCashBookCompanyId() ?: return@put
         val accountUuid = call.parseUuid(call.parameters["accountId"] ?: "") ?: return@put
@@ -240,6 +252,110 @@ fun Route.standardAccountsRoutes(
 }
 
 private const val MAX_IDEMPOTENCY_KEY_LENGTH = 200
+
+private suspend fun ApplicationCall.handleCashBookTransfer(
+    recordCashBookTransferUseCase: RecordCashBookTransferUseCase,
+    companyRepository: CompanyRepository
+) {
+    val companyId = parseCashBookCompanyId() ?: return
+    val fromUuid = parseUuid(parameters["accountId"] ?: "") ?: return
+    val tenantId = resolveTenantForCompany(companyId, companyRepository) ?: return
+    if (!verifyClaimedTenant(tenantId)) return
+    authorizeTenantForWrite(tenantId, companyId) ?: return
+
+    val idempotencyKey = request.header("Idempotency-Key")?.trim()
+    if (idempotencyKey.isNullOrEmpty() || idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("idempotency_key_required", "An Idempotency-Key header of 1 to $MAX_IDEMPOTENCY_KEY_LENGTH characters is required"))
+        return
+    }
+    val body = receive<CashBookTransferRequestDto>()
+    val date = try {
+        LocalDate.parse(body.date)
+    } catch (e: DateTimeParseException) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "date must be a date, YYYY-MM-DD"))
+        return
+    }
+    val amount = body.amount.toBigDecimalOrNull() ?: run {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_amount", "amount must be a plain decimal number"))
+        return
+    }
+    val toUuid = parseUuid(body.toAccountId) ?: return
+
+    val entryId = JournalEntryId(
+        UUID.nameUUIDFromBytes("cash-book-transfer|${tenantId.value}|${companyId.value}|$fromUuid|$toUuid|$idempotencyKey".toByteArray(Charsets.UTF_8))
+    )
+    when (
+        val result = recordCashBookTransferUseCase.execute(
+            RecordCashBookTransferUseCase.Request(companyId, AccountId(fromUuid), AccountId(toUuid), amount, date, body.description, entryId)
+        )
+    ) {
+        is RecordCashBookTransferUseCase.Result.Posted -> respond(
+            HttpStatusCode.Created,
+            CashBookTransferResponseDto(
+                entryId = result.entry.id.value.toString(), fromAccountId = fromUuid.toString(), toAccountId = toUuid.toString(),
+                fromBalanceAfter = result.fromBalanceAfter.amount.toPlainString(), toBalanceAfter = result.toBalanceAfter.amount.toPlainString(),
+                currency = result.fromBalanceAfter.currency.currencyCode,
+                warnings = result.warnings.map { CashBookWarningDto(it.code, it.accountId.value.toString(), it.balanceAfter.amount.toPlainString()) },
+                replayed = false
+            )
+        )
+        is RecordCashBookTransferUseCase.Result.Replay -> respond(
+            HttpStatusCode.Created,
+            CashBookTransferResponseDto(
+                entryId = result.entry.id.value.toString(), fromAccountId = fromUuid.toString(), toAccountId = toUuid.toString(),
+                fromBalanceAfter = result.fromBalanceAfter.amount.toPlainString(), toBalanceAfter = result.toBalanceAfter.amount.toPlainString(),
+                currency = result.fromBalanceAfter.currency.currencyCode, warnings = emptyList(), replayed = true
+            )
+        )
+        RecordCashBookTransferUseCase.Result.KeyReused ->
+            respond(HttpStatusCode.UnprocessableEntity, ErrorResponseDto("idempotency_key_reused", "This Idempotency-Key was already used for a different transfer"))
+        RecordCashBookTransferUseCase.Result.CompanyNotFound ->
+            respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
+        RecordCashBookTransferUseCase.Result.AccountNotFound ->
+            respond(HttpStatusCode.NotFound, ErrorResponseDto("account_not_found", "Account not found"))
+        RecordCashBookTransferUseCase.Result.NotACashBook ->
+            respond(HttpStatusCode.Conflict, ErrorResponseDto("not_a_cash_or_bank_account", "Both accounts must be cash or bank accounts"))
+        RecordCashBookTransferUseCase.Result.SameAccount ->
+            respond(HttpStatusCode.BadRequest, ErrorResponseDto("same_account", "Choose a different account to move the money to"))
+        RecordCashBookTransferUseCase.Result.InvalidAmount ->
+            respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_amount", "amount must be greater than zero, with no more decimal places than the currency"))
+        RecordCashBookTransferUseCase.Result.NoOpenPeriod ->
+            respond(HttpStatusCode.Conflict, ErrorResponseDto("no_open_period", "This Company has no open Period"))
+    }
+}
+
+private suspend fun ApplicationCall.handleCashBookUndo(
+    undoCashBookEntryUseCase: UndoCashBookEntryUseCase,
+    companyRepository: CompanyRepository
+) {
+    val companyId = parseCashBookCompanyId() ?: return
+    val accountUuid = parseUuid(parameters["accountId"] ?: "") ?: return
+    val entryUuid = parseUuid(parameters["entryId"] ?: "") ?: return
+    val tenantId = resolveTenantForCompany(companyId, companyRepository) ?: return
+    if (!verifyClaimedTenant(tenantId)) return
+    authorizeTenantForWrite(tenantId, companyId) ?: return
+
+    when (val result = undoCashBookEntryUseCase.execute(companyId, AccountId(accountUuid), JournalEntryId(entryUuid))) {
+        is UndoCashBookEntryUseCase.Result.Undone -> respond(
+            HttpStatusCode.Created,
+            CashBookUndoResponseDto(result.reversal.id.value.toString(), entryUuid.toString(), result.balanceAfter.amount.toPlainString(), result.balanceAfter.currency.currencyCode)
+        )
+        UndoCashBookEntryUseCase.Result.CompanyNotFound ->
+            respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
+        UndoCashBookEntryUseCase.Result.AccountNotFound ->
+            respond(HttpStatusCode.NotFound, ErrorResponseDto("account_not_found", "Account not found"))
+        UndoCashBookEntryUseCase.Result.NotACashBook ->
+            respond(HttpStatusCode.Conflict, ErrorResponseDto("not_a_cash_or_bank_account", "This account is not a cash or bank account, so it has no book"))
+        UndoCashBookEntryUseCase.Result.EntryNotFound ->
+            respond(HttpStatusCode.NotFound, ErrorResponseDto("entry_not_found", "No such entry in this book"))
+        UndoCashBookEntryUseCase.Result.AlreadyUndone ->
+            respond(HttpStatusCode.Conflict, ErrorResponseDto("already_undone", "This entry was already undone"))
+        UndoCashBookEntryUseCase.Result.NotUndoable ->
+            respond(HttpStatusCode.Conflict, ErrorResponseDto("not_undoable", "This entry cannot be undone"))
+        UndoCashBookEntryUseCase.Result.PeriodNotOpen ->
+            respond(HttpStatusCode.Conflict, ErrorResponseDto("period_not_open", "The period this entry is in is no longer open"))
+    }
+}
 
 private suspend fun ApplicationCall.handleCashBookEntry(
     direction: CashDirection,

@@ -3,6 +3,8 @@ package com.theprodeogroup.fish.infrastructure.web
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.AddMissingStandardAccountsUseCase
 import com.theprodeogroup.fish.application.RecordCashBookEntryUseCase
+import com.theprodeogroup.fish.application.RecordCashBookTransferUseCase
+import com.theprodeogroup.fish.application.UndoCashBookEntryUseCase
 import com.theprodeogroup.fish.application.ListCounterAccountsUseCase
 import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
 import com.theprodeogroup.fish.application.ComputeCashBookUseCase
@@ -154,6 +156,8 @@ class CashBookRoutesTest {
         val addMissingStandardAccountsUseCase = AddMissingStandardAccountsUseCase(companyRepository, accountRepository)
         val recordCashBookEntryUseCase = RecordCashBookEntryUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository, postJournalEntryUseCase)
         val listCounterAccountsUseCase = ListCounterAccountsUseCase(companyRepository, accountRepository)
+        val recordCashBookTransferUseCase = RecordCashBookTransferUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository, postJournalEntryUseCase)
+        val undoCashBookEntryUseCase = UndoCashBookEntryUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository)
 
         val tenant = TenantId.generate()
         val company = Company.create(tenant, "Purse UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
@@ -232,7 +236,9 @@ class CashBookRoutesTest {
                 changeCashBookKindUseCase = changeCashBookKindUseCase,
                 addMissingStandardAccountsUseCase = addMissingStandardAccountsUseCase,
                 recordCashBookEntryUseCase = recordCashBookEntryUseCase,
-                listCounterAccountsUseCase = listCounterAccountsUseCase
+                listCounterAccountsUseCase = listCounterAccountsUseCase,
+                recordCashBookTransferUseCase = recordCashBookTransferUseCase,
+                undoCashBookEntryUseCase = undoCashBookEntryUseCase
             )
         }
     }
@@ -718,5 +724,77 @@ class CashBookRoutesTest {
 
         client.get(base) { signedIn(fixture) }.status shouldBe HttpStatusCode.BadRequest
         client.get("$base?direction=sideways") { signedIn(fixture) }.status shouldBe HttpStatusCode.BadRequest
+    }
+
+    private suspend fun io.ktor.client.HttpClient.transfer(fixture: Fixture, from: Account, to: Account, key: String?, amount: String = "40.00") =
+        post("/api/companies/${fixture.company.id.value}/cash-books/${from.id.value}/transfers") {
+            signedIn(fixture)
+            if (key != null) header("Idempotency-Key", key)
+            contentType(ContentType.Application.Json)
+            setBody("""{"toAccountId":"${to.id.value}","date":"$TODAY","amount":"$amount","description":"Banked"}""")
+        }
+
+    @Test
+    fun `given cash in the till, when it is moved to the bank, then both books show it and a replay posts nothing more`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        val bank = fixture.cashBook("1010", CashBookKind.BANK)
+        fixture.post(cash, fixture.revenueAccount!!, "100.00")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val first = client.transfer(fixture, cash, bank, "move-1")
+        first.status shouldBe HttpStatusCode.Created
+        val body: CashBookTransferResponseDto = first.body()
+        body.fromBalanceAfter shouldBe "60.00"
+        body.toBalanceAfter shouldBe "40.00"
+        body.warnings shouldBe emptyList()
+        val replay: CashBookTransferResponseDto = client.transfer(fixture, cash, bank, "move-1").body()
+
+        replay.replayed shouldBe true
+        replay.entryId shouldBe body.entryId
+        fixture.journalEntryRepository.findAllByAccount(bank.id).size shouldBe 1
+        client.transfer(fixture, cash, bank, "move-1", amount = "41.00").status shouldBe HttpStatusCode.UnprocessableEntity
+        client.transfer(fixture, cash, bank, key = null).status shouldBe HttpStatusCode.BadRequest
+        client.transfer(fixture, cash, cash, "move-2").status shouldBe HttpStatusCode.BadRequest
+    }
+
+    @Test
+    fun `given a recorded receipt, when it is undone, then a reversing entry is posted, a second undo is 409 already_undone, and the book shows both rows`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val recorded: CashBookEntryResponseDto = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!), "to-undo").body()
+        val undoPath = "/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/${recorded.entryId}/undo"
+
+        val undo = client.post(undoPath) { signedIn(fixture) }
+
+        undo.status shouldBe HttpStatusCode.Created
+        val undone: CashBookUndoResponseDto = undo.body()
+        undone.balanceAfter shouldBe "0.00"
+        undone.undoneEntryId shouldBe recorded.entryId
+        val again = client.post(undoPath) { signedIn(fixture) }
+        again.status shouldBe HttpStatusCode.Conflict
+        again.body<ErrorResponseDto>().error shouldBe "already_undone"
+        val book: CashBookResponseDto = client.get("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}?from=${TODAY.minusDays(1)}&to=$TODAY") { signedIn(fixture) }.body()
+        book.rows.size shouldBe 2
+        book.closingBalance shouldBe "0.00"
+        book.rows.map { it.canUndo } shouldBe listOf(false, false)
+    }
+
+    @Test
+    fun `given an entry id that is not in this book, when undo is called, then it is a 404 and nothing is reversed`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        val bank = fixture.cashBook("1010", CashBookKind.BANK)
+        val onBank = fixture.post(bank, fixture.revenueAccount!!, "30.00")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/${onBank.id.value}/undo") { signedIn(fixture) }
+
+        response.status shouldBe HttpStatusCode.NotFound
+        fixture.journalEntryRepository.findById(onBank.id)!!.status shouldBe com.theprodeogroup.fish.domain.common.PostingStatus.POSTED
     }
 }
