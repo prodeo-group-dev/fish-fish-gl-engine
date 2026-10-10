@@ -15,6 +15,7 @@ import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.insertIgnore
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.statements.UpdateBuilder
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -61,6 +62,27 @@ class ExposedJournalEntryRepository : JournalEntryRepository {
                 statement[dimensions] = encodeDimensions(line.dimensions)
             }
         }
+    }
+
+    override fun insertIfAbsent(entry: JournalEntry): Boolean = transaction {
+        val inserted = JournalEntriesTable.insertIgnore { statement ->
+            statement[id] = entry.id.value
+            populate(statement, entry)
+        }.insertedCount > 0
+        if (inserted) {
+            entry.lines.forEachIndexed { index, line ->
+                JournalLinesTable.insert { statement ->
+                    statement[journalEntryId] = entry.id.value
+                    statement[lineIndex] = index
+                    statement[accountId] = line.accountId.value
+                    statement[amount] = line.amount.amount
+                    statement[currency] = line.amount.currency.currencyCode
+                    statement[side] = line.side.name
+                    statement[dimensions] = encodeDimensions(line.dimensions)
+                }
+            }
+        }
+        inserted
     }
 
     override fun findById(id: JournalEntryId): JournalEntry? = transaction {

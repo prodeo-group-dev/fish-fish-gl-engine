@@ -2,6 +2,7 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.AddMissingStandardAccountsUseCase
+import com.theprodeogroup.fish.application.RecordCashBookEntryUseCase
 import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
 import com.theprodeogroup.fish.application.ComputeCashBookUseCase
 import com.theprodeogroup.fish.application.ListCashBooksUseCase
@@ -65,6 +66,8 @@ import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.application.User
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
@@ -148,6 +151,7 @@ class CashBookRoutesTest {
         val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository)
         val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, FakeBankReconciliationRepository())
         val addMissingStandardAccountsUseCase = AddMissingStandardAccountsUseCase(companyRepository, accountRepository)
+        val recordCashBookEntryUseCase = RecordCashBookEntryUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository, postJournalEntryUseCase)
 
         val tenant = TenantId.generate()
         val company = Company.create(tenant, "Purse UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
@@ -224,7 +228,8 @@ class CashBookRoutesTest {
                 listCashBooksUseCase = listCashBooksUseCase,
                 computeCashBookUseCase = computeCashBookUseCase,
                 changeCashBookKindUseCase = changeCashBookKindUseCase,
-                addMissingStandardAccountsUseCase = addMissingStandardAccountsUseCase
+                addMissingStandardAccountsUseCase = addMissingStandardAccountsUseCase,
+                recordCashBookEntryUseCase = recordCashBookEntryUseCase
             )
         }
     }
@@ -492,5 +497,193 @@ class CashBookRoutesTest {
         client.post("/api/companies/${fixture.company.id.value}/standard-accounts") { signedIn(fixture, "reader2@example.com") }
             .status shouldBe HttpStatusCode.Forbidden
         fixture.accountRepository.findAllByCompany(fixture.company.id).size shouldBe before
+    }
+
+    // ---- recording money in and out (Release B) ----
+
+    private fun entryBody(counter: Account, amount: String = "100.00", description: String = "Takings", date: LocalDate = TODAY, extra: String = "") =
+        """{"date":"$date","amount":"$amount","counterAccountId":"${counter.id.value}","description":"$description"$extra}"""
+
+    private suspend fun io.ktor.client.HttpClient.recordEntry(
+        fixture: Fixture, book: Account, segment: String, body: String, key: String?, email: String = ADMIN_EMAIL
+    ) = post("/api/companies/${fixture.company.id.value}/cash-books/${book.id.value}/$segment") {
+        signedIn(fixture, email)
+        if (key != null) header("Idempotency-Key", key)
+        contentType(ContentType.Application.Json)
+        setBody(body)
+    }
+
+    @Test
+    fun `given a receipt, when it is recorded, then it is 201 with the entry, the balance after and no warning, and the book shows it as a CASH_BOOK entry`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!), "key-1")
+
+        response.status shouldBe HttpStatusCode.Created
+        val body: CashBookEntryResponseDto = response.body()
+        body.balanceAfter shouldBe "100.00"
+        body.currency shouldBe "GBP"
+        body.warnings shouldBe emptyList()
+        body.replayed shouldBe false
+        val book: CashBookResponseDto = client.get("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}?from=${TODAY.minusDays(1)}&to=$TODAY") { signedIn(fixture) }.body()
+        book.rows.map { it.entryId } shouldBe listOf(body.entryId)
+        book.rows.single().source shouldBe "CASH_BOOK"
+        book.rows.single().moneyIn shouldBe "100.00"
+    }
+
+    @Test
+    fun `given no Idempotency-Key, when an entry is recorded, then it is a 400 and nothing is posted`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!), key = null)
+
+        response.status shouldBe HttpStatusCode.BadRequest
+        response.body<ErrorResponseDto>().error shouldBe "idempotency_key_required"
+        fixture.journalEntryRepository.findAllByAccount(cash.id) shouldBe emptyList()
+    }
+
+    @Test
+    fun `given the same request and key sent twice, then the second is a replay of the same entry and only one entry exists`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val body = entryBody(fixture.revenueAccount!!)
+
+        val first: CashBookEntryResponseDto = client.recordEntry(fixture, cash, "receipts", body, "same-key").body()
+        val second: CashBookEntryResponseDto = client.recordEntry(fixture, cash, "receipts", body, "same-key").body()
+
+        second.entryId shouldBe first.entryId
+        second.replayed shouldBe true
+        second.balanceAfter shouldBe "100.00"
+        fixture.journalEntryRepository.findAllByAccount(cash.id).size shouldBe 1
+    }
+
+    @Test
+    fun `given the same key with a different amount, then it is a 422 idempotency_key_reused and the first entry stands`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!, "100.00"), "reuse")
+
+        val response = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!, "250.00"), "reuse")
+
+        response.status shouldBe HttpStatusCode.UnprocessableEntity
+        response.body<ErrorResponseDto>().error shouldBe "idempotency_key_reused"
+        fixture.journalEntryRepository.findAllByAccount(cash.id).size shouldBe 1
+    }
+
+    @Test
+    fun `given a refused request with a key, then the key is not spent - the corrected request with the same key posts`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        val receivables = fixture.cashBook("1100", null)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val refused = client.recordEntry(fixture, cash, "receipts", entryBody(receivables), "retry-key")
+        refused.status shouldBe HttpStatusCode.Conflict
+        val refusal: CounterAccountNotAllowedDto = refused.body()
+        refusal.error shouldBe "counter_account_not_allowed"
+        refusal.useInstead shouldBe "SALES_COLLECTION"
+        fixture.journalEntryRepository.findAllByAccount(cash.id) shouldBe emptyList()
+
+        val fixed = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!), "retry-key")
+
+        fixed.status shouldBe HttpStatusCode.Created
+        fixed.body<CashBookEntryResponseDto>().replayed shouldBe false
+        fixture.journalEntryRepository.findAllByAccount(cash.id).size shouldBe 1
+    }
+
+    @Test
+    fun `given several simultaneous requests with the same key, then exactly one entry is posted and every caller gets that entry`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val body = entryBody(fixture.revenueAccount!!)
+
+        val responses = coroutineScope {
+            (1..6).map { async { client.recordEntry(fixture, cash, "receipts", body, "double-click").body<CashBookEntryResponseDto>() } }
+                .map { it.await() }
+        }
+
+        responses.map { it.entryId }.distinct().size shouldBe 1
+        responses.count { !it.replayed } shouldBe 1
+        fixture.journalEntryRepository.findAllByAccount(cash.id).size shouldBe 1
+    }
+
+    @Test
+    fun `given the same key for receipts and payments or for two books, then each is its own entry`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        val bank = fixture.cashBook("1010", CashBookKind.BANK)
+        val rent = fixture.account("5200", AccountType.EXPENSE)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val a: CashBookEntryResponseDto = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!), "k").body()
+        val b: CashBookEntryResponseDto = client.recordEntry(fixture, cash, "payments", entryBody(rent, "10.00"), "k").body()
+        val c: CashBookEntryResponseDto = client.recordEntry(fixture, bank, "receipts", entryBody(fixture.revenueAccount!!), "k").body()
+
+        setOf(a.entryId, b.entryId, c.entryId).size shouldBe 3
+        listOf(a, b, c).map { it.replayed } shouldBe listOf(false, false, false)
+    }
+
+    @Test
+    fun `given a payment that takes cash below zero, then it posts with a cash_below_zero warning`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        val rent = fixture.account("5200", AccountType.EXPENSE)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.recordEntry(fixture, cash, "payments", entryBody(rent, "50.00", "Rent"), "pay-1")
+
+        response.status shouldBe HttpStatusCode.Created
+        val body: CashBookEntryResponseDto = response.body()
+        body.balanceAfter shouldBe "-50.00"
+        body.warnings shouldBe listOf(CashBookWarningDto("cash_below_zero", cash.id.value.toString(), "-50.00"))
+    }
+
+    @Test
+    fun `given bad input, then each is refused with its own error and nothing is posted`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        val bank = fixture.cashBook("1010", CashBookKind.BANK)
+        val otherCompany = Company.create(fixture.tenant, "Second Co", ClientType.NON_PROFIT, Jurisdiction.UK, GBP).also { fixture.companyRepository.save(it) }
+        val foreign = Account.create(otherCompany.id, AccountType.REVENUE, null, "4000", "Their sales").also { fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val sales = fixture.revenueAccount!!
+
+        client.recordEntry(fixture, cash, "receipts", entryBody(sales, "0.00"), "b1").status shouldBe HttpStatusCode.BadRequest
+        client.recordEntry(fixture, cash, "receipts", entryBody(sales, "abc"), "b2").status shouldBe HttpStatusCode.BadRequest
+        client.recordEntry(fixture, cash, "receipts", entryBody(sales).replace(TODAY.toString(), "yesterday"), "b3").status shouldBe HttpStatusCode.BadRequest
+        client.recordEntry(fixture, cash, "receipts", entryBody(sales, extra = ""","cashFlowActivity":"WHENEVER""""), "b4").status shouldBe HttpStatusCode.BadRequest
+        client.recordEntry(fixture, cash, "receipts", entryBody(foreign), "b5").status shouldBe HttpStatusCode.NotFound
+        client.recordEntry(fixture, cash, "receipts", entryBody(bank), "b6").body<CounterAccountNotAllowedDto>().useInstead shouldBe "TRANSFER"
+        client.recordEntry(fixture, fixture.revenueAccount!!, "receipts", entryBody(bank), "b7").status shouldBe HttpStatusCode.Conflict
+        fixture.journalEntryRepository.findAllByAccount(cash.id) shouldBe emptyList()
+    }
+
+    @Test
+    fun `given a read-only member, when they try to record money, then it is refused and nothing is posted`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        val reader = User.create("reader3@example.com", "Reader").also { fixture.userRepository.save(it) }
+        fixture.membershipRepository.save(Membership.grant(reader.id, fixture.tenant, Role.ACCOUNTANT, fixture.company.id, accessLevel = AccessLevel.READ))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!), "ro-key", "reader3@example.com").status shouldBe HttpStatusCode.Forbidden
+        fixture.journalEntryRepository.findAllByAccount(cash.id) shouldBe emptyList()
     }
 }

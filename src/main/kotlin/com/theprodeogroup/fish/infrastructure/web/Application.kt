@@ -82,6 +82,7 @@ import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
 import com.theprodeogroup.fish.application.ClassifyExpenseAccountUseCase
 import com.theprodeogroup.fish.application.ComputeCashBookUseCase
 import com.theprodeogroup.fish.application.ListCashBooksUseCase
+import com.theprodeogroup.fish.application.RecordCashBookEntryUseCase
 import com.theprodeogroup.fish.application.ComputeTradingProfitAndLossUseCase
 import com.theprodeogroup.fish.domain.common.JurisdictionEntry
 import com.theprodeogroup.fish.domain.common.Jurisdiction
@@ -235,6 +236,7 @@ fun Application.productionModule() {
     val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository)
     val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, bankReconciliationRepository)
     val addMissingStandardAccountsUseCase = AddMissingStandardAccountsUseCase(companyRepository, accountRepository)
+    val recordCashBookEntryUseCase = RecordCashBookEntryUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository, postJournalEntryUseCase)
 
     // EA (Enterprise Administration) - the human-facing half of
     // docs/Tenancy_Administration_Extraction_DDD_Design.md's rewiring.
@@ -304,6 +306,7 @@ fun Application.productionModule() {
         computeCashBookUseCase = computeCashBookUseCase,
         changeCashBookKindUseCase = changeCashBookKindUseCase,
         addMissingStandardAccountsUseCase = addMissingStandardAccountsUseCase,
+        recordCashBookEntryUseCase = recordCashBookEntryUseCase,
         periodRepository = periodRepository,
         accountRepository = accountRepository,
         journalEntryRepository = journalEntryRepository,
@@ -401,6 +404,7 @@ fun Application.fishModule(
     computeCashBookUseCase: ComputeCashBookUseCase? = null,
     changeCashBookKindUseCase: ChangeCashBookKindUseCase? = null,
     addMissingStandardAccountsUseCase: AddMissingStandardAccountsUseCase? = null,
+    recordCashBookEntryUseCase: RecordCashBookEntryUseCase? = null,
     periodRepository: PeriodRepository,
     accountRepository: AccountRepository,
     journalEntryRepository: JournalEntryRepository,
@@ -629,8 +633,8 @@ fun Application.fishModule(
                         listBankReconciliationsUseCase, companyRepository
                     )
                 }
-                if (listCashBooksUseCase != null && computeCashBookUseCase != null && changeCashBookKindUseCase != null) {
-                    cashBookRoutes(listCashBooksUseCase, computeCashBookUseCase, changeCashBookKindUseCase, companyRepository)
+                if (listCashBooksUseCase != null && computeCashBookUseCase != null && changeCashBookKindUseCase != null && recordCashBookEntryUseCase != null) {
+                    cashBookRoutes(listCashBooksUseCase, computeCashBookUseCase, changeCashBookKindUseCase, recordCashBookEntryUseCase, companyRepository)
                 }
                 if (addMissingStandardAccountsUseCase != null) {
                     standardAccountsRoutes(addMissingStandardAccountsUseCase, companyRepository)

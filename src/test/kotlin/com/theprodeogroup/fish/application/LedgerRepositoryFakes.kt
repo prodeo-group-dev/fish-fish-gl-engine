@@ -42,12 +42,23 @@ class FakePeriodRepository : PeriodRepository {
 class FakeJournalEntryRepository : JournalEntryRepository {
     val saveCalls = mutableListOf<JournalEntryId>()
     private val store = mutableMapOf<JournalEntryId, JournalEntry>()
+    @Synchronized
     override fun save(entry: JournalEntry) {
         saveCalls.add(entry.id)
         store[entry.id] = entry
     }
+    @Synchronized
     override fun findById(id: JournalEntryId): JournalEntry? = store[id]
+    @Synchronized
     override fun findAllByPeriod(periodId: PeriodId): List<JournalEntry> = store.values.filter { it.periodId == periodId }
+    @Synchronized
+    override fun insertIfAbsent(entry: JournalEntry): Boolean {
+        if (store.containsKey(entry.id)) return false
+        saveCalls.add(entry.id)
+        store[entry.id] = entry
+        return true
+    }
+    @Synchronized
     override fun findAllByAccount(accountId: AccountId): List<JournalEntry> =
         store.values.filter { entry -> entry.lines.any { it.accountId == accountId } }
 
@@ -65,6 +76,7 @@ class FakeJournalEntryRepository : JournalEntryRepository {
      */
     var periodSource: PeriodRepository? = null
 
+    @Synchronized
     override fun findAllByCompany(companyId: CompanyId): List<JournalEntry> {
         val periods = periodSource ?: return store.values.toList()
         return store.values.filter { entry -> periods.findById(entry.periodId)?.companyId == companyId }

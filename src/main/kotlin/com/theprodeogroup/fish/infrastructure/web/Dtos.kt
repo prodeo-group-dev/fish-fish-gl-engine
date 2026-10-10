@@ -1117,3 +1117,36 @@ data class StandardAccountsResponseDto(
     val conflicts: List<StandardAccountsConflictDto>,
     val cashBookKindSet: Boolean
 )
+
+/**
+ * `POST /companies/{companyId}/cash-books/{accountId}/receipts` and `.../payments` (docs/GL_Cash_And_Bank_Books_SRS.md,
+ * Release B): money in or money out recorded in a book. [amount] is a plain positive decimal in the Company's currency;
+ * [cashFlowActivity] is optional (OPERATING, INVESTING or FINANCING, default OPERATING). An `Idempotency-Key` header is required.
+ */
+@Serializable
+data class CashBookEntryRequestDto(
+    val date: String,
+    val amount: String,
+    val counterAccountId: String,
+    val description: String? = null,
+    val cashFlowActivity: String? = null
+)
+
+/** A warning that did not stop the entry: [code] is `cash_below_zero` or `bank_overdrawn`, [balanceAfter] the book's balance after it. */
+@Serializable
+data class CashBookWarningDto(val code: String, val accountId: String, val balanceAfter: String)
+
+/** The recorded entry. [replayed] is true when the same request had already been recorded under this key (nothing was posted this time). */
+@Serializable
+data class CashBookEntryResponseDto(
+    val entryId: String,
+    val accountId: String,
+    val balanceAfter: String,
+    val currency: String,
+    val warnings: List<CashBookWarningDto>,
+    val replayed: Boolean
+)
+
+/** `counter_account_not_allowed`: [useInstead] names the screen to use (SALES_COLLECTION, PURCHASE_PAYMENT, INVENTORY, FIXED_ASSETS, VAT, OPENING_FIGURES, TRANSFER). */
+@Serializable
+data class CounterAccountNotAllowedDto(val error: String, val detail: String, val useInstead: String)

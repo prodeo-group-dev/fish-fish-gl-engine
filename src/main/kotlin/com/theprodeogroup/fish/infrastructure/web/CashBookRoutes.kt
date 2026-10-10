@@ -4,13 +4,18 @@ import com.theprodeogroup.fish.application.AddMissingStandardAccountsUseCase
 import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
 import com.theprodeogroup.fish.application.ComputeCashBookUseCase
 import com.theprodeogroup.fish.application.ListCashBooksUseCase
+import com.theprodeogroup.fish.application.RecordCashBookEntryUseCase
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.CashBookKind
+import com.theprodeogroup.fish.domain.ledger.CashDirection
+import com.theprodeogroup.fish.domain.ledger.CashFlowActivity
+import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
+import io.ktor.server.request.header
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -19,6 +24,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
+import java.util.UUID
 
 /**
  * Cash and bank books (docs/GL_Cash_And_Bank_Books_SRS.md, Femi 2026-10-10: cash and bank accounts, books of
@@ -36,6 +42,7 @@ fun Route.cashBookRoutes(
     listCashBooksUseCase: ListCashBooksUseCase,
     computeCashBookUseCase: ComputeCashBookUseCase,
     changeCashBookKindUseCase: ChangeCashBookKindUseCase,
+    recordCashBookEntryUseCase: RecordCashBookEntryUseCase,
     companyRepository: CompanyRepository
 ) {
     get("/companies/{companyId}/cash-books") {
@@ -131,6 +138,14 @@ fun Route.cashBookRoutes(
         }
     }
 
+    post("/companies/{companyId}/cash-books/{accountId}/receipts") {
+        call.handleCashBookEntry(CashDirection.RECEIVED, recordCashBookEntryUseCase, companyRepository)
+    }
+
+    post("/companies/{companyId}/cash-books/{accountId}/payments") {
+        call.handleCashBookEntry(CashDirection.PAID, recordCashBookEntryUseCase, companyRepository)
+    }
+
     put("/companies/{companyId}/accounts/{accountId}/cash-book-kind") {
         val companyId = call.parseCashBookCompanyId() ?: return@put
         val accountUuid = call.parseUuid(call.parameters["accountId"] ?: "") ?: return@put
@@ -192,6 +207,106 @@ fun Route.standardAccountsRoutes(
         }
     }
 }
+
+private const val MAX_IDEMPOTENCY_KEY_LENGTH = 200
+
+private suspend fun ApplicationCall.handleCashBookEntry(
+    direction: CashDirection,
+    recordCashBookEntryUseCase: RecordCashBookEntryUseCase,
+    companyRepository: CompanyRepository
+) {
+    val companyId = parseCashBookCompanyId() ?: return
+    val accountUuid = parseUuid(parameters["accountId"] ?: "") ?: return
+    val tenantId = resolveTenantForCompany(companyId, companyRepository) ?: return
+    if (!verifyClaimedTenant(tenantId)) return
+    authorizeTenantForWrite(tenantId, companyId) ?: return
+
+    // Money posting: a key is required (the entry id is derived from it), so a double-click or a retry can
+    // never post twice. See RecordCashBookEntryUseCase.
+    val idempotencyKey = request.header("Idempotency-Key")?.trim()
+    if (idempotencyKey.isNullOrEmpty() || idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("idempotency_key_required", "An Idempotency-Key header of 1 to $MAX_IDEMPOTENCY_KEY_LENGTH characters is required"))
+        return
+    }
+
+    val body = receive<CashBookEntryRequestDto>()
+    val date = try {
+        LocalDate.parse(body.date)
+    } catch (e: DateTimeParseException) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "date must be a date, YYYY-MM-DD"))
+        return
+    }
+    val amount = body.amount.toBigDecimalOrNull() ?: run {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_amount", "amount must be a plain decimal number"))
+        return
+    }
+    val counterUuid = parseUuid(body.counterAccountId) ?: return
+    val activity = body.cashFlowActivity?.let {
+        try {
+            CashFlowActivity.valueOf(it)
+        } catch (e: IllegalArgumentException) {
+            respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "cashFlowActivity must be OPERATING, INVESTING or FINANCING"))
+            return
+        }
+    } ?: CashFlowActivity.OPERATING
+
+    // Same Tenant, Company, book, direction and key always give the same entry id; anything different gives another.
+    val entryId = JournalEntryId(
+        UUID.nameUUIDFromBytes("cash-book-entry|${tenantId.value}|${companyId.value}|$accountUuid|$direction|$idempotencyKey".toByteArray(Charsets.UTF_8))
+    )
+    val result = recordCashBookEntryUseCase.execute(
+        RecordCashBookEntryUseCase.Request(
+            companyId, AccountId(accountUuid), direction, amount, date, AccountId(counterUuid),
+            body.description, activity, entryId
+        )
+    )
+    when (result) {
+        is RecordCashBookEntryUseCase.Result.Posted -> respond(
+            HttpStatusCode.Created,
+            CashBookEntryResponseDto(
+                entryId = result.entry.id.value.toString(),
+                accountId = accountUuid.toString(),
+                balanceAfter = result.balanceAfter.amount.toPlainString(),
+                currency = result.balanceAfter.currency.currencyCode,
+                warnings = result.warnings.map { CashBookWarningDto(it.code, it.accountId.value.toString(), it.balanceAfter.amount.toPlainString()) },
+                replayed = false
+            )
+        )
+        is RecordCashBookEntryUseCase.Result.Replay -> respond(
+            HttpStatusCode.Created,
+            CashBookEntryResponseDto(
+                entryId = result.entry.id.value.toString(),
+                accountId = accountUuid.toString(),
+                balanceAfter = result.balanceAfter.amount.toPlainString(),
+                currency = result.balanceAfter.currency.currencyCode,
+                warnings = emptyList(),
+                replayed = true
+            )
+        )
+        RecordCashBookEntryUseCase.Result.KeyReused ->
+            respond(HttpStatusCode.UnprocessableEntity, ErrorResponseDto("idempotency_key_reused", "This Idempotency-Key was already used for a different entry"))
+        RecordCashBookEntryUseCase.Result.CompanyNotFound ->
+            respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
+        RecordCashBookEntryUseCase.Result.AccountNotFound ->
+            respond(HttpStatusCode.NotFound, ErrorResponseDto("account_not_found", "Account not found"))
+        RecordCashBookEntryUseCase.Result.NotACashBook ->
+            respond(HttpStatusCode.Conflict, ErrorResponseDto("not_a_cash_or_bank_account", "This account is not a cash or bank account, so it has no book"))
+        RecordCashBookEntryUseCase.Result.CounterAccountNotFound ->
+            respond(HttpStatusCode.NotFound, ErrorResponseDto("counter_account_not_found", "The other account was not found"))
+        RecordCashBookEntryUseCase.Result.CounterAccountInactive ->
+            respond(HttpStatusCode.Conflict, ErrorResponseDto("counter_account_inactive", "The other account is no longer in use"))
+        is RecordCashBookEntryUseCase.Result.CounterAccountNotAllowed ->
+            respond(
+                HttpStatusCode.Conflict,
+                CounterAccountNotAllowedDto("counter_account_not_allowed", "That account is not recorded here; use ${result.useInstead.name.lowercase().replace('_', ' ')} instead", result.useInstead.name)
+            )
+        RecordCashBookEntryUseCase.Result.InvalidAmount ->
+            respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_amount", "amount must be greater than zero, with no more decimal places than the currency"))
+        RecordCashBookEntryUseCase.Result.NoOpenPeriod ->
+            respond(HttpStatusCode.Conflict, ErrorResponseDto("no_open_period", "This Company has no open Period"))
+    }
+}
+
 
 private suspend fun ApplicationCall.parseCashBookCompanyId(): CompanyId? {
     val raw = parameters["companyId"]

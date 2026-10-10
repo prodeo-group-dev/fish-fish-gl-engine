@@ -14,11 +14,11 @@ import java.time.LocalDate
  * [toJournalEntry] derives a properly balanced `JournalEntry` from it.
  *
  * Not a persisted aggregate - a lightweight command/DTO, per the "current
- * lean" already recorded in memory when this was designed. Uses
- * `JournalSource.MANUAL`: a real person initiated this even though the
- * UI simplifies the mechanics, which is the distinction that matters for
- * `JournalSource`'s existing values (human-initiated vs. system/API/
- * integration-initiated) - not worth a new enum value for this alone.
+ * lean" already recorded in memory when this was designed. Posts with
+ * `JournalSource.CASH_BOOK`: this started as `MANUAL` ("not worth a new enum
+ * value for this alone"), but once the cash and bank books became real
+ * books of original entry (docs/GL_Cash_And_Bank_Books_SRS.md, decision D6,
+ * Femi 2026-10-10) the audit trail needs to show where an entry began.
  *
  * [accountId] is assumed to always be an Asset-type Cash/Bank `Account` -
  * [direction] maps directly to [TransactionSide] on that assumption
@@ -64,6 +64,6 @@ class CashBookEntry(
             ),
             JournalLine(counterAccountId, amount, cashSide.opposite())
         )
-        return JournalEntry.create(periodId, date, lines, JournalSource.MANUAL, description, id)
+        return JournalEntry.create(periodId, date, lines, JournalSource.CASH_BOOK, description, id)
     }
 }

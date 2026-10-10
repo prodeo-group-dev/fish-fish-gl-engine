@@ -59,6 +59,14 @@ interface JournalEntryRepository {
      * must already have checked that the account belongs to the Company it is acting for.
      */
     fun findAllByAccount(accountId: AccountId): List<JournalEntry>
+
+    /**
+     * Stores [entry] only if no entry with its id exists yet; returns whether it did. First writer wins and
+     * nothing is overwritten, which is what makes a caller-chosen (deterministic) entry id a race-safe
+     * idempotency guard for money postings (docs/GL_Cash_And_Bank_Books_SRS.md, Release B): two simultaneous
+     * requests with the same key derive the same id, and exactly one of them inserts.
+     */
+    fun insertIfAbsent(entry: JournalEntry): Boolean
 }
 
 /**

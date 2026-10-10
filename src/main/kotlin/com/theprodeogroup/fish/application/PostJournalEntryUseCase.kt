@@ -8,6 +8,7 @@ import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
+import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
 import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.ledger.PeriodId
@@ -76,16 +77,67 @@ class PostJournalEntryUseCase(
         val description: String? = null
     )
 
-    fun execute(request: Request): PostJournalEntryResult {
+    fun execute(request: Request): PostJournalEntryResult =
+        when (val prepared = prepare(request, JournalEntryId.generate())) {
+            is Prepared.Refused -> prepared.result
+            is Prepared.Ready -> {
+                prepared.accounts.forEach { account ->
+                    account.recordActivity()
+                    accountRepository.save(account)
+                }
+                journalEntryRepository.save(prepared.entry)
+                PostJournalEntryResult.Success(prepared.entry, prepared.entry.pullDomainEvents())
+            }
+        }
+
+    /** The outcome of [executeOnce]. */
+    sealed class OnceResult {
+        data class Posted(val entry: JournalEntry, val events: List<DomainEvent>) : OnceResult()
+
+        /** An entry with the given id already exists; nothing was posted and nothing was changed. */
+        data class AlreadyExists(val entry: JournalEntry) : OnceResult()
+        data class Refused(val result: PostJournalEntryResult) : OnceResult()
+    }
+
+    /**
+     * Posts the entry with the caller-chosen [entryId], at most once (docs/GL_Cash_And_Bank_Books_SRS.md, Release B):
+     * it is stored only if no entry with that id exists, so two simultaneous requests that derive the same id from
+     * the same idempotency key cannot both post, and a retry after the first succeeded changes nothing. Every
+     * validation is the same as [execute]'s. Account activity is recorded only when this call actually posted.
+     */
+    fun executeOnce(request: Request, entryId: JournalEntryId): OnceResult =
+        when (val prepared = prepare(request, entryId)) {
+            is Prepared.Refused -> OnceResult.Refused(prepared.result)
+            is Prepared.Ready ->
+                if (journalEntryRepository.insertIfAbsent(prepared.entry)) {
+                    prepared.accounts.forEach { account ->
+                        account.recordActivity()
+                        accountRepository.save(account)
+                    }
+                    OnceResult.Posted(prepared.entry, prepared.entry.pullDomainEvents())
+                } else {
+                    val existing = journalEntryRepository.findById(entryId)
+                        ?: error("insertIfAbsent refused entry ${entryId.value} but no such entry can be read")
+                    OnceResult.AlreadyExists(existing)
+                }
+        }
+
+    private sealed class Prepared {
+        data class Ready(val entry: JournalEntry, val accounts: List<Account>) : Prepared()
+        data class Refused(val result: PostJournalEntryResult) : Prepared()
+    }
+
+    private fun prepare(request: Request, entryId: JournalEntryId): Prepared {
+
         val period = periodRepository.findOwnedBy(request.periodId, request.companyId)
-            ?: return PostJournalEntryResult.PeriodNotFound
+            ?: return Prepared.Refused(PostJournalEntryResult.PeriodNotFound)
         if (!period.allowsPosting()) {
-            return PostJournalEntryResult.PeriodNotOpen
+            return Prepared.Refused(PostJournalEntryResult.PeriodNotOpen)
         }
 
         val validation = JournalEntry.validateLines(request.lines)
         if (!validation.isValid) {
-            return PostJournalEntryResult.InvalidLines(validation.errors)
+            return Prepared.Refused(PostJournalEntryResult.InvalidLines(validation.errors))
         }
 
         val accounts = mutableListOf<Account>()
@@ -99,23 +151,17 @@ class PostJournalEntryUseCase(
             // "forbidden" case, so this never confirms another Company's Account exists.
             val account = accountRepository.findById(accountId)
                 ?.takeIf { it.companyId == period.companyId }
-                ?: return PostJournalEntryResult.AccountNotFound(accountId)
+                ?: return Prepared.Refused(PostJournalEntryResult.AccountNotFound(accountId))
             accounts.add(account)
         }
 
-        val entry = JournalEntry.create(request.periodId, request.date, request.lines, request.source, request.description)
+        val entry = JournalEntry.create(request.periodId, request.date, request.lines, request.source, request.description, entryId)
         val posting = entry.post()
         check(posting.isValid) {
             "PostJournalEntryUseCase built a JournalEntry that failed its own post() precondition: " +
                 posting.errors.joinToString()
         }
 
-        accounts.forEach { account ->
-            account.recordActivity()
-            accountRepository.save(account)
-        }
-        journalEntryRepository.save(entry)
-
-        return PostJournalEntryResult.Success(entry, entry.pullDomainEvents())
+        return Prepared.Ready(entry, accounts)
     }
 }
