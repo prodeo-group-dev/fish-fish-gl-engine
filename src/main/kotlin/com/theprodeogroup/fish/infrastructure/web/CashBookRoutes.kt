@@ -108,7 +108,7 @@ fun Route.cashBookRoutes(
                             CashBookRowDto(
                                 entryId = row.entryId.value.toString(),
                                 date = row.date.toString(),
-                                description = row.description,
+                                description = humanDescription(row.description),
                                 source = row.source.name,
                                 counterAccounts = row.counterAccounts.map {
                                     CashBookCounterAccountDto(it.id.value.toString(), it.code, it.name)
@@ -253,6 +253,15 @@ fun Route.standardAccountsRoutes(
 }
 
 private const val MAX_IDEMPOTENCY_KEY_LENGTH = 200
+
+private val typedIdInText = Regex("""[A-Za-z]+Id\(value=([0-9a-fA-F-]{36})\)""")
+
+/**
+ * Descriptions written before 2026-10-11 can contain a typed id printed raw ("Reversal of JournalEntryId(value=...)",
+ * "Pay run - PayRunId(value=...)"): a bug since fixed at the source. Those rows are already stored, so the book unwraps
+ * them for display (it never changes the stored entry).
+ */
+internal fun humanDescription(description: String?): String? = description?.replace(typedIdInText) { it.groupValues[1] }
 
 private suspend fun ApplicationCall.handleCashBookTransfer(
     recordCashBookTransferUseCase: RecordCashBookTransferUseCase,

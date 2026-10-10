@@ -844,4 +844,19 @@ class CashBookRoutesTest {
         bankBook.rows.map { it.reconciled } shouldBe listOf(true, false)
         cashBook.rows.map { it.reconciled } shouldBe listOf(null)
     }
+
+    @Test
+    fun `given an old entry whose description printed a typed id raw, when the book is read, then the text shows the plain id and the stored entry is unchanged`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        val raw = "Reversal of JournalEntryId(value=3f2c8a52-1b6e-4c0e-9d3a-7a1d5b9c0e11) and Pay run - PayRunId(value=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee)"
+        val entry = fixture.post(cash, fixture.revenueAccount!!, "10.00", TODAY, raw)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val book: CashBookResponseDto = client.get("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}?from=${TODAY.minusDays(1)}&to=$TODAY") { signedIn(fixture) }.body()
+
+        book.rows.single().description shouldBe "Reversal of 3f2c8a52-1b6e-4c0e-9d3a-7a1d5b9c0e11 and Pay run - aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        fixture.journalEntryRepository.findById(entry.id)!!.description shouldBe raw
+    }
 }
