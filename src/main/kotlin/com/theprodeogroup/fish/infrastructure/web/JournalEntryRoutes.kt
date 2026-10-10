@@ -11,6 +11,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.domain.ledger.AccountType
+import com.theprodeogroup.fish.domain.ledger.CashBookKind
 import com.theprodeogroup.fish.domain.ledger.ExpenseClassification
 import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
 import com.theprodeogroup.fish.domain.ledger.JournalLine
@@ -97,7 +98,7 @@ fun Route.journalEntryRoutes(
         val accounts = accountRepository.findAllByCompany(companyId)
             .filter { it.active }
             .sortedBy { it.code }
-            .map { AccountSummaryDto(it.id.value.toString(), it.code, it.name, it.type.name, it.classification?.name) }
+            .map { AccountSummaryDto(it.id.value.toString(), it.code, it.name, it.type.name, it.classification?.name, it.cashBookKind?.name) }
         call.respond(accounts)
     }
 
@@ -144,17 +145,25 @@ fun Route.journalEntryRoutes(
             }
         }
         val parentId = request.parentId?.let { call.parseUuid(it)?.let(::AccountId) ?: return@post }
+        val cashBookKind = request.cashBookKind?.let {
+            try {
+                CashBookKind.valueOf(it)
+            } catch (e: IllegalArgumentException) {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "cashBookKind must be CASH or BANK"))
+                return@post
+            }
+        }
 
         when (
             val result = createAccountUseCase.execute(
-                CreateAccountUseCase.Request(companyId, type, classification, request.code, request.name, expenseClassification, parentId)
+                CreateAccountUseCase.Request(companyId, type, classification, request.code, request.name, expenseClassification, parentId, cashBookKind)
             )
         ) {
             is CreateAccountUseCase.Result.Success -> call.respond(
                 HttpStatusCode.Created,
                 AccountSummaryDto(
                     result.account.id.value.toString(), result.account.code, result.account.name,
-                    result.account.type.name, result.account.classification?.name
+                    result.account.type.name, result.account.classification?.name, result.account.cashBookKind?.name
                 )
             )
             CreateAccountUseCase.Result.CompanyNotFound ->

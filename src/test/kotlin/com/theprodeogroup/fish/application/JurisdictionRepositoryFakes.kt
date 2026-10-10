@@ -3,6 +3,7 @@ package com.theprodeogroup.fish.application
 import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.common.JurisdictionEntry
 import com.theprodeogroup.fish.domain.common.JurisdictionRepository
+import java.util.Currency
 
 /**
  * In-memory [JurisdictionRepository], pre-seeded with the same seven
@@ -14,13 +15,13 @@ class FakeJurisdictionRepository : JurisdictionRepository {
 
     init {
         listOf(
-            JurisdictionEntry(Jurisdiction.UK, "United Kingdom (including Northern Ireland)", true),
-            JurisdictionEntry(Jurisdiction.IE, "Ireland", true),
-            JurisdictionEntry(Jurisdiction.NG, "Nigeria", true),
-            JurisdictionEntry(Jurisdiction.SL, "Sierra Leone", true),
-            JurisdictionEntry(Jurisdiction.LR, "Liberia", true),
-            JurisdictionEntry(Jurisdiction.GN, "Guinea", true),
-            JurisdictionEntry(Jurisdiction.CI, "C\u00f4te d'Ivoire", true)
+            JurisdictionEntry(Jurisdiction.UK, "United Kingdom (including Northern Ireland)", true, Currency.getInstance("GBP")),
+            JurisdictionEntry(Jurisdiction.IE, "Ireland", true, Currency.getInstance("EUR")),
+            JurisdictionEntry(Jurisdiction.NG, "Nigeria", true, Currency.getInstance("NGN")),
+            JurisdictionEntry(Jurisdiction.SL, "Sierra Leone", true, Currency.getInstance("SLE")),
+            JurisdictionEntry(Jurisdiction.LR, "Liberia", true, Currency.getInstance("SLE")),
+            JurisdictionEntry(Jurisdiction.GN, "Guinea", true, Currency.getInstance("SLE")),
+            JurisdictionEntry(Jurisdiction.CI, "C\u00f4te d'Ivoire", true, Currency.getInstance("SLE"))
         ).forEach { save(it) }
     }
 

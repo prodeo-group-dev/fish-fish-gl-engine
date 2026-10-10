@@ -7,6 +7,7 @@ object JurisdictionsTable : Table("jurisdictions") {
     val code = char("code", 2)
     val name = varchar("name", 100)
     val enabled = bool("enabled")
+    val currency = char("currency", 3).nullable()
 
     override val primaryKey = PrimaryKey(code)
 }

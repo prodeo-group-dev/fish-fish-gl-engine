@@ -28,7 +28,7 @@ fun Route.jurisdictionRoutes(jurisdictionRepository: JurisdictionRepository) {
     get("/jurisdictions") {
         call.respond(
             HttpStatusCode.OK,
-            ListJurisdictionsResponseDto(jurisdictionRepository.findAllEnabled().map { JurisdictionDto(it.code.code, it.name) })
+            ListJurisdictionsResponseDto(jurisdictionRepository.findAllEnabled().map { JurisdictionDto(it.code.code, it.name, it.currency?.currencyCode) })
         )
     }
 }

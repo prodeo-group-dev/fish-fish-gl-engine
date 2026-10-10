@@ -18,6 +18,7 @@ class ExposedJurisdictionRepository : JurisdictionRepository {
             statement[code] = entry.code.code
             statement[name] = entry.name
             statement[enabled] = entry.enabled
+            statement[currency] = entry.currency?.currencyCode
         }
         Unit
     }
@@ -39,6 +40,7 @@ class ExposedJurisdictionRepository : JurisdictionRepository {
     private fun ResultRow.toEntry() = JurisdictionEntry(
         code = Jurisdiction(this[JurisdictionsTable.code]),
         name = this[JurisdictionsTable.name],
-        enabled = this[JurisdictionsTable.enabled]
+        enabled = this[JurisdictionsTable.enabled],
+        currency = this[JurisdictionsTable.currency]?.let { java.util.Currency.getInstance(it) }
     )
 }

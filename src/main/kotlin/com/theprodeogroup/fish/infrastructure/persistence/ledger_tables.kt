@@ -22,6 +22,7 @@ object AccountsTable : Table("accounts") {
     val parentId = uuid("parent_id").nullable()
     val active = bool("active")
     val hasPostedActivity = bool("has_posted_activity")
+    val cashBookKind = varchar("cash_book_kind", 10).nullable()
 
     override val primaryKey = PrimaryKey(id)
 }

@@ -246,4 +246,67 @@ class AccountTest {
         account.reclassifyExpense(ExpenseClassification.INTEREST_EXPENSE).isValid shouldBe false
         account.expenseClassification shouldBe null
     }
+
+    // ---- cash and bank kind (docs/GL_Cash_And_Bank_Books_SRS.md, FR-CB01) ----
+
+    @Test
+    fun `given an Asset account, when it is created as a Bank account, then it carries the kind`() {
+        val account = Account.create(
+            CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1010", "Bank",
+            cashBookKind = CashBookKind.BANK
+        )
+
+        account.cashBookKind shouldBe CashBookKind.BANK
+    }
+
+    @Test
+    fun `given an Account created without a kind, then it has none`() {
+        Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1100", "Receivables")
+            .cashBookKind shouldBe null
+    }
+
+    @Test
+    fun `given a non-Asset account, when it is created with a cash or bank kind, then it fails`() {
+        for (type in listOf(AccountType.LIABILITY, AccountType.EQUITY, AccountType.REVENUE, AccountType.EXPENSE)) {
+            shouldThrow<IllegalArgumentException> {
+                Account.create(
+                    CompanyId.generate(), type,
+                    if (type.requiresClassification()) AccountClassification.CURRENT else null,
+                    "9000", "Not an asset", cashBookKind = CashBookKind.CASH
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `given an Asset account, when its kind is changed and cleared, then the kind follows`() {
+        val account = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1000", "Cash")
+
+        account.changeCashBookKind(CashBookKind.CASH).isValid shouldBe true
+        account.cashBookKind shouldBe CashBookKind.CASH
+
+        account.changeCashBookKind(CashBookKind.BANK).isValid shouldBe true
+        account.cashBookKind shouldBe CashBookKind.BANK
+
+        account.changeCashBookKind(null).isValid shouldBe true
+        account.cashBookKind shouldBe null
+    }
+
+    @Test
+    fun `given a non-Asset account, when a kind is set, then it is refused and unchanged`() {
+        val account = Account.create(CompanyId.generate(), AccountType.REVENUE, null, "4000", "Sales")
+
+        account.changeCashBookKind(CashBookKind.BANK).isValid shouldBe false
+        account.cashBookKind shouldBe null
+    }
+
+    @Test
+    fun `given a rebuilt account from storage, then its kind is restored`() {
+        val account = Account.reconstitute(
+            AccountId.generate(), CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT,
+            "1010", "Bank", null, null, true, false, CashBookKind.BANK
+        )
+
+        account.cashBookKind shouldBe CashBookKind.BANK
+    }
 }

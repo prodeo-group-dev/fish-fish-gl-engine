@@ -205,7 +205,7 @@ class TenantRoutesTest {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(EXISTING_ADMIN_EMAIL)}")
             header("X-Tenant-Id", fixture.existingTenantId.value.toString())
             contentType(ContentType.Application.Json)
-            setBody("""{"companyName": "Existing Co SL", "clientType": "NON_PROFIT", "jurisdiction": "SL", "companyBaseCurrency": "GBP", "fiscalYearStartMonth": 1}""")
+            setBody("""{"companyName": "Existing Co SL", "clientType": "NON_PROFIT", "jurisdiction": "SL", "companyBaseCurrency": "SLE", "fiscalYearStartMonth": 1}""")
         }
 
         response.status shouldBe HttpStatusCode.Created
@@ -229,7 +229,7 @@ class TenantRoutesTest {
                 header(HttpHeaders.Authorization, "Bearer $serviceToken")
                 header("X-Tenant-Id", tenantId.toString())
                 contentType(ContentType.Application.Json)
-                setBody("""{"companyName": "Planted Co", "clientType": "NON_PROFIT", "jurisdiction": "SL", "companyBaseCurrency": "GBP", "fiscalYearStartMonth": 1}""")
+                setBody("""{"companyName": "Planted Co", "clientType": "NON_PROFIT", "jurisdiction": "SL", "companyBaseCurrency": "SLE", "fiscalYearStartMonth": 1}""")
             }
             response.status shouldBe HttpStatusCode.Forbidden
         }
@@ -246,7 +246,7 @@ class TenantRoutesTest {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(OUTSIDER_EMAIL)}")
             header("X-Tenant-Id", fixture.existingTenantId.value.toString())
             contentType(ContentType.Application.Json)
-            setBody("""{"companyName": "Existing Co SL", "clientType": "NON_PROFIT", "jurisdiction": "SL", "companyBaseCurrency": "GBP", "fiscalYearStartMonth": 1}""")
+            setBody("""{"companyName": "Existing Co SL", "clientType": "NON_PROFIT", "jurisdiction": "SL", "companyBaseCurrency": "SLE", "fiscalYearStartMonth": 1}""")
         }
 
         response.status shouldBe HttpStatusCode.Forbidden
@@ -348,5 +348,75 @@ class TenantRoutesTest {
             }
             response.status shouldBe HttpStatusCode.BadRequest
         }
+    }
+
+    // ---- the Company's currency comes from its jurisdiction (docs/GL_Cash_And_Bank_Books_SRS.md, D3, FR-CB07) ----
+
+    private suspend fun io.ktor.client.HttpClient.addCompanyIn(fixture: Fixture, jurisdiction: String, currencyJson: String) =
+        post("/api/tenants/${fixture.existingTenantId.value}/companies") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(EXISTING_ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.existingTenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody("""{"companyName": "Currency Co", "clientType": "COMPANY_LIMITED", "jurisdiction": "$jurisdiction", $currencyJson"fiscalYearStartMonth": 1}""")
+        }
+
+    @Test
+    fun `given each jurisdiction and no currency in the request, when add-company is posted, then the Company gets the jurisdiction's currency`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val expected = mapOf("UK" to "GBP", "IE" to "EUR", "NG" to "NGN", "SL" to "SLE", "LR" to "SLE", "GN" to "SLE", "CI" to "SLE")
+
+        for ((code, currency) in expected) {
+            val response = client.addCompanyIn(fixture, code, "")
+            response.status shouldBe HttpStatusCode.Created
+            val companyId = response.body<AddCompanyToTenantResponseDto>().companyId
+            fixture.companyRepository.findById(CompanyId(java.util.UUID.fromString(companyId)))!!.baseCurrency.currencyCode shouldBe currency
+        }
+    }
+
+    @Test
+    fun `given a currency that matches the jurisdiction's, when add-company is posted, then it is accepted`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.addCompanyIn(fixture, "UK", """"companyBaseCurrency": "GBP", """).status shouldBe HttpStatusCode.Created
+    }
+
+    @Test
+    fun `given a currency that is not the jurisdiction's, when add-company is posted, then it is 409 currency_not_supported_for_jurisdiction and nothing is created`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.addCompanyIn(fixture, "UK", """"companyBaseCurrency": "USD", """)
+
+        response.status shouldBe HttpStatusCode.Conflict
+        response.body<ErrorResponseDto>().error shouldBe "currency_not_supported_for_jurisdiction"
+    }
+
+    @Test
+    fun `given a jurisdiction with no currency on record and none in the request, when add-company is posted, then it is 400`() = testApplication {
+        val fixture = Fixture()
+        fixture.jurisdictionRepository.save(JurisdictionEntry(Jurisdiction("ZA"), "South Africa", enabled = true))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.addCompanyIn(fixture, "ZA", "").status shouldBe HttpStatusCode.BadRequest
+    }
+
+    @Test
+    fun `given the jurisdictions list, then each entry carries its currency`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val list: ListJurisdictionsResponseDto = client.get("/api/jurisdictions") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(EXISTING_ADMIN_EMAIL)}")
+        }.body()
+
+        list.jurisdictions.associate { it.code to it.currency } shouldBe
+            mapOf("UK" to "GBP", "IE" to "EUR", "NG" to "NGN", "SL" to "SLE", "LR" to "SLE", "GN" to "SLE", "CI" to "SLE")
     }
 }

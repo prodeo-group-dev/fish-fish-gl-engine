@@ -2,6 +2,7 @@ package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.fish.domain.common.PeriodStatus
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
+import com.theprodeogroup.fish.domain.ledger.AccountType
 import com.theprodeogroup.fish.domain.ledger.ChartOfAccountsTemplate
 import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
@@ -57,11 +58,18 @@ class ComputeCashFlowUseCase(
         }
 
         val accounts = accountRepository.findAllByCompany(companyId)
-        val cashAccount = accounts.find { it.code == ChartOfAccountsTemplate.CASH_CODE } ?: return Result.NoCashAccount
+        // IAS 7: cash and cash equivalents are one pool - every cash and bank account (docs/GL_Cash_And_Bank_Books_SRS.md,
+        // FR-CB40). Account 1000 is always in the pool, even before its kind is set, so a Company that has not been
+        // backfilled yet reads exactly as it did when 1000 was the only cash account.
+        val cashAccounts = accounts.filter { account ->
+            account.type == AccountType.ASSET &&
+                (account.cashBookKind != null || account.code == ChartOfAccountsTemplate.CASH_CODE)
+        }
+        if (cashAccounts.isEmpty()) return Result.NoCashAccount
         val entries = journalEntryRepository.findAllByCompany(companyId)
 
         return Result.Success(
-            StatementOfCashFlows.of(cashAccount, entries, startDate, endDate, company.baseCurrency, accounts)
+            StatementOfCashFlows.of(cashAccounts, entries, startDate, endDate, company.baseCurrency, accounts)
         )
     }
 }

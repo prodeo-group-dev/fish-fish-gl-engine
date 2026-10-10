@@ -77,7 +77,11 @@ import com.theprodeogroup.fish.domain.tax.VatRateRepository
 import com.theprodeogroup.fish.domain.tax.VatRateRow
 import com.theprodeogroup.fish.domain.tax.VatRateSchedule
 import com.theprodeogroup.fish.application.ComputeVatCategoriesUseCase
+import com.theprodeogroup.fish.application.AddMissingStandardAccountsUseCase
+import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
 import com.theprodeogroup.fish.application.ClassifyExpenseAccountUseCase
+import com.theprodeogroup.fish.application.ComputeCashBookUseCase
+import com.theprodeogroup.fish.application.ListCashBooksUseCase
 import com.theprodeogroup.fish.application.ComputeTradingProfitAndLossUseCase
 import com.theprodeogroup.fish.domain.common.JurisdictionEntry
 import com.theprodeogroup.fish.domain.common.Jurisdiction
@@ -226,6 +230,12 @@ fun Application.productionModule() {
     val computeBankReconciliationUseCase = ComputeBankReconciliationUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
     val listBankReconciliationsUseCase = ListBankReconciliationsUseCase(companyRepository, journalEntryRepository, bankReconciliationRepository)
 
+    // Cash and bank books (docs/GL_Cash_And_Bank_Books_SRS.md).
+    val listCashBooksUseCase = ListCashBooksUseCase(companyRepository, accountRepository, journalEntryRepository)
+    val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository)
+    val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, bankReconciliationRepository)
+    val addMissingStandardAccountsUseCase = AddMissingStandardAccountsUseCase(companyRepository, accountRepository)
+
     // EA (Enterprise Administration) - the human-facing half of
     // docs/Tenancy_Administration_Extraction_DDD_Design.md's rewiring.
     // No default/fallback for the base URL, same "no safe default for a
@@ -290,6 +300,10 @@ fun Application.productionModule() {
         cancelBankReconciliationUseCase = cancelBankReconciliationUseCase,
         computeBankReconciliationUseCase = computeBankReconciliationUseCase,
         listBankReconciliationsUseCase = listBankReconciliationsUseCase,
+        listCashBooksUseCase = listCashBooksUseCase,
+        computeCashBookUseCase = computeCashBookUseCase,
+        changeCashBookKindUseCase = changeCashBookKindUseCase,
+        addMissingStandardAccountsUseCase = addMissingStandardAccountsUseCase,
         periodRepository = periodRepository,
         accountRepository = accountRepository,
         journalEntryRepository = journalEntryRepository,
@@ -383,6 +397,10 @@ fun Application.fishModule(
     cancelBankReconciliationUseCase: CancelBankReconciliationUseCase? = null,
     computeBankReconciliationUseCase: ComputeBankReconciliationUseCase? = null,
     listBankReconciliationsUseCase: ListBankReconciliationsUseCase? = null,
+    listCashBooksUseCase: ListCashBooksUseCase? = null,
+    computeCashBookUseCase: ComputeCashBookUseCase? = null,
+    changeCashBookKindUseCase: ChangeCashBookKindUseCase? = null,
+    addMissingStandardAccountsUseCase: AddMissingStandardAccountsUseCase? = null,
     periodRepository: PeriodRepository,
     accountRepository: AccountRepository,
     journalEntryRepository: JournalEntryRepository,
@@ -493,6 +511,7 @@ fun Application.fishModule(
     install(CORS) {
         allowMethod(HttpMethod.Post)
         allowMethod(HttpMethod.Get)
+        allowMethod(HttpMethod.Put)
         allowHeader(HttpHeaders.ContentType)
         allowHeader(HttpHeaders.Authorization)
         allowHeader("X-Tenant-Id")
@@ -609,6 +628,12 @@ fun Application.fishModule(
                         unmatchBankReconciliationLineUseCase, completeBankReconciliationUseCase, cancelBankReconciliationUseCase, computeBankReconciliationUseCase,
                         listBankReconciliationsUseCase, companyRepository
                     )
+                }
+                if (listCashBooksUseCase != null && computeCashBookUseCase != null && changeCashBookKindUseCase != null) {
+                    cashBookRoutes(listCashBooksUseCase, computeCashBookUseCase, changeCashBookKindUseCase, companyRepository)
+                }
+                if (addMissingStandardAccountsUseCase != null) {
+                    standardAccountsRoutes(addMissingStandardAccountsUseCase, companyRepository)
                 }
                 fixedAssetRoutes(
                     createFixedAssetUseCase, recordFixedAssetDepreciationUseCase, assessFixedAssetImpairmentUseCase,

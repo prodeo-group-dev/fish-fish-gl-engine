@@ -54,4 +54,26 @@ class JurisdictionRepositoryIntegrationTest {
     fun `given a code that was never registered, when looked up, then it is null`() {
         repository.findEnabledByCode(Jurisdiction("QQ")) shouldBe null
     }
+
+    @Test
+    fun `given a freshly migrated database, then each seeded jurisdiction carries its currency - Liberia, Guinea and Cote d Ivoire follow the SLE-only decision`() {
+        val currencies = repository.findAllEnabled().associate { it.code.code to it.currency?.currencyCode }
+
+        currencies["UK"] shouldBe "GBP"
+        currencies["IE"] shouldBe "EUR"
+        currencies["NG"] shouldBe "NGN"
+        listOf("SL", "LR", "GN", "CI").forEach { currencies[it] shouldBe "SLE" }
+    }
+
+    @Test
+    fun `given a jurisdiction saved with a currency, when it is read back, then the currency round-trips - and one saved without stays null`() {
+        val withCurrency = Jurisdiction("ZB")
+        val without = Jurisdiction("ZC")
+
+        repository.save(JurisdictionEntry(withCurrency, "Zedland B", enabled = true, currency = java.util.Currency.getInstance("USD")))
+        repository.save(JurisdictionEntry(without, "Zedland C", enabled = true))
+
+        repository.findEnabledByCode(withCurrency)?.currency?.currencyCode shouldBe "USD"
+        repository.findEnabledByCode(without)?.currency shouldBe null
+    }
 }

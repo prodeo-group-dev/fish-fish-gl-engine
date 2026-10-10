@@ -210,4 +210,15 @@ class ChartOfAccountsTemplateTest {
         val individual = ChartOfAccountsTemplate.accountsFor(ClientType.INDIVIDUAL, companyId).map { it.code }
         individual.contains(ChartOfAccountsTemplate.COST_OF_SALES_CODE) shouldBe false
     }
+
+    @Test
+    fun `given any ClientType, when a template is requested, then account 1000 is the Cash Book and no other account has a cash or bank kind`() {
+        for (clientType in ClientType.entries) {
+            val accounts = ChartOfAccountsTemplate.accountsFor(clientType, CompanyId.generate())
+
+            val withKind = accounts.filter { it.cashBookKind != null }
+            withKind.map { it.code } shouldBe listOf("1000")
+            withKind.single().cashBookKind shouldBe CashBookKind.CASH
+        }
+    }
 }

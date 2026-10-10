@@ -139,7 +139,7 @@ object ChartOfAccountsTemplate {
         }
 
     private fun individualAccounts(companyId: CompanyId): List<Account> = listOf(
-        asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT),
+        asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT, CashBookKind.CASH),
         asset(companyId, "1100", "Investments", AccountClassification.NON_CURRENT),
         liability(companyId, "2000", "Loans", AccountClassification.NON_CURRENT),
         liability(companyId, "2100", "Credit Cards", AccountClassification.CURRENT),
@@ -154,7 +154,7 @@ object ChartOfAccountsTemplate {
 
     private fun soleTraderAccounts(companyId: CompanyId): List<Account> = listOf(
         listOf(
-            asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT),
+            asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT, CashBookKind.CASH),
             asset(companyId, "1100", "Accounts Receivable", AccountClassification.CURRENT),
             asset(companyId, "1200", "Fixed Assets", AccountClassification.NON_CURRENT),
             liability(companyId, "2000", "Accounts Payable", AccountClassification.CURRENT),
@@ -175,7 +175,7 @@ object ChartOfAccountsTemplate {
 
     private fun partnershipAccounts(companyId: CompanyId): List<Account> = listOf(
         listOf(
-            asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT),
+            asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT, CashBookKind.CASH),
             asset(companyId, "1100", "Accounts Receivable", AccountClassification.CURRENT),
             asset(companyId, "1200", "Fixed Assets", AccountClassification.NON_CURRENT),
             liability(companyId, "2000", "Accounts Payable", AccountClassification.CURRENT),
@@ -196,7 +196,7 @@ object ChartOfAccountsTemplate {
 
     private fun companyLimitedAccounts(companyId: CompanyId): List<Account> = listOf(
         listOf(
-            asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT),
+            asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT, CashBookKind.CASH),
             asset(companyId, "1100", "Accounts Receivable", AccountClassification.CURRENT),
             asset(companyId, "1200", "Fixed Assets", AccountClassification.NON_CURRENT),
             liability(companyId, "2000", "Accounts Payable", AccountClassification.CURRENT),
@@ -218,7 +218,7 @@ object ChartOfAccountsTemplate {
 
     private fun nonProfitAccounts(companyId: CompanyId): List<Account> = listOf(
         listOf(
-            asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT),
+            asset(companyId, CASH_CODE, "Cash", AccountClassification.CURRENT, CashBookKind.CASH),
             asset(companyId, "1100", "Accounts Receivable", AccountClassification.CURRENT),
             asset(companyId, "1200", "Fixed Assets", AccountClassification.NON_CURRENT),
             liability(companyId, "2000", "Accounts Payable", AccountClassification.CURRENT),
@@ -276,8 +276,8 @@ object ChartOfAccountsTemplate {
         expense(companyId, INCOME_TAX_EXPENSE_CODE, "Income Tax Expense", ExpenseClassification.INCOME_TAX_EXPENSE),
     )
 
-    private fun asset(companyId: CompanyId, code: String, name: String, classification: AccountClassification) =
-        Account.create(companyId, AccountType.ASSET, classification, code, name)
+    private fun asset(companyId: CompanyId, code: String, name: String, classification: AccountClassification, cashBookKind: CashBookKind? = null) =
+        Account.create(companyId, AccountType.ASSET, classification, code, name, cashBookKind = cashBookKind)
 
     private fun liability(companyId: CompanyId, code: String, name: String, classification: AccountClassification) =
         Account.create(companyId, AccountType.LIABILITY, classification, code, name)
