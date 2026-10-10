@@ -4,6 +4,7 @@ import com.theprodeogroup.fish.application.AddMissingStandardAccountsUseCase
 import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
 import com.theprodeogroup.fish.application.ComputeCashBookUseCase
 import com.theprodeogroup.fish.application.ListCashBooksUseCase
+import com.theprodeogroup.fish.application.ListCounterAccountsUseCase
 import com.theprodeogroup.fish.application.RecordCashBookEntryUseCase
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.CashBookKind
@@ -43,6 +44,7 @@ fun Route.cashBookRoutes(
     computeCashBookUseCase: ComputeCashBookUseCase,
     changeCashBookKindUseCase: ChangeCashBookKindUseCase,
     recordCashBookEntryUseCase: RecordCashBookEntryUseCase,
+    listCounterAccountsUseCase: ListCounterAccountsUseCase,
     companyRepository: CompanyRepository
 ) {
     get("/companies/{companyId}/cash-books") {
@@ -135,6 +137,35 @@ fun Route.cashBookRoutes(
                         result.rowCount, result.limit
                     )
                 )
+        }
+    }
+
+    get("/companies/{companyId}/cash-books/{accountId}/counter-accounts") {
+        val companyId = call.parseCashBookCompanyId() ?: return@get
+        val accountUuid = call.parseUuid(call.parameters["accountId"] ?: "") ?: return@get
+        val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
+        if (!call.verifyClaimedTenant(tenantId)) return@get
+        call.authorizeTenantForRead(tenantId, companyId) ?: return@get
+
+        val direction = when (call.request.queryParameters["direction"]) {
+            "in" -> CashDirection.RECEIVED
+            "out" -> CashDirection.PAID
+            else -> {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "direction must be in or out"))
+                return@get
+            }
+        }
+
+        when (val result = listCounterAccountsUseCase.execute(companyId, AccountId(accountUuid), direction)) {
+            is ListCounterAccountsUseCase.Result.Success -> call.respond(
+                result.options.map { CounterAccountOptionDto(it.account.id.value.toString(), it.account.code, it.account.name, it.account.type.name, it.group) }
+            )
+            ListCounterAccountsUseCase.Result.CompanyNotFound ->
+                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
+            ListCounterAccountsUseCase.Result.AccountNotFound ->
+                call.respond(HttpStatusCode.NotFound, ErrorResponseDto("account_not_found", "Account not found"))
+            ListCounterAccountsUseCase.Result.NotACashBook ->
+                call.respond(HttpStatusCode.Conflict, ErrorResponseDto("not_a_cash_or_bank_account", "This account is not a cash or bank account, so it has no book"))
         }
     }
 

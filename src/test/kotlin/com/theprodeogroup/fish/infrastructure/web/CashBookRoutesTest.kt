@@ -3,6 +3,7 @@ package com.theprodeogroup.fish.infrastructure.web
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.AddMissingStandardAccountsUseCase
 import com.theprodeogroup.fish.application.RecordCashBookEntryUseCase
+import com.theprodeogroup.fish.application.ListCounterAccountsUseCase
 import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
 import com.theprodeogroup.fish.application.ComputeCashBookUseCase
 import com.theprodeogroup.fish.application.ListCashBooksUseCase
@@ -152,6 +153,7 @@ class CashBookRoutesTest {
         val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, FakeBankReconciliationRepository())
         val addMissingStandardAccountsUseCase = AddMissingStandardAccountsUseCase(companyRepository, accountRepository)
         val recordCashBookEntryUseCase = RecordCashBookEntryUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository, postJournalEntryUseCase)
+        val listCounterAccountsUseCase = ListCounterAccountsUseCase(companyRepository, accountRepository)
 
         val tenant = TenantId.generate()
         val company = Company.create(tenant, "Purse UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
@@ -229,7 +231,8 @@ class CashBookRoutesTest {
                 computeCashBookUseCase = computeCashBookUseCase,
                 changeCashBookKindUseCase = changeCashBookKindUseCase,
                 addMissingStandardAccountsUseCase = addMissingStandardAccountsUseCase,
-                recordCashBookEntryUseCase = recordCashBookEntryUseCase
+                recordCashBookEntryUseCase = recordCashBookEntryUseCase,
+                listCounterAccountsUseCase = listCounterAccountsUseCase
             )
         }
     }
@@ -685,5 +688,35 @@ class CashBookRoutesTest {
 
         client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!), "ro-key", "reader3@example.com").status shouldBe HttpStatusCode.Forbidden
         fixture.journalEntryRepository.findAllByAccount(cash.id) shouldBe emptyList()
+    }
+
+    @Test
+    fun `given a chart, when counter-accounts are asked for money in, then only recordable accounts come back with plain groups and a control account is never offered`() = testApplication {
+        val fixture = Fixture()
+        val bank = fixture.cashBook("1010", CashBookKind.BANK)
+        fixture.account("5200", AccountType.EXPENSE)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/cash-books/${bank.id.value}/counter-accounts?direction=in") { signedIn(fixture) }
+
+        response.status shouldBe HttpStatusCode.OK
+        val options: List<CounterAccountOptionDto> = response.body()
+        val byCode = options.associateBy { it.code }
+        byCode.getValue("4000").group shouldBe "INCOME"
+        byCode.getValue("5200").group shouldBe "EXPENSE_OTHER"
+        listOf("1010", "1100", "2150").forEach { (it in byCode) shouldBe false }
+    }
+
+    @Test
+    fun `given a missing or unknown direction, when counter-accounts are asked for, then it is a 400`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val base = "/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/counter-accounts"
+
+        client.get(base) { signedIn(fixture) }.status shouldBe HttpStatusCode.BadRequest
+        client.get("$base?direction=sideways") { signedIn(fixture) }.status shouldBe HttpStatusCode.BadRequest
     }
 }

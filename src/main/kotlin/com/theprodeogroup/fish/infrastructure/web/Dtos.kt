@@ -1150,3 +1150,7 @@ data class CashBookEntryResponseDto(
 /** `counter_account_not_allowed`: [useInstead] names the screen to use (SALES_COLLECTION, PURCHASE_PAYMENT, INVENTORY, FIXED_ASSETS, VAT, OPENING_FIGURES, TRANSFER). */
 @Serializable
 data class CounterAccountNotAllowedDto(val error: String, val detail: String, val useInstead: String)
+
+/** One account a person may pick as the other side of a receipt or payment. [group] is `INCOME`, `EXPENSE_<kind>`, `LOAN`, `OWNERS_MONEY` or `OTHER`. */
+@Serializable
+data class CounterAccountOptionDto(val accountId: String, val code: String, val name: String, val type: String, val group: String)
