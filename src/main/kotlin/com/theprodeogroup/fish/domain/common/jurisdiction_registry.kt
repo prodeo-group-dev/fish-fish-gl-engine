@@ -8,7 +8,17 @@ package com.theprodeogroup.fish.domain.common
  * needs more than a TaxRule before it is ready (VAT, currency, legal
  * presence).
  */
-data class JurisdictionEntry(val code: Jurisdiction, val name: String, val enabled: Boolean) {
+data class JurisdictionEntry(
+    val code: Jurisdiction,
+    val name: String,
+    val enabled: Boolean,
+    /**
+     * The currency a Company in this jurisdiction is created in (Femi, 2026-10-10: "the currency in which that tax
+     * jurisdiction operates is the primary cash and bank account currency"). Null only for a jurisdiction added
+     * without one, in which case the creator names the currency. Reference data: adding a country is a data insert.
+     */
+    val currency: java.util.Currency? = null
+) {
     init {
         require(name.isNotBlank()) { "A jurisdiction's name must not be blank" }
     }

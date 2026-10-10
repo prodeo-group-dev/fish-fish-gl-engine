@@ -40,7 +40,8 @@ class Account private constructor(
     val code: String,
     val name: String,
     expenseClassification: ExpenseClassification?,
-    val parentId: AccountId?
+    val parentId: AccountId?,
+    cashBookKind: CashBookKind? = null
 ) {
     /**
      * How an Expense account is grouped in the trading P&L (cost of sales,
@@ -49,6 +50,14 @@ class Account private constructor(
      * existing balances, it never changes them.
      */
     var expenseClassification: ExpenseClassification? = expenseClassification
+        private set
+
+    /**
+     * Whether this ASSET account is a cash or a bank account with its own book (docs/GL_Cash_And_Bank_Books_SRS.md,
+     * FR-CB01). `null` = no book. Changeable after creation ([changeCashBookKind]): a Company whose only account
+     * `1000` is really its bank flags it BANK so it can be reconciled. It changes what the account can DO, never a balance.
+     */
+    var cashBookKind: CashBookKind? = cashBookKind
         private set
 
     var active: Boolean = true
@@ -109,6 +118,19 @@ class Account private constructor(
         return ValidationResult.success()
     }
 
+    /**
+     * Sets or clears (`null`) this account's cash/bank kind. Only an ASSET account may have one.
+     * Whether a BANK account may be cleared while reconciliations exist is an application-layer rule
+     * (it needs the reconciliation repository), not checked here.
+     */
+    fun changeCashBookKind(newKind: CashBookKind?): ValidationResult {
+        if (newKind != null && type != AccountType.ASSET) {
+            return ValidationResult.failure("Only an ASSET account can be a cash or bank account (this is $type)")
+        }
+        cashBookKind = newKind
+        return ValidationResult.success()
+    }
+
     companion object {
         fun create(
             companyId: CompanyId,
@@ -118,7 +140,8 @@ class Account private constructor(
             name: String,
             expenseClassification: ExpenseClassification? = null,
             parentId: AccountId? = null,
-            id: AccountId = AccountId.generate()
+            id: AccountId = AccountId.generate(),
+            cashBookKind: CashBookKind? = null
         ): Account {
             if (type.requiresClassification()) {
                 require(classification != null) {
@@ -137,7 +160,10 @@ class Account private constructor(
             require(parentId != id) {
                 "An Account cannot be its own parent"
             }
-            return Account(id, companyId, type, classification, code, name, expenseClassification, parentId)
+            require(cashBookKind == null || type == AccountType.ASSET) {
+                "AccountType.$type cannot be a cash or bank account - only an ASSET account can"
+            }
+            return Account(id, companyId, type, classification, code, name, expenseClassification, parentId, cashBookKind)
         }
 
         /**
@@ -160,9 +186,10 @@ class Account private constructor(
             expenseClassification: ExpenseClassification?,
             parentId: AccountId?,
             active: Boolean,
-            hasPostedActivity: Boolean
+            hasPostedActivity: Boolean,
+            cashBookKind: CashBookKind? = null
         ): Account {
-            val account = Account(id, companyId, type, classification, code, name, expenseClassification, parentId)
+            val account = Account(id, companyId, type, classification, code, name, expenseClassification, parentId, cashBookKind)
             account.active = active
             account.hasPostedActivity = hasPostedActivity
             return account

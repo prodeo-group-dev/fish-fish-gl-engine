@@ -65,11 +65,34 @@ fun Route.tenantRoutesAuthenticated(addCompanyToTenantUseCase: AddCompanyToTenan
             )
             return@post
         }
-        val companyBaseCurrency = try {
-            Currency.getInstance(request.companyBaseCurrency)
-        } catch (e: IllegalArgumentException) {
-            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "'${request.companyBaseCurrency}' is not a valid ISO currency code"))
-            return@post
+        // The Company's currency is its jurisdiction's (Femi 2026-10-10, SRS decision D3): seeded on creation
+        // from the registry, not chosen. A currency in the request is still accepted but must match; a
+        // jurisdiction added with no currency on record needs the creator to name one.
+        val jurisdictionCurrency = jurisdictionRepository.findEnabledByCode(jurisdiction)?.currency
+        val requestedCurrency = request.companyBaseCurrency?.let {
+            try {
+                Currency.getInstance(it)
+            } catch (e: IllegalArgumentException) {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "'$it' is not a valid ISO currency code"))
+                return@post
+            }
+        }
+        val companyBaseCurrency = when {
+            jurisdictionCurrency == null && requestedCurrency == null -> {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "companyBaseCurrency is required: this jurisdiction has no currency on record"))
+                return@post
+            }
+            jurisdictionCurrency != null && requestedCurrency != null && requestedCurrency != jurisdictionCurrency -> {
+                call.respond(
+                    HttpStatusCode.Conflict,
+                    ErrorResponseDto(
+                        "currency_not_supported_for_jurisdiction",
+                        "A Company in ${jurisdiction.code} is created in ${jurisdictionCurrency.currencyCode}, not ${requestedCurrency.currencyCode}"
+                    )
+                )
+                return@post
+            }
+            else -> jurisdictionCurrency ?: requestedCurrency!!
         }
         val openingCashBalance = request.openingCashBalance?.let {
             it.toBigDecimalOrNull() ?: run {

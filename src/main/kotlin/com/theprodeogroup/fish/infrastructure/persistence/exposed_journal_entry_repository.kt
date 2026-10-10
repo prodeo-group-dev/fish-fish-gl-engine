@@ -85,6 +85,17 @@ class ExposedJournalEntryRepository : JournalEntryRepository {
             .map { row -> row.toJournalEntry(loadLines(JournalEntryId(row[JournalEntriesTable.id]))) }
     }
 
+    override fun findAllByAccount(accountId: AccountId): List<JournalEntry> = transaction {
+        val entryIds = JournalLinesTable.selectAll().where { JournalLinesTable.accountId eq accountId.value }
+            .map { it[JournalLinesTable.journalEntryId] }.distinct()
+        if (entryIds.isEmpty()) {
+            emptyList()
+        } else {
+            JournalEntriesTable.selectAll().where { JournalEntriesTable.id inList entryIds }
+                .map { row -> row.toJournalEntry(loadLines(JournalEntryId(row[JournalEntriesTable.id]))) }
+        }
+    }
+
     private fun loadLines(entryId: JournalEntryId): List<JournalLine> =
         JournalLinesTable.selectAll().where { JournalLinesTable.journalEntryId eq entryId.value }
             .orderBy(JournalLinesTable.lineIndex)

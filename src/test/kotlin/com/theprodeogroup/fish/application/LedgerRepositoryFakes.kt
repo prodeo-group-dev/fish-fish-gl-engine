@@ -48,6 +48,8 @@ class FakeJournalEntryRepository : JournalEntryRepository {
     }
     override fun findById(id: JournalEntryId): JournalEntry? = store[id]
     override fun findAllByPeriod(periodId: PeriodId): List<JournalEntry> = store.values.filter { it.periodId == periodId }
+    override fun findAllByAccount(accountId: AccountId): List<JournalEntry> =
+        store.values.filter { entry -> entry.lines.any { it.accountId == accountId } }
 
     /**
      * The real `ExposedJournalEntryRepository` derives this by joining

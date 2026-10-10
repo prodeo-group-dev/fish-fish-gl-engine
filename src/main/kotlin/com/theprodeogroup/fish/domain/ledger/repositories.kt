@@ -51,6 +51,14 @@ interface JournalEntryRepository {
      */
     fun findAllByCompany(companyId: CompanyId): List<JournalEntry>
     fun findAllByPeriod(periodId: PeriodId): List<JournalEntry>
+
+    /**
+     * Every entry with at least one line on [accountId], across all Periods - the read behind an
+     * account's cash book (docs/GL_Cash_And_Bank_Books_SRS.md, NFR-CB04): it goes through
+     * `journal_lines.account_id` (indexed) and does not load the Company's whole ledger. The caller
+     * must already have checked that the account belongs to the Company it is acting for.
+     */
+    fun findAllByAccount(accountId: AccountId): List<JournalEntry>
 }
 
 /**

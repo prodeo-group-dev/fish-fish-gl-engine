@@ -5,6 +5,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.domain.ledger.AccountType
+import com.theprodeogroup.fish.domain.ledger.CashBookKind
 import com.theprodeogroup.fish.domain.ledger.ExpenseClassification
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
@@ -45,7 +46,8 @@ class CreateAccountUseCase(
         val code: String,
         val name: String,
         val expenseClassification: ExpenseClassification? = null,
-        val parentId: AccountId? = null
+        val parentId: AccountId? = null,
+        val cashBookKind: CashBookKind? = null
     )
 
     sealed class Result {
@@ -59,8 +61,21 @@ class CreateAccountUseCase(
         companyRepository.findById(request.companyId) ?: return Result.CompanyNotFound
 
         val existing = accountRepository.findAllByCompany(request.companyId)
-        if (existing.any { it.code == request.code }) {
-            return Result.DuplicateCode(request.code)
+
+        // A cash or bank account may be created with no code: a non-accountant should not invent one
+        // (docs/GL_Cash_And_Bank_Books_SRS.md, FR-CB06; WEB's ask). GL takes the next free 10xx from 1010.
+        // Every other account must carry its own code.
+        val code = if (request.code.isNotBlank()) {
+            request.code
+        } else if (request.cashBookKind != null) {
+            (FIRST_ASSIGNED_CASH_BOOK_CODE..LAST_ASSIGNED_CASH_BOOK_CODE).map { it.toString() }
+                .firstOrNull { candidate -> existing.none { it.code == candidate } }
+                ?: return Result.InvalidAccount("No free account code is left between $FIRST_ASSIGNED_CASH_BOOK_CODE and $LAST_ASSIGNED_CASH_BOOK_CODE; give this account a code")
+        } else {
+            return Result.InvalidAccount("code is required")
+        }
+        if (existing.any { it.code == code }) {
+            return Result.DuplicateCode(code)
         }
         if (request.parentId != null && existing.none { it.id == request.parentId }) {
             return Result.InvalidAccount("parentId ${request.parentId.value} does not belong to this Company")
@@ -71,10 +86,11 @@ class CreateAccountUseCase(
                 companyId = request.companyId,
                 type = request.type,
                 classification = request.classification,
-                code = request.code,
+                code = code,
                 name = request.name,
                 expenseClassification = request.expenseClassification,
-                parentId = request.parentId
+                parentId = request.parentId,
+                cashBookKind = request.cashBookKind
             )
         } catch (e: IllegalArgumentException) {
             return Result.InvalidAccount(e.message)
@@ -82,5 +98,10 @@ class CreateAccountUseCase(
 
         accountRepository.save(account)
         return Result.Success(account)
+    }
+
+    private companion object {
+        const val FIRST_ASSIGNED_CASH_BOOK_CODE = 1010
+        const val LAST_ASSIGNED_CASH_BOOK_CODE = 1099
     }
 }

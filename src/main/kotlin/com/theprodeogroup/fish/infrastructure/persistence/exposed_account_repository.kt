@@ -5,6 +5,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.domain.ledger.AccountType
+import com.theprodeogroup.fish.domain.ledger.CashBookKind
 import com.theprodeogroup.fish.domain.ledger.ExpenseClassification
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import org.jetbrains.exposed.sql.ResultRow
@@ -60,6 +61,7 @@ class ExposedAccountRepository : AccountRepository {
         statement[AccountsTable.parentId] = account.parentId?.value
         statement[AccountsTable.active] = account.active
         statement[AccountsTable.hasPostedActivity] = account.hasPostedActivity
+        statement[AccountsTable.cashBookKind] = account.cashBookKind?.name
     }
 
     private fun ResultRow.toAccount(): Account = Account.reconstitute(
@@ -72,6 +74,7 @@ class ExposedAccountRepository : AccountRepository {
         expenseClassification = this[AccountsTable.expenseClassification]?.let { ExpenseClassification.valueOf(it) },
         parentId = this[AccountsTable.parentId]?.let { AccountId(it) },
         active = this[AccountsTable.active],
-        hasPostedActivity = this[AccountsTable.hasPostedActivity]
+        hasPostedActivity = this[AccountsTable.hasPostedActivity],
+        cashBookKind = this[AccountsTable.cashBookKind]?.let { CashBookKind.valueOf(it) }
     )
 }

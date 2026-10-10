@@ -44,7 +44,10 @@ data class CashFlowActivityAmount(
  */
 class StatementOfCashFlows private constructor(
     val companyId: CompanyId,
+    /** The first cash or bank account of the pool (kept for callers written when there was exactly one). */
     val cashAccountId: AccountId,
+    /** Every cash and bank account whose movements this statement covers (IAS 7: cash and cash equivalents). */
+    val cashAccountIds: List<AccountId>,
     val startDate: LocalDate,
     val endDate: LocalDate,
     val currency: Currency,
@@ -69,15 +72,34 @@ class StatementOfCashFlows private constructor(
             endDate: LocalDate,
             currency: Currency,
             accounts: List<Account> = emptyList()
+        ): StatementOfCashFlows = of(listOf(cashAccount), postedEntries, startDate, endDate, currency, accounts)
+
+        /**
+         * The same statement over a pool of cash and bank accounts (docs/GL_Cash_And_Bank_Books_SRS.md,
+         * FR-CB40): opening, closing and each activity are summed across [cashAccounts], and an entry
+         * whose every line is on a pool account (a transfer between cash and bank) is not a cash flow
+         * and is skipped. With one account the result is exactly the single-account statement.
+         */
+        fun of(
+            cashAccounts: List<Account>,
+            postedEntries: List<JournalEntry>,
+            startDate: LocalDate,
+            endDate: LocalDate,
+            currency: Currency,
+            accounts: List<Account> = emptyList()
         ): StatementOfCashFlows {
+            require(cashAccounts.isNotEmpty()) { "A statement of cash flows needs at least one cash or bank account" }
             require(!endDate.isBefore(startDate)) { "endDate cannot be before startDate" }
+            val cashIds = cashAccounts.map { it.id }.toSet()
+            val cashById = cashAccounts.associateBy { it.id }
 
             val openingEntries = postedEntries.filter { it.date.isBefore(startDate) }
             val closingEntries = postedEntries.filter { !it.date.isAfter(endDate) }
             val periodEntries = postedEntries.filter { !it.date.isBefore(startDate) && !it.date.isAfter(endDate) }
 
-            val openingBalance = accountBalances(listOf(cashAccount), openingEntries, currency).getValue(cashAccount.id)
-            val closingBalance = accountBalances(listOf(cashAccount), closingEntries, currency).getValue(cashAccount.id)
+            val zeroMoney = Money(BigDecimal.ZERO, currency)
+            val openingBalance = accountBalances(cashAccounts, openingEntries, currency).values.fold(zeroMoney) { sum, balance -> sum + balance }
+            val closingBalance = accountBalances(cashAccounts, closingEntries, currency).values.fold(zeroMoney) { sum, balance -> sum + balance }
 
             val zero = Money(BigDecimal.ZERO, currency)
             val activityTotals = CashFlowActivity.entries.associateWith { zero }.toMutableMap()
@@ -88,11 +110,14 @@ class StatementOfCashFlows private constructor(
             periodEntries
                 .filter { it.status.hasHistoricalEffect() }
                 .forEach { entry ->
-                    entry.lines.filter { it.accountId == cashAccount.id }.forEach { line ->
+                    // Every line on a pool account: money moved between cash and bank, not a cash flow.
+                    if (entry.lines.all { it.accountId in cashIds }) return@forEach
+                    entry.lines.filter { it.accountId in cashIds }.forEach { line ->
+                        val cashAccount = cashById.getValue(line.accountId)
                         val signedAmount = if (line.side == cashAccount.type.normalBalance()) line.amount else zero - line.amount
                         val activity = line.dimensions[DimensionType.CASH_FLOW_ACTIVITY]
                             ?.let { runCatching { CashFlowActivity.valueOf(it) }.getOrNull() }
-                            ?: inferActivity(entry, cashAccount, accountsById)
+                            ?: inferActivity(entry, cashIds, accountsById)
                         if (activity != null) {
                             activityTotals[activity] = activityTotals.getValue(activity) + signedAmount
                         } else {
@@ -106,7 +131,7 @@ class StatementOfCashFlows private constructor(
             }
 
             return StatementOfCashFlows(
-                cashAccount.companyId, cashAccount.id, startDate, endDate, currency,
+                cashAccounts.first().companyId, cashAccounts.first().id, cashAccounts.map { it.id }, startDate, endDate, currency,
                 openingBalance, closingBalance, activityAmounts, uncategorized
             )
         }
@@ -123,8 +148,8 @@ class StatementOfCashFlows private constructor(
          * - non-current Asset (fixed assets, long-term investments) -> INVESTING
          * - non-current Liability (loans) and Equity (capital, drawings, dividends) -> FINANCING
          */
-        private fun inferActivity(entry: JournalEntry, cashAccount: Account, accountsById: Map<AccountId, Account>): CashFlowActivity? {
-            val counterLines = entry.lines.filter { it.accountId != cashAccount.id }
+        private fun inferActivity(entry: JournalEntry, cashIds: Set<AccountId>, accountsById: Map<AccountId, Account>): CashFlowActivity? {
+            val counterLines = entry.lines.filter { it.accountId !in cashIds }
             if (counterLines.isEmpty()) return null
             val activities = counterLines.map { line ->
                 val counter = accountsById[line.accountId] ?: return null

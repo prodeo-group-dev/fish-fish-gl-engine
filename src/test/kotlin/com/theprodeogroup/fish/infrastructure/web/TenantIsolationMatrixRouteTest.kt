@@ -14,6 +14,9 @@ import com.theprodeogroup.fish.application.FakeSalesInvoiceRecordRepository
 import com.theprodeogroup.fish.application.FakeEaMembershipGateway
 import com.theprodeogroup.fish.application.FakeUserRepository
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
+import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
+import com.theprodeogroup.fish.application.ComputeCashBookUseCase
+import com.theprodeogroup.fish.application.ListCashBooksUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.FakeTaxRuleRepository
 import com.theprodeogroup.fish.application.FakeTaxComputationRepository
@@ -181,6 +184,9 @@ class TenantIsolationMatrixRouteTest {
         val assessFixedAssetImpairmentUseCase = AssessFixedAssetImpairmentUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
         val disposeFixedAssetUseCase = DisposeFixedAssetUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeFixedAssetRegisterUseCase = ComputeFixedAssetRegisterUseCase(companyRepository, fixedAssetRepository)
+        val listCashBooksUseCase = ListCashBooksUseCase(companyRepository, accountRepository, journalEntryRepository)
+        val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository)
+        val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, FakeBankReconciliationRepository())
         val vatReturnRepository = FakeVatReturnRepository()
         val openingImportBatchRepository = FakeOpeningImportBatchRepository()
         val openingImportRowResultRepository = FakeOpeningImportRowResultRepository()
@@ -229,6 +235,9 @@ class TenantIsolationMatrixRouteTest {
                 assessFixedAssetImpairmentUseCase = assessFixedAssetImpairmentUseCase,
                 disposeFixedAssetUseCase = disposeFixedAssetUseCase,
                 computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase,
+                listCashBooksUseCase = listCashBooksUseCase,
+                computeCashBookUseCase = computeCashBookUseCase,
+                changeCashBookKindUseCase = changeCashBookKindUseCase,
                 vatRateRepository = FakeVatRateRepository(),
                 vatReturnRepository = vatReturnRepository,
                 importGlBalancesUseCase = importGlBalancesUseCase,
@@ -584,6 +593,8 @@ class TenantIsolationMatrixRouteTest {
         "GET /companies/{companyId}/accounts", "POST /companies/{companyId}/accounts",
         "POST /companies/{companyId}/accounts/{accountId}/opening-balance",
         "PUT /companies/{companyId}/accounts/{accountId}/expense-classification",
+        "PUT /companies/{companyId}/accounts/{accountId}/cash-book-kind",
+        "GET /companies/{companyId}/cash-books", "GET /companies/{companyId}/cash-books/{accountId}",
         "GET /companies/{companyId}/journal-entries", "GET /companies/{companyId}/customers",
         "GET /companies/{companyId}/fixed-assets", "GET /companies/{companyId}/money-velocity",
         "GET /companies/{companyId}/expense-velocity", "GET /companies/{companyId}/sales-to-expense-ratio",

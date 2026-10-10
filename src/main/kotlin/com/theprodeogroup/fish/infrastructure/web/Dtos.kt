@@ -234,7 +234,9 @@ data class AccountSummaryDto(
     val code: String,
     val name: String,
     val type: String,
-    val classification: String? = null
+    val classification: String? = null,
+    /** `CASH`, `BANK` or `null` (no book). Added 2026-10-10 (docs/GL_Cash_And_Bank_Books_SRS.md, FR-CB03); additive and nullable. */
+    val cashBookKind: String? = null
 )
 
 /**
@@ -247,11 +249,14 @@ data class AccountSummaryDto(
 @Serializable
 data class CreateAccountRequestDto(
     val type: String,
-    val code: String,
+    /** Required, except for a cash or bank account (a [cashBookKind] is given): left blank, GL assigns the next free 10xx from 1010. */
+    val code: String = "",
     val name: String,
     val classification: String? = null,
     val expenseClassification: String? = null,
-    val parentId: String? = null
+    val parentId: String? = null,
+    /** Optional `CASH` or `BANK`; only for an ASSET account (FR-CB02). */
+    val cashBookKind: String? = null
 )
 
 /** `POST /companies/{companyId}/accounts/{accountId}/opening-balance` - [amount] is always positive; the account's own normal balance decides debit vs. credit. [contraAccountId] is caller-supplied (2026-09-12) - typically the Opening Balance Equity account, but a not-yet-classified correction supplies the Suspense Account instead. */
@@ -499,7 +504,8 @@ data class AddCompanyToTenantRequestDto(
     val companyName: String,
     val clientType: String,
     val jurisdiction: String,
-    val companyBaseCurrency: String,
+    /** Optional since 2026-10-10: a Company's currency is its jurisdiction's. If sent it must equal that currency (409 otherwise). */
+    val companyBaseCurrency: String? = null,
     /** 1 (January) through 12 (December) - same requirement as OnboardTenantRequestDto's own field. */
     val fiscalYearStartMonth: Int,
     val openingCashBalance: String? = null
@@ -972,7 +978,7 @@ data class ListBankReconciliationsResponseDto(val reconciliations: List<BankReco
 
 /** `GET /api/jurisdictions` - one entry per ENABLED row of the jurisdiction registry; `code` is the value `POST .../companies` accepts as `jurisdiction`. */
 @Serializable
-data class JurisdictionDto(val code: String, val name: String)
+data class JurisdictionDto(val code: String, val name: String, val currency: String? = null)
 
 @Serializable
 data class ListJurisdictionsResponseDto(val jurisdictions: List<JurisdictionDto>)
@@ -1026,3 +1032,74 @@ data class ClassifyExpenseAccountRequestDto(val expenseClassification: String? =
 
 @Serializable
 data class ExpenseAccountClassificationDto(val accountId: String, val code: String, val name: String, val expenseClassification: String?)
+
+// ---- Cash and bank books (docs/GL_Cash_And_Bank_Books_SRS.md, 2026-10-10) ----
+
+/** One cash or bank account in `GET /companies/{companyId}/cash-books`. Money is a plain decimal string. [isDefault] is account 1000, the Cash Book the services default to; [reconcilable] is true for BANK. */
+@Serializable
+data class CashBookListItemDto(
+    val accountId: String,
+    val code: String,
+    val name: String,
+    val kind: String,
+    val balance: String,
+    val currency: String,
+    val isDefault: Boolean,
+    val reconcilable: Boolean,
+    val lastEntryDate: String? = null
+)
+
+/** A counter-account of a book row: the other side of the money in or out. */
+@Serializable
+data class CashBookCounterAccountDto(val accountId: String, val code: String, val name: String)
+
+/**
+ * One row of an account's book. [moneyIn] and [moneyOut] are decimal strings, the other being "0.00" style zero.
+ * [source] is the GL journal source (MANUAL, API, INTEGRATION, REVERSAL, ...); finer origins such as "sales
+ * collection" are not recorded on an entry yet. [reference] is null until entries carry one. [reconciled] is
+ * null until reconciliation marks are exposed. [canUndo] is GL's answer, so a screen does not guess.
+ */
+@Serializable
+data class CashBookRowDto(
+    val entryId: String,
+    val date: String,
+    val description: String? = null,
+    val reference: String? = null,
+    val source: String,
+    val counterAccounts: List<CashBookCounterAccountDto>,
+    val moneyIn: String,
+    val moneyOut: String,
+    val runningBalance: String,
+    val reversalOf: String? = null,
+    val reversedBy: String? = null,
+    val reconciled: Boolean? = null,
+    val canUndo: Boolean
+)
+
+/** `GET /companies/{companyId}/cash-books/{accountId}?from=&to=`: the book of one cash or bank account. */
+@Serializable
+data class CashBookResponseDto(
+    val accountId: String,
+    val code: String,
+    val name: String,
+    val kind: String,
+    val currency: String,
+    val from: String,
+    val to: String,
+    val openingBalance: String,
+    val totalIn: String,
+    val totalOut: String,
+    val closingBalance: String,
+    val rows: List<CashBookRowDto>
+)
+
+/** `range_too_large`: more rows than the book will return; [rowCount] says how many matched and [limit] the most it returns. */
+@Serializable
+data class CashBookRangeTooLargeDto(val error: String, val detail: String, val rowCount: Int, val limit: Int)
+
+/** `PUT /companies/{companyId}/accounts/{accountId}/cash-book-kind`: `CASH`, `BANK` or null to clear. */
+@Serializable
+data class ChangeCashBookKindRequestDto(val cashBookKind: String? = null)
+
+@Serializable
+data class AccountCashBookKindDto(val accountId: String, val code: String, val name: String, val cashBookKind: String? = null)
