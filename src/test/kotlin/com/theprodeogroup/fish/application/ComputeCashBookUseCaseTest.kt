@@ -42,11 +42,11 @@ class ComputeCashBookUseCaseTest {
 
     private fun money(amount: String) = Money(BigDecimal(amount), gbp)
 
-    private fun receipt(date: String, amount: String, periodId: PeriodId = period.id) =
+    private fun receipt(date: String, amount: String, periodId: PeriodId = period.id, source: JournalSource = JournalSource.CASH_BOOK) =
         JournalEntry.create(
             periodId, LocalDate.parse(date),
             listOf(JournalLine(cash.id, money(amount), TransactionSide.DEBIT), JournalLine(sales.id, money(amount), TransactionSide.CREDIT)),
-            JournalSource.MANUAL, "Takings"
+            source, "Takings"
         ).also { it.post(); entries.save(it) }
 
     @Test
@@ -104,6 +104,19 @@ class ComputeCashBookUseCaseTest {
         val result = useCase.execute(company.id, cash.id, today = today).shouldBeInstanceOf<ComputeCashBookUseCase.Result.Success>()
 
         result.canUndo.getValue(entry.id) shouldBe true
+    }
+
+    @Test
+    fun `given entries that did not start in a cash or bank book, then Undo is not offered - they are reversed in their own module`() {
+        val journal = receipt("2026-10-05", "10.00", source = JournalSource.MANUAL)
+        val collection = receipt("2026-10-06", "20.00", source = JournalSource.INTEGRATION)
+        val api = receipt("2026-10-07", "30.00", source = JournalSource.API)
+        val imported = receipt("2026-10-08", "40.00", source = JournalSource.IMPORT)
+        val system = receipt("2026-10-09", "50.00", source = JournalSource.SYSTEM)
+
+        val result = useCase.execute(company.id, cash.id, today = today).shouldBeInstanceOf<ComputeCashBookUseCase.Result.Success>()
+
+        listOf(journal, collection, api, imported, system).forEach { result.canUndo.getValue(it.id) shouldBe false }
     }
 
     @Test

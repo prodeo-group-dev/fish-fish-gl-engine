@@ -88,6 +88,25 @@ class JournalEntryInsertIfAbsentIntegrationTest {
     }
 
     @Test
+    fun `given a posted entry, when its reversal is recorded, then the reversal exists and the original is REVERSED together - and a second reversal changes nothing`() {
+        val w = world()
+        val original = entry(w, JournalEntryId.generate(), "100.00")
+        journalEntryRepository.save(original)
+        val reversalId = JournalEntryId.generate()
+        val reversal = original.reverse(java.time.Instant.now(), reversalId)!!
+
+        journalEntryRepository.recordReversal(original, reversal) shouldBe true
+
+        journalEntryRepository.findById(original.id)!!.status shouldBe com.theprodeogroup.fish.domain.common.PostingStatus.REVERSED
+        journalEntryRepository.findById(reversalId)!!.reversalOfEntryId shouldBe original.id
+        journalEntryRepository.findAllByAccount(w.cash.id).size shouldBe 2
+        val again = original.reverse(java.time.Instant.now(), reversalId)
+        (again == null) shouldBe true
+        journalEntryRepository.recordReversal(original, reversal) shouldBe false
+        journalEntryRepository.findAllByAccount(w.cash.id).size shouldBe 2
+    }
+
+    @Test
     fun `given several simultaneous inserts with the same entry id, then exactly one wins and exactly one entry with two lines exists`() {
         val w = world()
         val id = JournalEntryId.generate()

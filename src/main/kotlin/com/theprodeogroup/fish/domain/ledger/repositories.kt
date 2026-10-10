@@ -67,6 +67,14 @@ interface JournalEntryRepository {
      * requests with the same key derive the same id, and exactly one of them inserts.
      */
     fun insertIfAbsent(entry: JournalEntry): Boolean
+
+    /**
+     * Records that [original] was reversed by [reversal], atomically: stores [reversal] only if no entry has its id
+     * and, in the SAME transaction, saves [original] (already marked REVERSED). Returns false and changes nothing if
+     * the reversal already exists. One transaction means a crash can never leave a posted reversal beside an original
+     * that still says POSTED, and exactly one of several simultaneous reversals of the same entry wins.
+     */
+    fun recordReversal(original: JournalEntry, reversal: JournalEntry): Boolean
 }
 
 /**

@@ -67,7 +67,9 @@ class ComputeCashBookUseCase(
             row.entryId to (
                 row.status == PostingStatus.POSTED &&
                     row.reversalOfEntryId == null &&
-                    row.source != JournalSource.REVERSAL &&
+                    // Only an entry that started in a cash or bank book is undone here; a sales collection, a supplier
+                    // payment or a pay run is reversed in its own module, which would otherwise still show it paid.
+                    row.source == JournalSource.CASH_BOOK &&
                     row.reversedByEntryId == null &&
                     open
                 )

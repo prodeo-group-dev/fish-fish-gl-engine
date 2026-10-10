@@ -26,7 +26,13 @@ enum class UseInstead {
     OPENING_FIGURES,
 
     /** Money between two of the Company's own cash and bank books: Move money. */
-    TRANSFER
+    TRANSFER,
+
+    /** Payroll: an entry made by a pay run is reversed in Payroll. (Used when refusing an Undo, not for counter-accounts.) */
+    PAYROLL,
+
+    /** An entry that did not start in a cash or bank book: reverse it where it was made. (Used when refusing an Undo.) */
+    ORIGINAL_SCREEN
 }
 
 /**

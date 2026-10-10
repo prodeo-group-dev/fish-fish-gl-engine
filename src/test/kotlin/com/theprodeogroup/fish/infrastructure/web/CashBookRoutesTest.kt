@@ -327,7 +327,8 @@ class CashBookRoutesTest {
         book.rows[0].entryId shouldBe first.id.value.toString()
         book.rows[0].counterAccounts.map { it.code } shouldBe listOf("4000")
         book.rows[1].counterAccounts.map { it.code } shouldBe listOf("5200")
-        book.rows.map { it.canUndo } shouldBe listOf(true, true)
+        // Entries made by the general journal, not in the book, are reversed where they were made.
+        book.rows.map { it.canUndo } shouldBe listOf(false, false)
         book.rows[0].reconciled shouldBe null
         book.rows[0].reference shouldBe null
     }
@@ -796,5 +797,22 @@ class CashBookRoutesTest {
 
         response.status shouldBe HttpStatusCode.NotFound
         fixture.journalEntryRepository.findById(onBank.id)!!.status shouldBe com.theprodeogroup.fish.domain.common.PostingStatus.POSTED
+    }
+
+    @Test
+    fun `given an entry that was made elsewhere, such as a journal, when undo is called in the book, then it is a 409 undo_elsewhere naming where to reverse it and nothing is reversed`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        val journal = fixture.post(cash, fixture.revenueAccount!!, "30.00")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/${journal.id.value}/undo") { signedIn(fixture) }
+
+        response.status shouldBe HttpStatusCode.Conflict
+        val body: CounterAccountNotAllowedDto = response.body()
+        body.error shouldBe "undo_elsewhere"
+        body.useInstead shouldBe "ORIGINAL_SCREEN"
+        fixture.journalEntryRepository.findById(journal.id)!!.status shouldBe com.theprodeogroup.fish.domain.common.PostingStatus.POSTED
     }
 }

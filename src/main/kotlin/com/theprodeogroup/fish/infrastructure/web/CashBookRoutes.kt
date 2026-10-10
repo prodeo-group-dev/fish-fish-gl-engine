@@ -354,6 +354,11 @@ private suspend fun ApplicationCall.handleCashBookUndo(
             respond(HttpStatusCode.Conflict, ErrorResponseDto("not_undoable", "This entry cannot be undone"))
         UndoCashBookEntryUseCase.Result.PeriodNotOpen ->
             respond(HttpStatusCode.Conflict, ErrorResponseDto("period_not_open", "The period this entry is in is no longer open"))
+        is UndoCashBookEntryUseCase.Result.UndoElsewhere ->
+            respond(
+                HttpStatusCode.Conflict,
+                CounterAccountNotAllowedDto("undo_elsewhere", "This entry was not made in a cash or bank book, so it is reversed where it was made", result.useInstead.name)
+            )
     }
 }
 

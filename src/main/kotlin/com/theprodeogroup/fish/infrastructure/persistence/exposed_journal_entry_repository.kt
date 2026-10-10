@@ -85,6 +85,17 @@ class ExposedJournalEntryRepository : JournalEntryRepository {
         inserted
     }
 
+    override fun recordReversal(original: JournalEntry, reversal: JournalEntry): Boolean = transaction {
+        // `insertIfAbsent` and `save` each open a `transaction {}`; inside this one they join it, so all of it
+        // commits or none of it does.
+        if (!insertIfAbsent(reversal)) {
+            false
+        } else {
+            save(original)
+            true
+        }
+    }
+
     override fun findById(id: JournalEntryId): JournalEntry? = transaction {
         JournalEntriesTable.selectAll().where { JournalEntriesTable.id eq id.value }
             .singleOrNull()

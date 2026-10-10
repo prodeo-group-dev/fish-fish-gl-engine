@@ -59,6 +59,15 @@ class FakeJournalEntryRepository : JournalEntryRepository {
         return true
     }
     @Synchronized
+    override fun recordReversal(original: JournalEntry, reversal: JournalEntry): Boolean {
+        if (store.containsKey(reversal.id)) return false
+        saveCalls.add(reversal.id)
+        store[reversal.id] = reversal
+        store[original.id] = original
+        return true
+    }
+
+    @Synchronized
     override fun findAllByAccount(accountId: AccountId): List<JournalEntry> =
         store.values.filter { entry -> entry.lines.any { it.accountId == accountId } }
 

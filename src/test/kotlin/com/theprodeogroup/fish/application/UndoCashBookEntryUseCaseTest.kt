@@ -86,6 +86,49 @@ class UndoCashBookEntryUseCaseTest {
         useCase.execute(company.id, cash.id, reversal.id, now) shouldBe UndoCashBookEntryUseCase.Result.NotUndoable
     }
 
+    private fun entryFrom(source: JournalSource, counter: Account, amount: String = "75.00"): JournalEntry =
+        JournalEntry.create(
+            period.id, LocalDate.of(2026, 10, 6),
+            listOf(JournalLine(cash.id, money(amount), TransactionSide.DEBIT), JournalLine(counter.id, money(amount), TransactionSide.CREDIT)),
+            source, "From elsewhere"
+        ).also { it.post(); entries.save(it) }
+
+    @Test
+    fun `given a sales collection, a supplier payment, a pay run, or a journal, when Undo is asked here, then it is refused with where to reverse it and nothing changes`() {
+        val receivables = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1100", "Receivables").also { accounts.save(it) }
+        val payables = Account.create(company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2000", "Payables").also { accounts.save(it) }
+        val wages = Account.create(company.id, AccountType.EXPENSE, null, "5200", "Wages").also { accounts.save(it) }
+        val collection = entryFrom(JournalSource.INTEGRATION, receivables)
+        val payment = entryFrom(JournalSource.API, payables)
+        val payRun = entryFrom(JournalSource.INTEGRATION, wages)
+        val journal = entryFrom(JournalSource.MANUAL, sales)
+
+        useCase.execute(company.id, cash.id, collection.id, now) shouldBe UndoCashBookEntryUseCase.Result.UndoElsewhere(com.theprodeogroup.fish.domain.ledger.UseInstead.SALES_COLLECTION)
+        useCase.execute(company.id, cash.id, payment.id, now) shouldBe UndoCashBookEntryUseCase.Result.UndoElsewhere(com.theprodeogroup.fish.domain.ledger.UseInstead.PURCHASE_PAYMENT)
+        useCase.execute(company.id, cash.id, payRun.id, now) shouldBe UndoCashBookEntryUseCase.Result.UndoElsewhere(com.theprodeogroup.fish.domain.ledger.UseInstead.PAYROLL)
+        useCase.execute(company.id, cash.id, journal.id, now) shouldBe UndoCashBookEntryUseCase.Result.UndoElsewhere(com.theprodeogroup.fish.domain.ledger.UseInstead.ORIGINAL_SCREEN)
+        listOf(collection, payment, payRun, journal).forEach {
+            entries.findById(it.id)!!.status shouldBe PostingStatus.POSTED
+        }
+        entries.findAllByAccount(cash.id).none { it.reversalOfEntryId != null } shouldBe true
+    }
+
+    /** A repository that refuses any plain save: Undo must reach the database through its one atomic write, or this fails. */
+    private class NoSeparateSave(private val delegate: FakeJournalEntryRepository) : com.theprodeogroup.fish.domain.ledger.JournalEntryRepository by delegate {
+        override fun save(entry: JournalEntry) = throw IllegalStateException("Undo wrote the original on its own, outside the one transaction")
+    }
+
+    @Test
+    fun `given Undo, then the reversal and the original's new status are one write - there is no moment with one but not the other`() {
+        val entry = receipt()
+        val strict = UndoCashBookEntryUseCase(companies, accounts, NoSeparateSave(entries), periods)
+
+        strict.execute(company.id, cash.id, entry.id, now).shouldBeInstanceOf<UndoCashBookEntryUseCase.Result.Undone>()
+
+        entries.findById(entry.id)!!.status shouldBe PostingStatus.REVERSED
+        entries.findAllByAccount(cash.id).count { it.reversalOfEntryId == entry.id } shouldBe 1
+    }
+
     @Test
     fun `given a draft entry, then it is not undoable`() {
         val draft = receipt(post = false)
