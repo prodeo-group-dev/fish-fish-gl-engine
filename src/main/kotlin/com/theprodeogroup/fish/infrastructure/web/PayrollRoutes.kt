@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.application.GetOrCreateLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.RecordPayRunResult
 import com.theprodeogroup.fish.application.RecordPayRunUseCase
@@ -78,7 +79,9 @@ fun Route.payrollRoutes(
     recordPayRunUseCase: RecordPayRunUseCase,
     getOrCreateLeaveAccrualUseCase: GetOrCreateLeaveAccrualUseCase,
     companyRepository: CompanyRepository,
-    idempotencyKeyRepository: IdempotencyKeyRepository
+    idempotencyKeyRepository: IdempotencyKeyRepository,
+    accountRepository: AccountRepository,
+    cashBookPolicies: CashBookPolicies
 ) {
     post("/leave-accruals/{leaveAccrualId}/remeasure") {
         val leaveAccrual = call.loadLeaveAccrual(leaveAccrualRepository) ?: return@post
@@ -134,6 +137,7 @@ fun Route.payrollRoutes(
         val amount = call.parseMoney(request.amount, request.currency) ?: return@post
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
         val cashAccountUuid = call.parseUuid(request.cashAccountId) ?: return@post
+        if (!call.settlementAccountAllowed(cashBookPolicies, accountRepository, leaveAccrual.companyId, cashAccountUuid, "POST /leave-accruals/{leaveAccrualId}/utilize")) return@post
         val liabilityAccountUuid = call.parseUuid(request.accruedLeaveLiabilityAccountId) ?: return@post
         val date = call.parseLocalDate(request.date) ?: return@post
 
@@ -180,6 +184,7 @@ fun Route.payrollRoutes(
         val wagesAccountUuid = call.parseUuid(request.wagesExpenseAccountId) ?: return@post
         val salariesAccountUuid = call.parseUuid(request.salariesExpenseAccountId) ?: return@post
         val cashAccountUuid = call.parseUuid(request.cashAccountId) ?: return@post
+        if (!call.settlementAccountAllowed(cashBookPolicies, accountRepository, companyId, cashAccountUuid, "POST /payroll/record-pay-run")) return@post
         val date = call.parseLocalDate(request.date) ?: return@post
 
         call.respondIdempotently(

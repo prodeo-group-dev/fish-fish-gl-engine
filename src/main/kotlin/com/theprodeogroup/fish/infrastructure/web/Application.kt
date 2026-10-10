@@ -290,6 +290,14 @@ fun Application.productionModule() {
         serviceAllowListMode = ServiceAllowListMode.fromEnvironment(System.getenv("FISH_SERVICE_ALLOWLIST_MODE")).also {
             if (it == ServiceAllowListMode.LOG) log.warn("FISH_SERVICE_ALLOWLIST_MODE=log: service calls off a credential's endpoint allow-list are ANSWERED and logged as WOULD BLOCK, not refused")
         },
+        cashBookPolicies = CashBookPolicies(
+            settlementAccount = PolicyMode.fromEnvironment(System.getenv("FISH_SETTLEMENT_ACCOUNT_MODE")),
+            bankOnlyReconciliation = PolicyMode.fromEnvironment(System.getenv("FISH_BANK_RECONCILIATION_MODE"))
+        ).also {
+            // Both are log-first: unset means a violation is logged as WOULD REFUSE and nothing is refused.
+            if (it.settlementAccount == PolicyMode.LOG) log.warn("FISH_SETTLEMENT_ACCOUNT_MODE is not enforce: a settlement account that is not a cash or bank book is only logged as WOULD REFUSE")
+            if (it.bankOnlyReconciliation == PolicyMode.LOG) log.warn("FISH_BANK_RECONCILIATION_MODE is not enforce: reconciling an account that is not a bank account is only logged as WOULD REFUSE")
+        },
         eaMembershipGateway = eaMembershipGateway,
         companyRepository = companyRepository,
         addCompanyToTenantUseCase = addCompanyToTenantUseCase,
@@ -413,6 +421,7 @@ fun Application.fishModule(
     computeCashBookUseCase: ComputeCashBookUseCase? = null,
     changeCashBookKindUseCase: ChangeCashBookKindUseCase? = null,
     addMissingStandardAccountsUseCase: AddMissingStandardAccountsUseCase? = null,
+    cashBookPolicies: CashBookPolicies = CashBookPolicies(),
     recordCashBookEntryUseCase: RecordCashBookEntryUseCase? = null,
     listCounterAccountsUseCase: ListCounterAccountsUseCase? = null,
     recordCashBookTransferUseCase: RecordCashBookTransferUseCase? = null,
@@ -582,12 +591,12 @@ fun Application.fishModule(
                 payrollRoutes(
                     remeasureLeaveAccrualUseCase, utilizeLeaveAccrualUseCase, leaveAccrualRepository,
                     recordPayRunUseCase, getOrCreateLeaveAccrualUseCase,
-                    companyRepository, idempotencyKeyRepository
+                    companyRepository, idempotencyKeyRepository, accountRepository, cashBookPolicies
                 )
-                recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, vatRateRepository, idempotencyKeyRepository)
+                recordSaleAndCollectionRoutes(recordSaleUseCase, recordCollectionUseCase, companyRepository, vatRateRepository, idempotencyKeyRepository, accountRepository, cashBookPolicies)
                 recordSalesReturnRoutes(recordSalesReturnUseCase, companyRepository, idempotencyKeyRepository)
                 createSalesInvoiceRoutes(createSalesInvoiceUseCase, listSalesInvoicesUseCase, companyRepository, customerRepository, idempotencyKeyRepository)
-                recordSupplierObligationAndPaymentRoutes(recordSupplierObligationUseCase, recordSupplierPaymentUseCase, companyRepository, vatRateRepository, idempotencyKeyRepository)
+                recordSupplierObligationAndPaymentRoutes(recordSupplierObligationUseCase, recordSupplierPaymentUseCase, companyRepository, vatRateRepository, idempotencyKeyRepository, accountRepository, cashBookPolicies)
                 vatCategoriesRoutes(ComputeVatCategoriesUseCase(companyRepository, vatRateRepository), companyRepository)
                 recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
                 meRoutes()
@@ -642,7 +651,7 @@ fun Application.fishModule(
                     bankReconciliationRoutes(
                         startBankReconciliationUseCase, matchBankReconciliationLineUseCase,
                         unmatchBankReconciliationLineUseCase, completeBankReconciliationUseCase, cancelBankReconciliationUseCase, computeBankReconciliationUseCase,
-                        listBankReconciliationsUseCase, companyRepository
+                        listBankReconciliationsUseCase, companyRepository, accountRepository, cashBookPolicies
                     )
                 }
                 if (listCashBooksUseCase != null && computeCashBookUseCase != null && changeCashBookKindUseCase != null && recordCashBookEntryUseCase != null && listCounterAccountsUseCase != null &&

@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.application.RecordSupplierObligationResult
 import com.theprodeogroup.fish.application.RecordSupplierObligationUseCase
 import com.theprodeogroup.fish.application.RecordSupplierPaymentResult
@@ -48,7 +49,9 @@ fun Route.recordSupplierObligationAndPaymentRoutes(
     recordSupplierPaymentUseCase: RecordSupplierPaymentUseCase,
     companyRepository: CompanyRepository,
     vatRateRepository: VatRateRepository,
-    idempotencyKeyRepository: IdempotencyKeyRepository
+    idempotencyKeyRepository: IdempotencyKeyRepository,
+    accountRepository: AccountRepository,
+    cashBookPolicies: CashBookPolicies
 ) {
     post("/purchasing/record-obligation") {
         val request = call.receive<RecordSupplierObligationRequestDto>()
@@ -124,6 +127,7 @@ fun Route.recordSupplierObligationAndPaymentRoutes(
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
         val apControlAccountUuid = call.parseUuid(request.apControlAccountId) ?: return@post
         val settlementAccountUuid = call.parseUuid(request.settlementAccountId) ?: return@post
+        if (!call.settlementAccountAllowed(cashBookPolicies, accountRepository, companyId, settlementAccountUuid, "POST /purchasing/record-payment")) return@post
         val supplierUuid = call.parseUuid(request.supplierId) ?: return@post
         val amount = call.parseMoney(request.amount, request.currency) ?: return@post
         val date = call.parseLocalDate(request.date) ?: return@post
