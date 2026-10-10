@@ -113,7 +113,7 @@ class LeaveAccrual private constructor(
             id: LeaveAccrualId = LeaveAccrualId.generate()
         ): LeaveAccrual = LeaveAccrual(
             id, companyId, employeeId,
-            Provision.create(companyId, "Accrued leave - $employeeId", currency)
+            Provision.create(companyId, "Accrued leave - ${employeeId.value}", currency)
         )
 
         /**

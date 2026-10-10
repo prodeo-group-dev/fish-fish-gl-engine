@@ -159,4 +159,23 @@ class JournalEntryTest {
         )
         return JournalEntry.create(PeriodId.generate(), TODAY, lines, JournalSource.MANUAL)
     }
+
+    @Test
+    fun `given a Posted entry, when reversed with no description, then it reads Reversal of the plain id - never the typed id`() {
+        val entry = readyEntry()
+        entry.post()
+
+        val reversal = requireNotNull(entry.reverse())
+
+        reversal.description shouldBe "Reversal of ${entry.id.value}"
+        (reversal.description!!.contains("JournalEntryId(")) shouldBe false
+    }
+
+    @Test
+    fun `given a Posted entry, when reversed with a description, then that description is used`() {
+        val entry = readyEntry()
+        entry.post()
+
+        requireNotNull(entry.reverse(reversalDescription = "Undo of Takings")).description shouldBe "Undo of Takings"
+    }
 }

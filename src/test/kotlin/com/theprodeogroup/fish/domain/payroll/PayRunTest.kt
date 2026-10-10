@@ -111,4 +111,14 @@ class PayRunTest {
         entry.date shouldBe TODAY
         entry.periodId shouldBe periodId
     }
+
+    @Test
+    fun `given a pay run, when posted, then its description names the pay run by its plain id - never the typed id`() {
+        val payRun = PayRun.create(CompanyId.generate(), TODAY, Money(BigDecimal("100.00"), GBP), Money(BigDecimal("50.00"), GBP))
+
+        val entry = payRun.post(AccountId.generate(), AccountId.generate(), AccountId.generate(), PeriodId.generate())
+
+        entry.description shouldBe "Pay run - ${payRun.id.value}"
+        (entry.description!!.contains("PayRunId(")) shouldBe false
+    }
 }

@@ -106,7 +106,7 @@ class PayRun private constructor(
 
         return JournalEntry.create(
             periodId, date, lines, JournalSource.INTEGRATION,
-            "Pay run - $id", journalEntryId
+            "Pay run - ${id.value}", journalEntryId
         )
     }
 
