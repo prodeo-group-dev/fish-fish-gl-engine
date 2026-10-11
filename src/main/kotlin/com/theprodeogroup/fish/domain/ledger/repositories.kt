@@ -112,6 +112,13 @@ interface BankReconciliationRepository {
      * come back.
      */
     fun findAllByCompany(companyId: CompanyId, postedEntries: List<JournalEntry>, accountId: AccountId? = null): List<BankReconciliation>
+
+    /**
+     * The ids of entries already matched in a COMPLETED reconciliation of [accountId] (CM item 6, 2026-10-11): they were
+     * cleared against an earlier statement, so a later reconciliation does not offer them again. [excluding] leaves one
+     * reconciliation out (the one being read, whose own matches are its own).
+     */
+    fun findClearedEntryIds(companyId: CompanyId, accountId: AccountId, excluding: BankReconciliationId? = null): Set<JournalEntryId>
 }
 
 /**

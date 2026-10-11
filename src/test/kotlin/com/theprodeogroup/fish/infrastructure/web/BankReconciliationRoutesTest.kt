@@ -628,4 +628,74 @@ class BankReconciliationRoutesTest {
 
         response.status shouldBe HttpStatusCode.Unauthorized
     }
+
+    // ---- CM item 6: what the picker offers ------------------------------------------------------------
+
+    private suspend fun io.ktor.client.HttpClient.readRec(fixture: Fixture, id: String): BankReconciliationResponseDto =
+        get("/api/companies/${fixture.company.id.value}/bank-reconciliations/$id") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }.body()
+
+    @Test
+    fun `entries of other accounts are never offered, so a fully matched reconciliation still reads as fully reconciled after a reload`() = testApplication {
+        val fixture = Fixture()
+        val cashEntry = fixture.postCashReceipt()
+        val other = Account.create(fixture.company.id, AccountType.ASSET, com.theprodeogroup.fish.domain.ledger.AccountClassification.CURRENT, "1500", "Other").also { fixture.accountRepository.save(it) }
+        val elsewhere = JournalEntry.create(
+            fixture.period.id, TODAY,
+            listOf(
+                JournalLine(other.id, Money(BigDecimal("40.00"), GBP), TransactionSide.DEBIT),
+                JournalLine(fixture.revenueAccount.id, Money(BigDecimal("40.00"), GBP), TransactionSide.CREDIT)
+            ),
+            JournalSource.MANUAL
+        ).also { it.post(); fixture.journalEntryRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val started = client.startRec(fixture)
+        started.unmatchedJournalEntryIds shouldBe listOf(cashEntry.id.value.toString())
+        client.matchRec(fixture, started, cashEntry.id.value.toString())
+
+        val reloaded = client.readRec(fixture, started.id)
+        reloaded.unmatchedJournalEntryIds shouldBe emptyList()
+        reloaded.isFullyReconciled shouldBe true
+        elsewhere.id.value.toString().let { id -> (id in reloaded.unmatchedJournalEntryIds) shouldBe false }
+    }
+
+    @Test
+    fun `an entry already matched in a completed reconciliation is not offered again, on a new reconciliation or on a read, and cannot be matched twice`() = testApplication {
+        val fixture = Fixture()
+        val cleared = fixture.postCashReceipt()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val first = client.startRec(fixture)
+        client.matchRec(fixture, first, cleared.id.value.toString())
+        client.recPost(fixture, "/${first.id}/complete").status shouldBe HttpStatusCode.OK
+        val fresh = fixture.postCashReceipt()
+
+        val second = client.startRec(fixture)
+
+        second.unmatchedJournalEntryIds shouldBe listOf(fresh.id.value.toString())
+        client.readRec(fixture, second.id).unmatchedJournalEntryIds shouldBe listOf(fresh.id.value.toString())
+        (client.matchRec(fixture, second, cleared.id.value.toString()).status == HttpStatusCode.OK) shouldBe false
+        client.matchRec(fixture, second, fresh.id.value.toString()).status shouldBe HttpStatusCode.OK
+    }
+
+    @Test
+    fun `the first reconciliation still shows what it cleared, and the later one does not change it`() = testApplication {
+        val fixture = Fixture()
+        val cleared = fixture.postCashReceipt()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val first = client.startRec(fixture)
+        client.matchRec(fixture, first, cleared.id.value.toString())
+        client.recPost(fixture, "/${first.id}/complete")
+        client.startRec(fixture)
+
+        val reread = client.readRec(fixture, first.id)
+
+        reread.matches.single().journalEntryId shouldBe cleared.id.value.toString()
+        reread.status shouldBe "COMPLETED"
+    }
 }

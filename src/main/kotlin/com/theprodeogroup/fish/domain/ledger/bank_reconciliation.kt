@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.domain.ledger
 
 import com.theprodeogroup.common.Money
+import com.theprodeogroup.fish.domain.common.PostingStatus
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.common.ValidationResult
 import java.time.LocalDate
@@ -75,7 +76,12 @@ class BankReconciliation private constructor(
     val postedEntries: List<JournalEntry>,
     val currency: Currency,
     initialMatches: Set<Pair<BankStatementLineId, JournalEntryId>> = emptySet(),
-    status: BankReconciliationStatus = BankReconciliationStatus.OPEN
+    status: BankReconciliationStatus = BankReconciliationStatus.OPEN,
+    /**
+     * Entries of this account already matched in a COMPLETED reconciliation of the same account (another one than
+     * this): they were cleared against an earlier statement, so they are not offered again and are not outstanding.
+     */
+    private val alreadyReconciledEntryIds: Set<JournalEntryId> = emptySet()
 ) {
     var status: BankReconciliationStatus = status
         private set
@@ -96,8 +102,24 @@ class BankReconciliation private constructor(
     val unmatchedStatementLines: List<BankStatementLine>
         get() = statementLines.filter { line -> matches.none { it.first == line.id } }
 
+    /**
+     * What the person may still match (CM item 6, 2026-10-11): POSTED entries with a line on THIS account that no
+     * completed reconciliation has cleared and that this one has not matched. An entry that was undone, together
+     * with its reversal, is not offered either (they cancel out and never appear on a statement) unless the
+     * original was already cleared by an earlier statement, when its reversal is a real movement still to match.
+     */
     val unmatchedEntries: List<JournalEntry>
-        get() = postedEntries.filter { entry -> matches.none { it.second == entry.id } }
+        get() = postedEntries.filter { entry -> isOffered(entry) && matches.none { it.second == entry.id } }
+
+    private fun isOffered(entry: JournalEntry): Boolean {
+        if (entry.status != PostingStatus.POSTED) return false
+        if (entry.id in alreadyReconciledEntryIds) return false
+        val originalId = entry.reversalOfEntryId ?: return true
+        val original = postedEntries.find { it.id == originalId } ?: return true
+        val originalCancelledOut = original.status == PostingStatus.REVERSED &&
+            original.id !in alreadyReconciledEntryIds && matches.none { it.second == original.id }
+        return !originalCancelledOut
+    }
 
     val isFullyReconciled: Boolean
         get() = unmatchedStatementLines.isEmpty() && unmatchedEntries.isEmpty()
@@ -116,7 +138,7 @@ class BankReconciliation private constructor(
         if (matches.any { it.first == statementLineId }) {
             return ValidationResult.failure("Bank statement line is already matched")
         }
-        val entry = postedEntries.find { it.id == journalEntryId }
+        val entry = postedEntries.find { it.id == journalEntryId && isOffered(it) }
             ?: return ValidationResult.failure("No such eligible posted JournalEntry against this Account")
         if (matches.any { it.second == journalEntryId }) {
             return ValidationResult.failure("JournalEntry is already matched")
@@ -180,7 +202,7 @@ class BankReconciliation private constructor(
 
         val upToStatement = postedEntries.filter { it.status.hasHistoricalEffect() && !it.date.isAfter(statementDate) }
         val ledgerBalance = upToStatement.fold(zero) { sum, entry -> sum + movement(entry) }
-        val outstanding = upToStatement.filter { entry -> matches.none { it.second == entry.id } }
+        val outstanding = upToStatement.filter { entry -> matches.none { it.second == entry.id } && entry.id !in alreadyReconciledEntryIds }
             .fold(zero) { sum, entry -> sum + movement(entry) }
         return BalanceTieOut(statementEndingBalance, ledgerBalance, outstanding)
     }
@@ -212,7 +234,8 @@ class BankReconciliation private constructor(
             statementLines: List<BankStatementLine>,
             postedEntries: List<JournalEntry>,
             currency: Currency,
-            id: BankReconciliationId = BankReconciliationId.generate()
+            id: BankReconciliationId = BankReconciliationId.generate(),
+            alreadyReconciledEntryIds: Set<JournalEntryId> = emptySet()
         ): BankReconciliation {
             require(statementLines.all { it.amount.currency == currency }) {
                 "All bank statement lines must be in the same currency as the reconciliation"
@@ -221,7 +244,8 @@ class BankReconciliation private constructor(
                 entry.status.hasHistoricalEffect() && entry.lines.any { it.accountId == accountId }
             }
             return BankReconciliation(
-                id, accountId, statementDate, statementEndingBalance, statementLines, eligibleEntries, currency
+                id, accountId, statementDate, statementEndingBalance, statementLines, eligibleEntries, currency,
+                alreadyReconciledEntryIds = alreadyReconciledEntryIds
             )
         }
 
@@ -244,9 +268,15 @@ class BankReconciliation private constructor(
             postedEntries: List<JournalEntry>,
             currency: Currency,
             matches: Set<Pair<BankStatementLineId, JournalEntryId>>,
-            status: BankReconciliationStatus = BankReconciliationStatus.OPEN
+            status: BankReconciliationStatus = BankReconciliationStatus.OPEN,
+            alreadyReconciledEntryIds: Set<JournalEntryId> = emptySet()
         ): BankReconciliation = BankReconciliation(
-            id, accountId, statementDate, statementEndingBalance, statementLines, postedEntries, currency, matches, status
+            id, accountId, statementDate, statementEndingBalance, statementLines,
+            // The caller hands over the Company's entries; only this account's belong to the reconciliation (it was
+            // handed all of them before, so another account's entries were offered and the reconciliation could
+            // never read as fully reconciled after a reload).
+            postedEntries.filter { entry -> entry.status.hasHistoricalEffect() && entry.lines.any { it.accountId == accountId } },
+            currency, matches, status, alreadyReconciledEntryIds
         )
     }
 }
