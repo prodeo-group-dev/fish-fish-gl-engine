@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeCompanyRepository
 import com.theprodeogroup.fish.application.FakeSupplierRepository
@@ -623,5 +624,76 @@ class RecordSaleAndCollectionRoutesTest {
         val body: RecordSaleResponseDto = response.body()
         body.grossAmount shouldBe "120.00"
         body.vatAmount shouldBe "20.00"
+    }
+
+    // -- a refusal does not spend the key (only successful responses are remembered) --
+
+    private fun saleBody(fixture: Fixture, revenueAccountId: UUID, net: String = "45000.00") =
+        """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+            |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
+            |"revenueAccountId": "$revenueAccountId", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+            |"lines": [{"netAmount": "$net", "vatCategory": "EXEMPT"}], "currency": "GBP",
+            |"customerId": "00000000-0000-0000-0000-000000000042"}""".trimMargin()
+
+    private suspend fun io.ktor.client.HttpClient.recordSale(fixture: Fixture, key: String, body: String) =
+        post("/api/sales/record-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            header("Idempotency-Key", key)
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+
+    @Test
+    fun `given a request that was refused, when the cause is fixed and the same key and body are sent again, then it posts - the refusal is not replayed`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val key = UUID.randomUUID().toString()
+        val missingRevenueId = UUID.randomUUID()
+        val body = saleBody(fixture, missingRevenueId)
+
+        val refused = client.recordSale(fixture, key, body)
+        refused.status shouldBe HttpStatusCode.NotFound
+        fixture.journalEntryRepository.saveCalls.size shouldBe 0
+
+        // The cause is fixed: the revenue account now exists, with exactly the id the request named.
+        fixture.accountRepository.save(
+            Account.create(fixture.company.id, AccountType.REVENUE, null, "4999", "Late revenue", id = AccountId(missingRevenueId))
+        )
+        val retried = client.recordSale(fixture, key, body)
+
+        retried.status shouldBe HttpStatusCode.OK
+        fixture.journalEntryRepository.saveCalls.size shouldBe 1
+    }
+
+    @Test
+    fun `given a request that was refused, when the same key is used with a different body, then it is not key reuse - the refusal left nothing behind`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val key = UUID.randomUUID().toString()
+
+        client.recordSale(fixture, key, saleBody(fixture, UUID.randomUUID())).status shouldBe HttpStatusCode.NotFound
+        val corrected = client.recordSale(fixture, key, saleBody(fixture, fixture.revenueAccount.id.value))
+
+        corrected.status shouldBe HttpStatusCode.OK
+    }
+
+    @Test
+    fun `given a request that succeeded, when the same key is sent again with the same body and again with a different body, then the first is a replay and the second is 422`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val key = UUID.randomUUID().toString()
+        val body = saleBody(fixture, fixture.revenueAccount.id.value)
+
+        val first: RecordSaleResponseDto = client.recordSale(fixture, key, body).body()
+        val replay: RecordSaleResponseDto = client.recordSale(fixture, key, body).body()
+        val changed = client.recordSale(fixture, key, saleBody(fixture, fixture.revenueAccount.id.value, net = "1.00"))
+
+        replay.journalEntryId shouldBe first.journalEntryId
+        changed.status shouldBe HttpStatusCode.UnprocessableEntity
+        fixture.journalEntryRepository.saveCalls.size shouldBe 1
     }
 }

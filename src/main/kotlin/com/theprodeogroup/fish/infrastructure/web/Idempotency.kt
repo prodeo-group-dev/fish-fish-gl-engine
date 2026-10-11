@@ -5,6 +5,7 @@ import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyReposito
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyRecord
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.isSuccess
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.header
 import io.ktor.server.response.respond
@@ -36,6 +37,15 @@ import java.security.MessageDigest
  * [endpoint] scopes the key alongside [tenantId] (see `V7__idempotency_keys.sql`'s
  * own KDoc) - the same key string reused across two different routes,
  * or by two different Tenants, is never treated as the same request.
+ *
+ * **Only successful (2xx) responses are stored.** A request that was
+ * refused - validation, a missing account, a closed Period, an
+ * authorization 403, a 5xx - leaves nothing behind, so the same key and
+ * the same body can be sent again once the cause is fixed and it will
+ * run. (Replaying a stored refusal would trap the caller: the key would
+ * keep returning the old error after the cause was gone, and a different
+ * body would then get 422.) Reusing a key that *did* succeed, with a
+ * different body, is still 422.
  *
  * **Responses are compared/replayed as raw JSON text, not re-decoded
  * domain objects** - [produceResponse] returns an already-serialized
@@ -89,7 +99,11 @@ suspend fun ApplicationCall.respondIdempotently(
     }
 
     val (status, body) = produceResponse()
-    idempotencyKeyRepository.insertIfAbsent(IdempotencyRecord(tenantId, endpoint, idempotencyKey, fingerprint, status.value, body))
+    // Only a success is remembered. A refusal (4xx/5xx) does not spend the key: the caller fixes the cause (opens
+    // the Period, creates the account) and sends the same key and body again, and that request must run.
+    if (status.isSuccess()) {
+        idempotencyKeyRepository.insertIfAbsent(IdempotencyRecord(tenantId, endpoint, idempotencyKey, fingerprint, status.value, body))
+    }
     respondText(body, ContentType.Application.Json, status)
 }
 
