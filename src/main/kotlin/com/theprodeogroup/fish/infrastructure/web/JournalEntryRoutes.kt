@@ -250,7 +250,7 @@ fun Route.journalEntryRoutes(
                 JournalEntryRecordDto(
                     id = entry.id.value.toString(),
                     date = entry.date.toString(),
-                    description = entry.description,
+                    description = humanDescription(entry.description),
                     status = entry.status.name,
                     source = entry.source.name,
                     lines = entry.lines.map { line ->

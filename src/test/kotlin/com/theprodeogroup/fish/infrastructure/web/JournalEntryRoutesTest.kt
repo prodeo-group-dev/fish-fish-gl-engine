@@ -389,6 +389,23 @@ class JournalEntryRoutesTest {
         }
 
     @Test
+    fun `given an old entry whose description printed a typed id raw, when GET journal-entries is called, then the plain id is shown and the stored entry is unchanged`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        val raw = "Reversal of JournalEntryId(value=3f2c8a52-1b6e-4c0e-9d3a-7a1d5b9c0e11)"
+        fixture.postEntry(TODAY, raw)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val body: List<JournalEntryRecordDto> = client.get("/api/companies/${fixture.company.id.value}/journal-entries") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }.body()
+
+        body.single().description shouldBe "Reversal of 3f2c8a52-1b6e-4c0e-9d3a-7a1d5b9c0e11"
+        fixture.journalEntryRepository.findAllByCompany(fixture.company.id).single().description shouldBe raw
+    }
+
+    @Test
     fun `given a caller with a READ_ONLY role Membership, when GET journal-entries is called, then it returns 200`() = testApplication {
         val fixture = Fixture(accessLevel = AccessLevel.READ)
         application { fixture.installInto(this) }
