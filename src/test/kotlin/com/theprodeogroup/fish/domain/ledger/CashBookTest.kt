@@ -126,4 +126,51 @@ class CashBookTest {
     fun `given a range that ends before it starts, then it is refused`() {
         shouldThrow<IllegalArgumentException> { book(emptyList(), from = "2026-10-31", to = "2026-10-01") }
     }
+
+    // -- several entries on the same day: the order they were recorded in, never an accident of the read --
+
+    private fun recordedAs(seq: Long?, entry: JournalEntry): JournalEntry =
+        JournalEntry.reconstitute(entry.id, entry.periodId, entry.date, entry.lines, entry.source, entry.description, entry.status, entry.reversalOfEntryId, seq)
+
+    @Test
+    fun `given several entries on one day read in any order, then the rows follow the order they were recorded in and the running balance follows`() {
+        val first = recordedAs(1, received("2026-10-05", "100.00", "First"))
+        val second = recordedAs(2, paid("2026-10-05", "30.00", "Second"))
+        val third = recordedAs(3, received("2026-10-05", "5.00", "Third"))
+
+        val book = book(listOf(third, first, second))
+
+        book.rows.map { it.description } shouldBe listOf("First", "Second", "Third")
+        book.rows.map { it.balance } shouldBe listOf(money("100.00"), money("70.00"), money("75.00"))
+    }
+
+    @Test
+    fun `given entries on different days, then the day still decides before the recorded order`() {
+        val laterDayRecordedFirst = recordedAs(1, received("2026-10-06", "10.00", "Later day"))
+        val earlierDayRecordedLast = recordedAs(9, received("2026-10-05", "20.00", "Earlier day"))
+
+        book(listOf(laterDayRecordedFirst, earlierDayRecordedLast)).rows.map { it.description } shouldBe listOf("Earlier day", "Later day")
+    }
+
+    @Test
+    fun `given same-day entries that have no recorded order, then the order is the same whatever order they are given in`() {
+        val a = received("2026-10-05", "1.00", "A")
+        val b = received("2026-10-05", "2.00", "B")
+        val c = received("2026-10-05", "3.00", "C")
+
+        val one = book(listOf(a, b, c)).rows.map { it.description }
+        val two = book(listOf(c, a, b)).rows.map { it.description }
+        val three = book(listOf(b, c, a)).rows.map { it.description }
+
+        two shouldBe one
+        three shouldBe one
+    }
+
+    @Test
+    fun `given a same-day entry with no recorded order beside recorded ones, then it comes after them`() {
+        val notYetRecorded = received("2026-10-05", "7.00", "Not stored yet")
+        val recorded = recordedAs(4, received("2026-10-05", "1.00", "Stored"))
+
+        book(listOf(notYetRecorded, recorded)).rows.map { it.description } shouldBe listOf("Stored", "Not stored yet")
+    }
 }

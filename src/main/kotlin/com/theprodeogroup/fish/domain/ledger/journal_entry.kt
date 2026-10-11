@@ -36,7 +36,13 @@ class JournalEntry private constructor(
     val source: JournalSource,
     val description: String?,
     initialStatus: PostingStatus,
-    val reversalOfEntryId: JournalEntryId?
+    val reversalOfEntryId: JournalEntryId?,
+    /**
+     * The order this entry was stored in (V35, `journal_entries.recorded_seq`), or null for an entry that has not
+     * been stored. It is what puts two entries of the same day in a fixed order in the books; it is not part of
+     * the accounting fact and is never set by a caller.
+     */
+    val recordedSeq: Long? = null
 ) {
     var status: PostingStatus = initialStatus
         private set
@@ -164,7 +170,8 @@ class JournalEntry private constructor(
             source: JournalSource,
             description: String?,
             status: PostingStatus,
-            reversalOfEntryId: JournalEntryId?
-        ): JournalEntry = JournalEntry(id, periodId, date, lines, source, description, status, reversalOfEntryId)
+            reversalOfEntryId: JournalEntryId?,
+            recordedSeq: Long? = null
+        ): JournalEntry = JournalEntry(id, periodId, date, lines, source, description, status, reversalOfEntryId, recordedSeq)
     }
 }

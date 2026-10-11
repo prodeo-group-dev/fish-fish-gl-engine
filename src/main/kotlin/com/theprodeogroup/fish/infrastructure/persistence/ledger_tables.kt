@@ -51,6 +51,9 @@ object JournalEntriesTable : Table("journal_entries") {
     val status = varchar("status", 20)
     val reversalOfEntryId = uuid("reversal_of_entry_id").nullable()
 
+    /** Assigned by the database on insert (V35 identity column), never written by the application (`autoIncrement` makes Exposed leave it out of inserts so Postgres supplies it). */
+    val recordedSeq = long("recorded_seq").autoIncrement()
+
     override val primaryKey = PrimaryKey(id)
 }
 

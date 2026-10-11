@@ -51,6 +51,14 @@ class CashBook private constructor(
     val closingBalance: Money
 ) {
     companion object {
+        /**
+         * The day decides first; within a day, the order the entries were recorded in (V35); an entry that has not
+         * been stored yet comes after the stored ones; and the id breaks any remaining tie, so the same entries give
+         * the same rows (and the same running balance) however they were read.
+         */
+        private val SAME_DAY_ORDER: Comparator<JournalEntry> =
+            compareBy<JournalEntry> { it.date }.thenBy { it.recordedSeq ?: Long.MAX_VALUE }.thenBy { it.id.value }
+
         fun of(
             account: Account,
             entries: List<JournalEntry>,
@@ -75,7 +83,7 @@ class CashBook private constructor(
             var totalOut = zero
             val rows = touching
                 .filter { !it.date.isBefore(from) && !it.date.isAfter(to) }
-                .sortedBy { it.date }
+                .sortedWith(SAME_DAY_ORDER)
                 .map { entry ->
                     val accountLines = entry.lines.filter { it.accountId == account.id }
                     val moneyIn = accountLines.filter { it.side == TransactionSide.DEBIT }.fold(zero) { sum, line -> sum + line.amount }
