@@ -12,6 +12,7 @@ import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import org.jetbrains.exposed.sql.ResultRow
+import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
@@ -109,12 +110,14 @@ class ExposedJournalEntryRepository : JournalEntryRepository {
             emptyList()
         } else {
             JournalEntriesTable.selectAll().where { JournalEntriesTable.periodId inList periodIds }
+                .orderBy(JournalEntriesTable.entryDate to SortOrder.ASC, JournalEntriesTable.recordedSeq to SortOrder.ASC)
                 .map { row -> row.toJournalEntry(loadLines(JournalEntryId(row[JournalEntriesTable.id]))) }
         }
     }
 
     override fun findAllByPeriod(periodId: PeriodId): List<JournalEntry> = transaction {
         JournalEntriesTable.selectAll().where { JournalEntriesTable.periodId eq periodId.value }
+            .orderBy(JournalEntriesTable.entryDate to SortOrder.ASC, JournalEntriesTable.recordedSeq to SortOrder.ASC)
             .map { row -> row.toJournalEntry(loadLines(JournalEntryId(row[JournalEntriesTable.id]))) }
     }
 
@@ -125,6 +128,7 @@ class ExposedJournalEntryRepository : JournalEntryRepository {
             emptyList()
         } else {
             JournalEntriesTable.selectAll().where { JournalEntriesTable.id inList entryIds }
+                .orderBy(JournalEntriesTable.entryDate to SortOrder.ASC, JournalEntriesTable.recordedSeq to SortOrder.ASC)
                 .map { row -> row.toJournalEntry(loadLines(JournalEntryId(row[JournalEntriesTable.id]))) }
         }
     }
@@ -158,6 +162,7 @@ class ExposedJournalEntryRepository : JournalEntryRepository {
         source = JournalSource.valueOf(this[JournalEntriesTable.entrySource]),
         description = this[JournalEntriesTable.description],
         status = PostingStatus.valueOf(this[JournalEntriesTable.status]),
-        reversalOfEntryId = this[JournalEntriesTable.reversalOfEntryId]?.let { JournalEntryId(it) }
+        reversalOfEntryId = this[JournalEntriesTable.reversalOfEntryId]?.let { JournalEntryId(it) },
+        recordedSeq = this[JournalEntriesTable.recordedSeq]
     )
 }

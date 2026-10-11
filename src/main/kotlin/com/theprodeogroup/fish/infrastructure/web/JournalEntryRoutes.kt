@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.application.CreateAccountUseCase
 import com.theprodeogroup.fish.application.PostJournalEntryResult
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
@@ -245,7 +246,8 @@ fun Route.journalEntryRoutes(
         call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
         val entries = journalEntryRepository.findAllByCompany(companyId)
-            .sortedByDescending { it.date }
+            // Newest first: the day, then (V35) the order recorded within the day, latest recorded first.
+            .sortedWith(compareByDescending<JournalEntry> { it.date }.thenByDescending { it.recordedSeq ?: Long.MIN_VALUE })
             .map { entry ->
                 JournalEntryRecordDto(
                     id = entry.id.value.toString(),

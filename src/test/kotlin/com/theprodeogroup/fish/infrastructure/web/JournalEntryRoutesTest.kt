@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeCompanyRepository
 import com.theprodeogroup.fish.application.FakeSupplierRepository
@@ -430,5 +431,27 @@ class JournalEntryRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.Unauthorized
+    }
+
+    @Test
+    fun `given two entries of the same day, when GET journal-entries is called, then the one recorded later is listed first`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        fixture.postEntry(TODAY, "Recorded first")
+        fixture.postEntry(TODAY, "Recorded second")
+        // The database numbers entries as it stores them; the in-memory fake does not, so give each a recorded order.
+        fixture.journalEntryRepository.findAllByCompany(fixture.company.id).forEachIndexed { index, entry ->
+            fixture.journalEntryRepository.save(
+                JournalEntry.reconstitute(entry.id, entry.periodId, entry.date, entry.lines, entry.source, entry.description, entry.status, entry.reversalOfEntryId, (index + 1).toLong())
+            )
+        }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val body: List<JournalEntryRecordDto> = client.get("/api/companies/${fixture.company.id.value}/journal-entries") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }.body()
+
+        body.map { it.description } shouldBe listOf("Recorded second", "Recorded first")
     }
 }
