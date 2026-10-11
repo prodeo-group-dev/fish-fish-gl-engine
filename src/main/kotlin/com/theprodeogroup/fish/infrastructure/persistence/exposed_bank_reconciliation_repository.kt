@@ -94,6 +94,25 @@ class ExposedBankReconciliationRepository : BankReconciliationRepository {
         BankReconciliationsTable.selectAll().where { condition }.map { it.toReconciliation(postedEntries) }
     }
 
+    override fun findClearedEntryIds(companyId: CompanyId, accountId: AccountId, excluding: BankReconciliationId?): Set<JournalEntryId> = transaction {
+        val completedIds = BankReconciliationsTable.selectAll()
+            .where {
+                (BankReconciliationsTable.companyId eq companyId.value) and (BankReconciliationsTable.accountId eq accountId.value) and
+                    (BankReconciliationsTable.status eq BankReconciliationStatus.COMPLETED.name)
+            }
+            .map { it[BankReconciliationsTable.id] }
+            .filter { it != excluding?.value }
+        if (completedIds.isEmpty()) return@transaction emptySet()
+        val lineIds = BankStatementLinesTable.selectAll()
+            .where { BankStatementLinesTable.reconciliationId inList completedIds }
+            .map { it[BankStatementLinesTable.id] }
+        if (lineIds.isEmpty()) return@transaction emptySet()
+        BankReconciliationMatchesTable.selectAll()
+            .where { BankReconciliationMatchesTable.statementLineId inList lineIds }
+            .map { JournalEntryId(it[BankReconciliationMatchesTable.journalEntryId]) }
+            .toSet()
+    }
+
     /** Shared row-to-aggregate loading for [findById]/[findAllByCompany] - each reconciliation's statement lines/matches are still a per-row sub-query, fine at the scale a Company's own reconciliations run at (monthly per Account, not thousands). */
     private fun ResultRow.toReconciliation(postedEntries: List<JournalEntry>): BankReconciliation {
         val reconciliationId = BankReconciliationId(this[BankReconciliationsTable.id])
@@ -120,16 +139,18 @@ class ExposedBankReconciliationRepository : BankReconciliationRepository {
                 }.toSet()
         }
 
+        val accountId = AccountId(this[BankReconciliationsTable.accountId])
         return BankReconciliation.reconstitute(
             id = reconciliationId,
-            accountId = AccountId(this[BankReconciliationsTable.accountId]),
+            accountId = accountId,
             statementDate = this[BankReconciliationsTable.statementDate],
             statementEndingBalance = Money(this[BankReconciliationsTable.statementEndingBalanceAmount], currency),
             statementLines = statementLines,
             postedEntries = postedEntries,
             currency = currency,
             matches = matches,
-            status = BankReconciliationStatus.valueOf(this[BankReconciliationsTable.status])
+            status = BankReconciliationStatus.valueOf(this[BankReconciliationsTable.status]),
+            alreadyReconciledEntryIds = findClearedEntryIds(CompanyId(this[BankReconciliationsTable.companyId]), accountId, reconciliationId)
         )
     }
 }

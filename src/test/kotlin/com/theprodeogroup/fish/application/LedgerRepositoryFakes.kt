@@ -118,7 +118,8 @@ class FakeBankReconciliationRepository : BankReconciliationRepository {
         if (record.companyId != companyId) return null
         return BankReconciliation.reconstitute(
             id, record.accountId, record.statementDate, record.statementEndingBalance,
-            record.statementLines, postedEntries, record.currency, record.matches, record.status
+            record.statementLines, postedEntries, record.currency, record.matches, record.status,
+            findClearedEntryIds(companyId, record.accountId, id)
         )
     }
 
@@ -128,7 +129,17 @@ class FakeBankReconciliationRepository : BankReconciliationRepository {
             .map { (id, record) ->
                 BankReconciliation.reconstitute(
                     id, record.accountId, record.statementDate, record.statementEndingBalance,
-                    record.statementLines, postedEntries, record.currency, record.matches, record.status
+                    record.statementLines, postedEntries, record.currency, record.matches, record.status,
+                    findClearedEntryIds(companyId, record.accountId, id)
                 )
             }
+
+    override fun findClearedEntryIds(companyId: CompanyId, accountId: AccountId, excluding: BankReconciliationId?): Set<JournalEntryId> =
+        store.entries
+            .filter { (id, record) ->
+                record.companyId == companyId && record.accountId == accountId && id != excluding &&
+                    record.status == com.theprodeogroup.fish.domain.ledger.BankReconciliationStatus.COMPLETED
+            }
+            .flatMap { (_, record) -> record.matches.map { it.second } }
+            .toSet()
 }

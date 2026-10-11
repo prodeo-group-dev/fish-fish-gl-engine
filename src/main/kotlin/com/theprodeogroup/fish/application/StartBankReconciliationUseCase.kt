@@ -65,7 +65,8 @@ class StartBankReconciliationUseCase(
             statementEndingBalance = request.statementEndingBalance,
             statementLines = statementLines,
             postedEntries = postedEntries,
-            currency = request.currency
+            currency = request.currency,
+            alreadyReconciledEntryIds = bankReconciliationRepository.findClearedEntryIds(companyId, account.id)
         )
 
         bankReconciliationRepository.save(reconciliation, companyId)
