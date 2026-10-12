@@ -31,11 +31,8 @@ fun Route.cashBalanceSeriesRoutes(
 
         val rawDays = call.request.queryParameters["days"]
         val days = if (rawDays == null) DEFAULT_DAYS else rawDays.toIntOrNull()
-        if (days == null || days !in CashBalanceSeries.MIN_DAYS..CashBalanceSeries.MAX_DAYS) {
-            call.respond(
-                HttpStatusCode.BadRequest,
-                ErrorResponseDto("invalid_days", "days must be a whole number from ${CashBalanceSeries.MIN_DAYS} to ${CashBalanceSeries.MAX_DAYS}")
-            )
+        if (days == null) {
+            call.respond(HttpStatusCode.BadRequest, invalidDays())
             return@get
         }
 
@@ -50,10 +47,12 @@ fun Route.cashBalanceSeriesRoutes(
             )
             ComputeCashBalanceSeriesUseCase.Result.CompanyNotFound ->
                 call.respond(HttpStatusCode.NotFound, ErrorResponseDto("not_found", "Company not found"))
-            ComputeCashBalanceSeriesUseCase.Result.InvalidDays ->
-                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_days", "days is out of range"))
+            ComputeCashBalanceSeriesUseCase.Result.InvalidDays -> call.respond(HttpStatusCode.BadRequest, invalidDays())
         }
     }
 }
 
 private const val DEFAULT_DAYS = 30
+
+private fun invalidDays() =
+    ErrorResponseDto("invalid_days", "days must be a whole number from ${CashBalanceSeries.MIN_DAYS} to ${CashBalanceSeries.MAX_DAYS}")

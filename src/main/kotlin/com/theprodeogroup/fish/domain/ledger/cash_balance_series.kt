@@ -14,7 +14,7 @@ import java.util.Currency
  * entries closes at the previous day's balance; everything dated before [from] is the opening balance. An entry counts
  * once, by the net of its lines on the given books (a transfer between two books therefore moves nothing), and only if
  * it has a historical effect (posted or reversed, like the cash book), so an undone entry and its reversal net to zero.
- * Entries dated after [to] and entries touching no book are ignored. Single currency, the Company's own.
+ * Entries touching no book are ignored, and entries dated after [to] never reach a point. Single currency, the Company's own.
  */
 class CashBalanceSeries private constructor(
     val currency: Currency,
@@ -36,7 +36,7 @@ class CashBalanceSeries private constructor(
 
             val movementByDate = entries
                 .distinctBy { it.id }
-                .filter { it.status.hasHistoricalEffect() && !it.date.isAfter(to) }
+                .filter { it.status.hasHistoricalEffect() }
                 .mapNotNull { entry ->
                     val touching = entry.lines.filter { it.accountId in bookIds }
                     if (touching.isEmpty()) null
