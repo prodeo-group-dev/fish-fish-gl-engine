@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import io.ktor.client.statement.bodyAsText
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.FakeTaxRuleRepository
@@ -167,6 +168,16 @@ class AccountsPayableAgingRoutesTest {
             journalEntryRepository.save(entry)
         }
 
+        fun postPayment(supplierId: SupplierId, amount: String, paymentDate: LocalDate = TODAY) {
+            val lines = listOf(
+                JournalLine(apAccount!!.id, Money(BigDecimal(amount), GBP), TransactionSide.DEBIT, mapOf(DimensionType.VENDOR to supplierId.value.toString())),
+                JournalLine(expenseAccount!!.id, Money(BigDecimal(amount), GBP), TransactionSide.CREDIT)
+            )
+            val entry = JournalEntry.create(period.id, paymentDate, lines, JournalSource.INTEGRATION, "Payment")
+            entry.post()
+            journalEntryRepository.save(entry)
+        }
+
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
@@ -282,5 +293,35 @@ class AccountsPayableAgingRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.Conflict
+    }
+
+    // See the matching test in AccountsReceivableAgingRoutesTest: the existing aging responses must not change.
+    @Test
+    fun `the accounts-payable-aging response is byte-for-byte what it was, across buckets, boundaries, partial payments and empty suppliers`() = testApplication {
+        val fixture = Fixture()
+        val s1 = SupplierId(UUID.fromString("00000000-0000-0000-0000-0000000000a1"))
+        val s2 = SupplierId(UUID.fromString("00000000-0000-0000-0000-0000000000a2"))
+        val s3 = SupplierId(UUID.fromString("00000000-0000-0000-0000-0000000000a3"))
+        val s4 = SupplierId(UUID.fromString("00000000-0000-0000-0000-0000000000a4"))
+        fixture.postCharge(s1, "100.00", TODAY.minusDays(100)); fixture.postCharge(s1, "200.00", TODAY.minusDays(70))
+        fixture.postCharge(s1, "300.00", TODAY.minusDays(40)); fixture.postCharge(s1, "400.00", TODAY.minusDays(5))
+        fixture.postPayment(s1, "250.00", TODAY.minusDays(2))
+        for ((age, amount) in listOf(30 to "10.00", 31 to "20.00", 60 to "30.00", 61 to "40.00", 90 to "50.00", 91 to "60.00")) {
+            fixture.postCharge(s2, amount, TODAY.minusDays(age.toLong()))
+        }
+        fixture.postCharge(s4, "70.00", TODAY.minusDays(10)); fixture.postPayment(s4, "70.00", TODAY.minusDays(1))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/companies/${fixture.company.id.value}/accounts-payable-aging") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody("""{"supplierIds": ["${s1.value}", "${s2.value}", "${s3.value}", "${s4.value}"]}""")
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val text = response.bodyAsText()
+        text shouldBe """{"aging":[{"supplierId":"00000000-0000-0000-0000-0000000000a1","buckets":[{"label":"CURRENT","amount":"400.00","currency":"GBP"},{"label":"DAYS_31_TO_60","amount":"300.00","currency":"GBP"},{"label":"DAYS_61_TO_90","amount":"50.00","currency":"GBP"},{"label":"OVER_90","amount":"0.00","currency":"GBP"}]},{"supplierId":"00000000-0000-0000-0000-0000000000a2","buckets":[{"label":"CURRENT","amount":"10.00","currency":"GBP"},{"label":"DAYS_31_TO_60","amount":"50.00","currency":"GBP"},{"label":"DAYS_61_TO_90","amount":"90.00","currency":"GBP"},{"label":"OVER_90","amount":"60.00","currency":"GBP"}]},{"supplierId":"00000000-0000-0000-0000-0000000000a3","buckets":[{"label":"CURRENT","amount":"0.00","currency":"GBP"},{"label":"DAYS_31_TO_60","amount":"0.00","currency":"GBP"},{"label":"DAYS_61_TO_90","amount":"0.00","currency":"GBP"},{"label":"OVER_90","amount":"0.00","currency":"GBP"}]},{"supplierId":"00000000-0000-0000-0000-0000000000a4","buckets":[{"label":"CURRENT","amount":"0.00","currency":"GBP"},{"label":"DAYS_31_TO_60","amount":"0.00","currency":"GBP"},{"label":"DAYS_61_TO_90","amount":"0.00","currency":"GBP"},{"label":"OVER_90","amount":"0.00","currency":"GBP"}]}]}"""
     }
 }

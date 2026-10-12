@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import io.ktor.client.statement.bodyAsText
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.FakeTaxRuleRepository
@@ -167,6 +168,16 @@ class AccountsReceivableAgingRoutesTest {
             journalEntryRepository.save(entry)
         }
 
+        fun postReceipt(customerId: CustomerId, amount: String, receiptDate: LocalDate = TODAY) {
+            val lines = listOf(
+                JournalLine(revenueAccount!!.id, Money(BigDecimal(amount), GBP), TransactionSide.DEBIT),
+                JournalLine(arAccount!!.id, Money(BigDecimal(amount), GBP), TransactionSide.CREDIT, mapOf(DimensionType.CUSTOMER to customerId.value.toString()))
+            )
+            val entry = JournalEntry.create(period.id, receiptDate, lines, JournalSource.INTEGRATION, "Receipt")
+            entry.post()
+            journalEntryRepository.save(entry)
+        }
+
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
@@ -282,5 +293,36 @@ class AccountsReceivableAgingRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.Conflict
+    }
+
+    // The byte-for-byte shape of the response, pinned before the aging was refactored to expose its unpaid lines
+    // (receivables-payables-summary): the existing aging responses must not change in any way.
+    @Test
+    fun `the accounts-receivable-aging response is byte-for-byte what it was, across buckets, boundaries, partial payments and empty customers`() = testApplication {
+        val fixture = Fixture()
+        val c1 = CustomerId(UUID.fromString("00000000-0000-0000-0000-0000000000c1"))
+        val c2 = CustomerId(UUID.fromString("00000000-0000-0000-0000-0000000000c2"))
+        val c3 = CustomerId(UUID.fromString("00000000-0000-0000-0000-0000000000c3"))
+        val c4 = CustomerId(UUID.fromString("00000000-0000-0000-0000-0000000000c4"))
+        fixture.postSale(c1, "100.00", TODAY.minusDays(100)); fixture.postSale(c1, "200.00", TODAY.minusDays(70))
+        fixture.postSale(c1, "300.00", TODAY.minusDays(40)); fixture.postSale(c1, "400.00", TODAY.minusDays(5))
+        fixture.postReceipt(c1, "250.00", TODAY.minusDays(2))
+        for ((age, amount) in listOf(30 to "10.00", 31 to "20.00", 60 to "30.00", 61 to "40.00", 90 to "50.00", 91 to "60.00")) {
+            fixture.postSale(c2, amount, TODAY.minusDays(age.toLong()))
+        }
+        fixture.postSale(c4, "70.00", TODAY.minusDays(10)); fixture.postReceipt(c4, "70.00", TODAY.minusDays(1))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/companies/${fixture.company.id.value}/accounts-receivable-aging") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody("""{"customerIds": ["${c1.value}", "${c2.value}", "${c3.value}", "${c4.value}"]}""")
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val text = response.bodyAsText()
+        text shouldBe """{"aging":[{"customerId":"00000000-0000-0000-0000-0000000000c1","buckets":[{"label":"CURRENT","amount":"400.00","currency":"GBP"},{"label":"DAYS_31_TO_60","amount":"300.00","currency":"GBP"},{"label":"DAYS_61_TO_90","amount":"50.00","currency":"GBP"},{"label":"OVER_90","amount":"0.00","currency":"GBP"}]},{"customerId":"00000000-0000-0000-0000-0000000000c2","buckets":[{"label":"CURRENT","amount":"10.00","currency":"GBP"},{"label":"DAYS_31_TO_60","amount":"50.00","currency":"GBP"},{"label":"DAYS_61_TO_90","amount":"90.00","currency":"GBP"},{"label":"OVER_90","amount":"60.00","currency":"GBP"}]},{"customerId":"00000000-0000-0000-0000-0000000000c3","buckets":[{"label":"CURRENT","amount":"0.00","currency":"GBP"},{"label":"DAYS_31_TO_60","amount":"0.00","currency":"GBP"},{"label":"DAYS_61_TO_90","amount":"0.00","currency":"GBP"},{"label":"OVER_90","amount":"0.00","currency":"GBP"}]},{"customerId":"00000000-0000-0000-0000-0000000000c4","buckets":[{"label":"CURRENT","amount":"0.00","currency":"GBP"},{"label":"DAYS_31_TO_60","amount":"0.00","currency":"GBP"},{"label":"DAYS_61_TO_90","amount":"0.00","currency":"GBP"},{"label":"OVER_90","amount":"0.00","currency":"GBP"}]}]}"""
     }
 }
