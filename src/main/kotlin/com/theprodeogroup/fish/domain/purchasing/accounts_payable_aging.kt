@@ -5,6 +5,7 @@ import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AgingBucketAmount
 import com.theprodeogroup.fish.domain.ledger.AgingBucketLabel
+import com.theprodeogroup.fish.domain.ledger.UnpaidItem
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.hasHistoricalEffect
@@ -32,7 +33,9 @@ class AccountsPayableAging private constructor(
     val supplierId: SupplierId,
     val asOfDate: LocalDate,
     val currency: Currency,
-    val buckets: List<AgingBucketAmount>
+    val buckets: List<AgingBucketAmount>,
+    /** The unpaid items the [buckets] are made of (see [UnpaidItem]); oldest first. */
+    val unpaidItems: List<UnpaidItem> = emptyList()
 ) {
     val totalOutstanding: Money
         get() = buckets.fold(Money(BigDecimal.ZERO, currency)) { sum, bucket -> sum + bucket.amount }
@@ -81,20 +84,16 @@ class AccountsPayableAging private constructor(
                 }
             }
 
+            val unpaidItems = unpaidCharges.map { (date, amount) ->
+                UnpaidItem(date, amount, AgingBucketLabel.forDaysOld(ChronoUnit.DAYS.between(date, asOfDate)))
+            }
             val bucketTotals = AgingBucketLabel.entries.associateWith { zero }.toMutableMap()
-            for ((date, amount) in unpaidCharges) {
-                val daysOverdue = ChronoUnit.DAYS.between(date, asOfDate)
-                val label = when {
-                    daysOverdue <= 30 -> AgingBucketLabel.CURRENT
-                    daysOverdue <= 60 -> AgingBucketLabel.DAYS_31_TO_60
-                    daysOverdue <= 90 -> AgingBucketLabel.DAYS_61_TO_90
-                    else -> AgingBucketLabel.OVER_90
-                }
-                bucketTotals[label] = bucketTotals.getValue(label) + amount
+            for (item in unpaidItems) {
+                bucketTotals[item.bucket] = bucketTotals.getValue(item.bucket) + item.amount
             }
 
             val buckets = AgingBucketLabel.entries.map { AgingBucketAmount(it, bucketTotals.getValue(it)) }
-            return AccountsPayableAging(supplierId, asOfDate, currency, buckets)
+            return AccountsPayableAging(supplierId, asOfDate, currency, buckets, unpaidItems)
         }
     }
 }

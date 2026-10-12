@@ -21,6 +21,7 @@ import com.theprodeogroup.fish.application.ComputePayrollPostingContextUseCase
 import com.theprodeogroup.fish.application.ComputePurchasePostingContextUseCase
 import com.theprodeogroup.fish.application.ComputeAccountsPayableAgingUseCase
 import com.theprodeogroup.fish.application.ComputeAccountsReceivableAgingUseCase
+import com.theprodeogroup.fish.application.ComputeReceivablesPayablesSummaryUseCase
 import com.theprodeogroup.fish.application.ComputeCustomerBalancesUseCase
 import com.theprodeogroup.fish.application.ComputeSupplierBalancesUseCase
 import com.theprodeogroup.fish.application.ComputeSalesPostingContextUseCase
@@ -625,6 +626,9 @@ fun Application.fishModule(
                 )
                 accountsPayableAgingRoutes(
                     ComputeAccountsPayableAgingUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository
+                )
+                receivablesPayablesSummaryRoutes(
+                    ComputeReceivablesPayablesSummaryUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository
                 )
                 purchasePostingContextRoutes(
                     ComputePurchasePostingContextUseCase(companyRepository, periodRepository, accountRepository), companyRepository

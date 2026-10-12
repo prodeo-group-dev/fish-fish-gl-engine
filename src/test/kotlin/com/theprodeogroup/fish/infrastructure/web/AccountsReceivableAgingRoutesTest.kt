@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
@@ -157,6 +158,22 @@ class AccountsReceivableAgingRoutesTest {
         val revenueAccount = if (configureAccounts) {
             Account.create(company.id, AccountType.REVENUE, null, "4000", "Revenue").also { accountRepository.save(it) }
         } else null
+        val apAccount = if (configureAccounts) {
+            Account.create(company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2000", "Accounts Payable").also { accountRepository.save(it) }
+        } else null
+
+        fun postCharge(supplierId: UUID, amount: String, chargeDate: LocalDate) {
+            val entry = JournalEntry.create(
+                period.id, chargeDate,
+                listOf(
+                    JournalLine(revenueAccount!!.id, Money(BigDecimal(amount), GBP), TransactionSide.DEBIT),
+                    JournalLine(apAccount!!.id, Money(BigDecimal(amount), GBP), TransactionSide.CREDIT, mapOf(DimensionType.VENDOR to supplierId.toString()))
+                ),
+                JournalSource.INTEGRATION, "Purchase"
+            )
+            entry.post()
+            journalEntryRepository.save(entry)
+        }
 
         fun postSale(customerId: CustomerId, amount: String, saleDate: LocalDate = TODAY) {
             val lines = listOf(
@@ -324,5 +341,72 @@ class AccountsReceivableAgingRoutesTest {
         response.status shouldBe HttpStatusCode.OK
         val text = response.bodyAsText()
         text shouldBe """{"aging":[{"customerId":"00000000-0000-0000-0000-0000000000c1","buckets":[{"label":"CURRENT","amount":"400.00","currency":"GBP"},{"label":"DAYS_31_TO_60","amount":"300.00","currency":"GBP"},{"label":"DAYS_61_TO_90","amount":"50.00","currency":"GBP"},{"label":"OVER_90","amount":"0.00","currency":"GBP"}]},{"customerId":"00000000-0000-0000-0000-0000000000c2","buckets":[{"label":"CURRENT","amount":"10.00","currency":"GBP"},{"label":"DAYS_31_TO_60","amount":"50.00","currency":"GBP"},{"label":"DAYS_61_TO_90","amount":"90.00","currency":"GBP"},{"label":"OVER_90","amount":"60.00","currency":"GBP"}]},{"customerId":"00000000-0000-0000-0000-0000000000c3","buckets":[{"label":"CURRENT","amount":"0.00","currency":"GBP"},{"label":"DAYS_31_TO_60","amount":"0.00","currency":"GBP"},{"label":"DAYS_61_TO_90","amount":"0.00","currency":"GBP"},{"label":"OVER_90","amount":"0.00","currency":"GBP"}]},{"customerId":"00000000-0000-0000-0000-0000000000c4","buckets":[{"label":"CURRENT","amount":"0.00","currency":"GBP"},{"label":"DAYS_31_TO_60","amount":"0.00","currency":"GBP"},{"label":"DAYS_61_TO_90","amount":"0.00","currency":"GBP"},{"label":"OVER_90","amount":"0.00","currency":"GBP"}]}]}"""
+    }
+
+    // ---- GET receivables-payables-summary (the Business Owner dashboard) ----
+
+    private fun summaryPath(fixture: Fixture) = "/api/companies/${fixture.company.id.value}/receivables-payables-summary"
+
+    private fun io.ktor.client.request.HttpRequestBuilder.asAdmin(fixture: Fixture, email: String = ADMIN_EMAIL) {
+        header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(email)}")
+        header("X-Tenant-Id", fixture.tenant.value.toString())
+    }
+
+    @Test
+    fun `given receivables and payables, when the summary is read, then each side has its total, its overdue part older than 30 days and the count, and the shape is exactly the contract`() = testApplication {
+        val fixture = Fixture()
+        val customer = CustomerId.generate()
+        fixture.postSale(customer, "100.00", TODAY.minusDays(100))
+        fixture.postSale(customer, "200.00", TODAY.minusDays(40))
+        fixture.postSale(customer, "400.00", TODAY.minusDays(5))
+        fixture.postReceipt(customer, "100.00", TODAY.minusDays(2)) // clears the 100 sale
+        fixture.postCharge(UUID.randomUUID(), "50.00", TODAY.minusDays(31))
+        fixture.postCharge(UUID.randomUUID(), "70.00", TODAY.minusDays(2))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get(summaryPath(fixture)) { asAdmin(fixture) }
+
+        response.status shouldBe HttpStatusCode.OK
+        val text = response.bodyAsText()
+        text shouldBe """{"currency":"GBP","asOf":"${java.time.LocalDate.now(java.time.ZoneOffset.UTC)}","receivables":{"total":"600.00","overdueTotal":"200.00","overdueCount":1},"payables":{"total":"120.00","overdueTotal":"50.00","overdueCount":1}}"""
+    }
+
+    @Test
+    fun `given a Company with no receivables or payables control account, when the summary is read, then it is 200 with zeros`() = testApplication {
+        val fixture = Fixture(configureAccounts = false)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get(summaryPath(fixture)) { asAdmin(fixture) }
+
+        response.status shouldBe HttpStatusCode.OK
+        response.bodyAsText() shouldBe """{"currency":"GBP","asOf":"${java.time.LocalDate.now(java.time.ZoneOffset.UTC)}","receivables":{"total":"0.00","overdueTotal":"0.00","overdueCount":0},"payables":{"total":"0.00","overdueTotal":"0.00","overdueCount":0}}"""
+    }
+
+    @Test
+    fun `given no bearer token, an unknown Company, or a stranger, when the summary is read, then it is refused`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.get(summaryPath(fixture)).status shouldBe HttpStatusCode.Unauthorized
+        client.get("/api/companies/${UUID.randomUUID()}/receivables-payables-summary") { asAdmin(fixture) }.status shouldBe HttpStatusCode.NotFound
+        val stranger = User.create("stranger-summary@example.com", "Stranger").also { fixture.userRepository.save(it) }
+        val refused = client.get(summaryPath(fixture)) { asAdmin(fixture, stranger.email) }.status
+        (refused == HttpStatusCode.Forbidden || refused == HttpStatusCode.Unauthorized) shouldBe true
+    }
+
+    @Test
+    fun `given a read-only member, when the summary is read, then it is allowed`() = testApplication {
+        val fixture = Fixture()
+        val reader = User.create("reader-summary@example.com", "Reader").also { fixture.userRepository.save(it) }
+        fixture.membershipRepository.save(
+            Membership.grant(reader.id, fixture.tenant, Role.ACCOUNTANT, fixture.company.id, accessLevel = com.theprodeogroup.fish.domain.tenancy.AccessLevel.READ)
+        )
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.get(summaryPath(fixture)) { asAdmin(fixture, "reader-summary@example.com") }.status shouldBe HttpStatusCode.OK
     }
 }
