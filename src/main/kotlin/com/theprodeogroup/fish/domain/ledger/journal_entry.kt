@@ -84,7 +84,7 @@ class JournalEntry private constructor(
     fun reverse(
         now: Instant = Instant.now(),
         reversalId: JournalEntryId = JournalEntryId.generate(),
-        /** What the reversing entry says about itself; null reads "Reversal of <this entry's id>". */
+        /** What the reversing entry says about itself; null reads "Reversal of <this entry's description> (<its date>)". */
         reversalDescription: String? = null
     ): JournalEntry? {
         if (!status.canTransitionTo(PostingStatus.REVERSED)) {
@@ -99,7 +99,7 @@ class JournalEntry private constructor(
             date = now.atZone(ZoneOffset.UTC).toLocalDate(),
             lines = reversalLines,
             source = JournalSource.REVERSAL,
-            description = reversalDescription ?: "Reversal of ${id.value}",
+            description = reversalDescription ?: reversalWording(description, date),
             initialStatus = PostingStatus.POSTED,
             reversalOfEntryId = id
         )
@@ -108,6 +108,14 @@ class JournalEntry private constructor(
     }
 
     companion object {
+        /**
+         * How a reversal says what it reverses, in words a person can read: "Reversal of Takings (2026-10-03)", or
+         * "Reversal of an earlier entry (2026-10-03)" when the original had no description. Never an id. Also used
+         * to word old reversals for display, which were stored as "Reversal of <id>".
+         */
+        fun reversalWording(originalDescription: String?, originalDate: LocalDate): String =
+            "Reversal of ${originalDescription?.takeIf { it.isNotBlank() } ?: "an earlier entry"} ($originalDate)"
+
         /**
          * Sum of debit `Money` amounts must equal sum of credit `Money`
          * amounts, *per currency* independently (Section 8's open

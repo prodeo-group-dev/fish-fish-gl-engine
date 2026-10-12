@@ -952,4 +952,33 @@ class CashBookRoutesTest {
 
         client.get(seriesPath(fixture)) { signedIn(fixture, "reader-series@example.com") }.status shouldBe HttpStatusCode.OK
     }
+
+    @Test
+    fun `given an old reversal that names its original by id, when the book is read, then it reads in words from the original even when the original is outside the range, and the stored entry is unchanged`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        val original = fixture.post(cash, fixture.revenueAccount!!, "10.00", TODAY.minusDays(40), "Takings")
+        val oldReversal = fixture.post(fixture.revenueAccount!!, cash, "10.00", TODAY.minusDays(1), "Reversal of ${original.id.value}")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val book: CashBookResponseDto = client.get("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}?from=${TODAY.minusDays(10)}&to=$TODAY") { signedIn(fixture) }.body()
+
+        book.rows.single().description shouldBe "Reversal of Takings (${TODAY.minusDays(40)})"
+        fixture.journalEntryRepository.findById(oldReversal.id)!!.description shouldBe "Reversal of ${original.id.value}"
+    }
+
+    @Test
+    fun `given an old reversal whose original is not on this book, when the book is read, then the stored text is shown as it is`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        val unknown = "3f2c8a52-1b6e-4c0e-9d3a-7a1d5b9c0e11"
+        fixture.post(fixture.revenueAccount!!, cash, "10.00", TODAY.minusDays(1), "Reversal of $unknown")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val book: CashBookResponseDto = client.get("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}?from=${TODAY.minusDays(10)}&to=$TODAY") { signedIn(fixture) }.body()
+
+        book.rows.single().description shouldBe "Reversal of $unknown"
+    }
 }

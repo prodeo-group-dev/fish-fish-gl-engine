@@ -454,4 +454,23 @@ class JournalEntryRoutesTest {
 
         body.map { it.description } shouldBe listOf("Recorded second", "Recorded first")
     }
+
+    @Test
+    fun `given an old reversal that names its original by id, when GET journal-entries is called, then it reads in words from the original and the stored entry is unchanged`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        fixture.postEntry(TODAY.minusDays(30), "Takings")
+        val original = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).single()
+        fixture.postEntry(TODAY, "Reversal of ${original.id.value}")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val body: List<JournalEntryRecordDto> = client.get("/api/companies/${fixture.company.id.value}/journal-entries") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }.body()
+
+        body.map { it.description } shouldBe listOf("Reversal of Takings (${TODAY.minusDays(30)})", "Takings")
+        fixture.journalEntryRepository.findAllByCompany(fixture.company.id).map { it.description }.toSet() shouldBe
+            setOf("Takings", "Reversal of ${original.id.value}")
+    }
 }

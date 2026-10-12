@@ -8,6 +8,7 @@ import com.theprodeogroup.fish.domain.ledger.BankReconciliationRepository
 import com.theprodeogroup.fish.domain.ledger.BankReconciliationStatus
 import com.theprodeogroup.fish.domain.ledger.CashBook
 import com.theprodeogroup.fish.domain.ledger.CashBookKind
+import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
@@ -38,7 +39,13 @@ class ComputeCashBookUseCase(
 ) {
     sealed class Result {
         /** [reconciledEntryIds] is null for a cash book (it is not reconcilable) and, for a bank account, every entry matched in a COMPLETED reconciliation. */
-        data class Success(val book: CashBook, val canUndo: Map<JournalEntryId, Boolean>, val reconciledEntryIds: Set<JournalEntryId>?) : Result()
+        data class Success(
+            val book: CashBook,
+            val canUndo: Map<JournalEntryId, Boolean>,
+            val reconciledEntryIds: Set<JournalEntryId>?,
+            /** Every entry of the account (not only the rows in range), so an old reversal can be worded from its original for display. */
+            val entriesById: Map<JournalEntryId, JournalEntry> = emptyMap()
+        ) : Result()
         data object CompanyNotFound : Result()
         data object AccountNotFound : Result()
         data object NotACashBook : Result()
@@ -88,7 +95,7 @@ class ComputeCashBookUseCase(
                 .map { it.second }
                 .toSet()
         } else null
-        return Result.Success(book, canUndo, reconciled)
+        return Result.Success(book, canUndo, reconciled, entries.associateBy { it.id })
     }
 
     companion object {
