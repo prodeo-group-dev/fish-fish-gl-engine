@@ -15,6 +15,7 @@ import com.theprodeogroup.fish.application.UndoCashBookEntryUseCase
 import com.theprodeogroup.fish.application.ListCounterAccountsUseCase
 import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
 import com.theprodeogroup.fish.application.ComputeCashBookUseCase
+import com.theprodeogroup.fish.application.ComputeCashBalanceSeriesUseCase
 import com.theprodeogroup.fish.application.ListCashBooksUseCase
 import com.theprodeogroup.fish.application.FakeBankReconciliationRepository
 import com.theprodeogroup.fish.domain.ledger.CashBookKind
@@ -158,6 +159,7 @@ class CashBookPoliciesRouteTest {
         val disposeFixedAssetUseCase = DisposeFixedAssetUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeFixedAssetRegisterUseCase = ComputeFixedAssetRegisterUseCase(companyRepository, fixedAssetRepository)
         val listCashBooksUseCase = ListCashBooksUseCase(companyRepository, accountRepository, journalEntryRepository)
+        val computeCashBalanceSeriesUseCase = ComputeCashBalanceSeriesUseCase(companyRepository, accountRepository, journalEntryRepository)
         val cashBookReconciliations = FakeBankReconciliationRepository()
         val startBankReconciliationUseCase = StartBankReconciliationUseCase(companyRepository, accountRepository, journalEntryRepository, cashBookReconciliations)
         val matchBankReconciliationLineUseCase = MatchBankReconciliationLineUseCase(companyRepository, journalEntryRepository, cashBookReconciliations)
@@ -247,6 +249,7 @@ class CashBookPoliciesRouteTest {
                 disposeFixedAssetUseCase = disposeFixedAssetUseCase,
                 computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase,
                 listCashBooksUseCase = listCashBooksUseCase,
+                computeCashBalanceSeriesUseCase = computeCashBalanceSeriesUseCase,
                 computeCashBookUseCase = computeCashBookUseCase,
                 changeCashBookKindUseCase = changeCashBookKindUseCase,
                 addMissingStandardAccountsUseCase = addMissingStandardAccountsUseCase,
