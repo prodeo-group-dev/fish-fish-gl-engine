@@ -1062,6 +1062,19 @@ data class CashBalanceSeriesResponseDto(
     val points: List<CashBalancePointDto>
 )
 
+/** One side of the receivables and payables summary: everything unpaid, and the part older than 30 days. */
+@Serializable
+data class ReceivablesPayablesSideDto(val total: String, val overdueTotal: String, val overdueCount: Int)
+
+/** `GET /companies/{id}/receivables-payables-summary`. */
+@Serializable
+data class ReceivablesPayablesSummaryResponseDto(
+    val currency: String,
+    val asOf: String,
+    val receivables: ReceivablesPayablesSideDto,
+    val payables: ReceivablesPayablesSideDto
+)
+
 /** A counter-account of a book row: the other side of the money in or out. */
 @Serializable
 data class CashBookCounterAccountDto(val accountId: String, val code: String, val name: String)
