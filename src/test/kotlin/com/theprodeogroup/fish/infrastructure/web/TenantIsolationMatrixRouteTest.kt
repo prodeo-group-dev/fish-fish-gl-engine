@@ -21,6 +21,7 @@ import com.theprodeogroup.fish.application.UndoCashBookEntryUseCase
 import com.theprodeogroup.fish.application.ListCounterAccountsUseCase
 import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
 import com.theprodeogroup.fish.application.ComputeCashBookUseCase
+import com.theprodeogroup.fish.application.ComputeCashBalanceSeriesUseCase
 import com.theprodeogroup.fish.application.ListCashBooksUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.FakeTaxRuleRepository
@@ -190,6 +191,7 @@ class TenantIsolationMatrixRouteTest {
         val disposeFixedAssetUseCase = DisposeFixedAssetUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeFixedAssetRegisterUseCase = ComputeFixedAssetRegisterUseCase(companyRepository, fixedAssetRepository)
         val listCashBooksUseCase = ListCashBooksUseCase(companyRepository, accountRepository, journalEntryRepository)
+        val computeCashBalanceSeriesUseCase = ComputeCashBalanceSeriesUseCase(companyRepository, accountRepository, journalEntryRepository)
         val cashBookReconciliations = FakeBankReconciliationRepository()
         val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository, cashBookReconciliations)
         val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, cashBookReconciliations)
@@ -247,6 +249,7 @@ class TenantIsolationMatrixRouteTest {
                 disposeFixedAssetUseCase = disposeFixedAssetUseCase,
                 computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase,
                 listCashBooksUseCase = listCashBooksUseCase,
+                computeCashBalanceSeriesUseCase = computeCashBalanceSeriesUseCase,
                 computeCashBookUseCase = computeCashBookUseCase,
                 changeCashBookKindUseCase = changeCashBookKindUseCase,
                 addMissingStandardAccountsUseCase = addMissingStandardAccountsUseCase,
@@ -611,6 +614,7 @@ class TenantIsolationMatrixRouteTest {
         "PUT /companies/{companyId}/accounts/{accountId}/expense-classification",
         "PUT /companies/{companyId}/accounts/{accountId}/cash-book-kind",
         "GET /companies/{companyId}/cash-books", "GET /companies/{companyId}/cash-books/{accountId}",
+        "GET /companies/{companyId}/cash-balance-series",
         "POST /companies/{companyId}/standard-accounts",
         "POST /companies/{companyId}/cash-books/{accountId}/receipts", "POST /companies/{companyId}/cash-books/{accountId}/payments",
         "GET /companies/{companyId}/cash-books/{accountId}/counter-accounts",

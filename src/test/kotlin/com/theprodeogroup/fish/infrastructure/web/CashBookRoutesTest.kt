@@ -8,6 +8,7 @@ import com.theprodeogroup.fish.application.UndoCashBookEntryUseCase
 import com.theprodeogroup.fish.application.ListCounterAccountsUseCase
 import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
 import com.theprodeogroup.fish.application.ComputeCashBookUseCase
+import com.theprodeogroup.fish.application.ComputeCashBalanceSeriesUseCase
 import com.theprodeogroup.fish.application.ListCashBooksUseCase
 import com.theprodeogroup.fish.application.FakeBankReconciliationRepository
 import com.theprodeogroup.fish.domain.ledger.CashBookKind
@@ -151,6 +152,7 @@ class CashBookRoutesTest {
         val disposeFixedAssetUseCase = DisposeFixedAssetUseCase(fixedAssetRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeFixedAssetRegisterUseCase = ComputeFixedAssetRegisterUseCase(companyRepository, fixedAssetRepository)
         val listCashBooksUseCase = ListCashBooksUseCase(companyRepository, accountRepository, journalEntryRepository)
+        val computeCashBalanceSeriesUseCase = ComputeCashBalanceSeriesUseCase(companyRepository, accountRepository, journalEntryRepository)
         val cashBookReconciliations = FakeBankReconciliationRepository()
         val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository, cashBookReconciliations)
         val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, cashBookReconciliations)
@@ -233,6 +235,7 @@ class CashBookRoutesTest {
                 disposeFixedAssetUseCase = disposeFixedAssetUseCase,
                 computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase,
                 listCashBooksUseCase = listCashBooksUseCase,
+                computeCashBalanceSeriesUseCase = computeCashBalanceSeriesUseCase,
                 computeCashBookUseCase = computeCashBookUseCase,
                 changeCashBookKindUseCase = changeCashBookKindUseCase,
                 addMissingStandardAccountsUseCase = addMissingStandardAccountsUseCase,
@@ -858,5 +861,95 @@ class CashBookRoutesTest {
 
         book.rows.single().description shouldBe "Reversal of 3f2c8a52-1b6e-4c0e-9d3a-7a1d5b9c0e11 and Pay run - aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         fixture.journalEntryRepository.findById(entry.id)!!.description shouldBe raw
+    }
+
+    // ---- the cash trend for the Business Owner dashboard: GET cash-balance-series ----
+
+    private fun seriesPath(fixture: Fixture, query: String = "") = "/api/companies/${fixture.company.id.value}/cash-balance-series$query"
+
+    @Test
+    fun `given a cash book and a bank book, when the series is read with no days, then it has 30 daily points ending today with the combined running balance`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        val bank = fixture.cashBook("1010", CashBookKind.BANK)
+        fixture.post(cash, fixture.revenueAccount!!, "50.00", TODAY.minusDays(60)) // before the window: the opening balance
+        fixture.post(cash, fixture.revenueAccount!!, "120.00", TODAY.minusDays(3))
+        fixture.post(bank, fixture.revenueAccount!!, "800.00", TODAY.minusDays(1))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get(seriesPath(fixture)) { signedIn(fixture) }
+
+        response.status shouldBe HttpStatusCode.OK
+        val series: CashBalanceSeriesResponseDto = response.body()
+        series.currency shouldBe "GBP"
+        series.points.size shouldBe 30
+        series.to shouldBe java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString()
+        series.from shouldBe java.time.LocalDate.now(java.time.ZoneOffset.UTC).minusDays(29).toString()
+        series.points.first().date shouldBe series.from
+        series.points.last().date shouldBe series.to
+        series.points.first().closingBalance shouldBe "50.00"
+        series.points.last().closingBalance shouldBe "970.00"
+    }
+
+    @Test
+    fun `given days, when the series is read, then it has exactly that many points`() = testApplication {
+        val fixture = Fixture()
+        fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.get(seriesPath(fixture, "?days=7")) { signedIn(fixture) }.body<CashBalanceSeriesResponseDto>().points.size shouldBe 7
+        client.get(seriesPath(fixture, "?days=1")) { signedIn(fixture) }.body<CashBalanceSeriesResponseDto>().points.size shouldBe 1
+        client.get(seriesPath(fixture, "?days=366")) { signedIn(fixture) }.body<CashBalanceSeriesResponseDto>().points.size shouldBe 366
+    }
+
+    @Test
+    fun `given days that are not a whole number from 1 to 366, when the series is read, then it answers 400 invalid_days`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        for (bad in listOf("0", "-5", "367", "abc", "7.5", "")) {
+            val response = client.get(seriesPath(fixture, "?days=$bad")) { signedIn(fixture) }
+            response.status shouldBe HttpStatusCode.BadRequest
+            response.body<ErrorResponseDto>().error shouldBe "invalid_days"
+        }
+    }
+
+    @Test
+    fun `given a Company with no cash or bank books, when the series is read, then every point is zero`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val series: CashBalanceSeriesResponseDto = client.get(seriesPath(fixture, "?days=5")) { signedIn(fixture) }.body()
+
+        series.points.map { it.closingBalance } shouldBe List(5) { "0.00" }
+    }
+
+    @Test
+    fun `given no bearer token, an unknown Company, or a stranger, when the series is read, then it is refused 401, 404 and refused again, and days are not validated for a caller who may not read`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.get(seriesPath(fixture)).status shouldBe HttpStatusCode.Unauthorized
+        client.get("/api/companies/${java.util.UUID.randomUUID()}/cash-balance-series") { signedIn(fixture) }.status shouldBe HttpStatusCode.NotFound
+        val stranger = User.create("stranger-series@example.com", "Stranger").also { fixture.userRepository.save(it) }
+        val refused = client.get(seriesPath(fixture, "?days=abc")) { signedIn(fixture, stranger.email) }.status
+        (refused == HttpStatusCode.Forbidden || refused == HttpStatusCode.Unauthorized) shouldBe true // never 400: bad days are not reported to a caller who may not read
+    }
+
+    @Test
+    fun `given a read-only member, when the series is read, then it is allowed`() = testApplication {
+        val fixture = Fixture()
+        fixture.cashBook("1000", CashBookKind.CASH)
+        val reader = User.create("reader-series@example.com", "Reader").also { fixture.userRepository.save(it) }
+        fixture.membershipRepository.save(Membership.grant(reader.id, fixture.tenant, Role.ACCOUNTANT, fixture.company.id, accessLevel = AccessLevel.READ))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.get(seriesPath(fixture)) { signedIn(fixture, "reader-series@example.com") }.status shouldBe HttpStatusCode.OK
     }
 }

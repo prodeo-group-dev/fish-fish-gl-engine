@@ -82,6 +82,7 @@ import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
 import com.theprodeogroup.fish.application.ClassifyExpenseAccountUseCase
 import com.theprodeogroup.fish.application.ComputeCashBookUseCase
 import com.theprodeogroup.fish.application.ListCashBooksUseCase
+import com.theprodeogroup.fish.application.ComputeCashBalanceSeriesUseCase
 import com.theprodeogroup.fish.application.ListCounterAccountsUseCase
 import com.theprodeogroup.fish.application.RecordCashBookEntryUseCase
 import com.theprodeogroup.fish.application.RecordCashBookTransferUseCase
@@ -236,6 +237,7 @@ fun Application.productionModule() {
 
     // Cash and bank books (docs/GL_Cash_And_Bank_Books_SRS.md).
     val listCashBooksUseCase = ListCashBooksUseCase(companyRepository, accountRepository, journalEntryRepository)
+    val computeCashBalanceSeriesUseCase = ComputeCashBalanceSeriesUseCase(companyRepository, accountRepository, journalEntryRepository)
     val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository, bankReconciliationRepository)
     val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, bankReconciliationRepository)
     val addMissingStandardAccountsUseCase = AddMissingStandardAccountsUseCase(companyRepository, accountRepository)
@@ -317,6 +319,7 @@ fun Application.productionModule() {
         computeBankReconciliationUseCase = computeBankReconciliationUseCase,
         listBankReconciliationsUseCase = listBankReconciliationsUseCase,
         listCashBooksUseCase = listCashBooksUseCase,
+        computeCashBalanceSeriesUseCase = computeCashBalanceSeriesUseCase,
         computeCashBookUseCase = computeCashBookUseCase,
         changeCashBookKindUseCase = changeCashBookKindUseCase,
         addMissingStandardAccountsUseCase = addMissingStandardAccountsUseCase,
@@ -418,6 +421,7 @@ fun Application.fishModule(
     computeBankReconciliationUseCase: ComputeBankReconciliationUseCase? = null,
     listBankReconciliationsUseCase: ListBankReconciliationsUseCase? = null,
     listCashBooksUseCase: ListCashBooksUseCase? = null,
+    computeCashBalanceSeriesUseCase: ComputeCashBalanceSeriesUseCase? = null,
     computeCashBookUseCase: ComputeCashBookUseCase? = null,
     changeCashBookKindUseCase: ChangeCashBookKindUseCase? = null,
     addMissingStandardAccountsUseCase: AddMissingStandardAccountsUseCase? = null,
@@ -661,6 +665,9 @@ fun Application.fishModule(
                         listCashBooksUseCase, computeCashBookUseCase, changeCashBookKindUseCase, recordCashBookEntryUseCase,
                         listCounterAccountsUseCase, recordCashBookTransferUseCase, undoCashBookEntryUseCase, companyRepository
                     )
+                }
+                if (computeCashBalanceSeriesUseCase != null) {
+                    cashBalanceSeriesRoutes(computeCashBalanceSeriesUseCase, companyRepository)
                 }
                 if (addMissingStandardAccountsUseCase != null) {
                     standardAccountsRoutes(addMissingStandardAccountsUseCase, companyRepository)

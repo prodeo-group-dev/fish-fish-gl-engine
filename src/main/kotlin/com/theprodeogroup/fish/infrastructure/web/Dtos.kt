@@ -1049,6 +1049,19 @@ data class CashBookListItemDto(
     val lastEntryDate: String? = null
 )
 
+/** One day of the cash trend: the combined balance of every cash and bank book at the end of [date]. */
+@Serializable
+data class CashBalancePointDto(val date: String, val closingBalance: String)
+
+/** `GET /companies/{id}/cash-balance-series` - exactly `days` points, oldest first, ending today. */
+@Serializable
+data class CashBalanceSeriesResponseDto(
+    val currency: String,
+    val from: String,
+    val to: String,
+    val points: List<CashBalancePointDto>
+)
+
 /** A counter-account of a book row: the other side of the money in or out. */
 @Serializable
 data class CashBookCounterAccountDto(val accountId: String, val code: String, val name: String)
