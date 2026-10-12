@@ -161,14 +161,38 @@ class JournalEntryTest {
     }
 
     @Test
-    fun `given a Posted entry, when reversed with no description, then it reads Reversal of the plain id - never the typed id`() {
-        val entry = readyEntry()
+    fun `given a Posted entry with a description, when reversed with no description, then it reads in words - Reversal of the original description and its date - never an id`() {
+        val entry = describedEntry("Takings")
         entry.post()
 
         val reversal = requireNotNull(entry.reverse())
 
-        reversal.description shouldBe "Reversal of ${entry.id.value}"
-        (reversal.description!!.contains("JournalEntryId(")) shouldBe false
+        reversal.description shouldBe "Reversal of Takings ($TODAY)"
+        reversal.description!!.contains(entry.id.value.toString()) shouldBe false
+        reversal.description!!.contains("JournalEntryId(") shouldBe false
+    }
+
+    @Test
+    fun `given a Posted entry with no or a blank description, when reversed, then it reads Reversal of an earlier entry and its date`() {
+        val none = readyEntry().also { it.post() }
+        val blank = describedEntry("   ").also { it.post() }
+
+        requireNotNull(none.reverse()).description shouldBe "Reversal of an earlier entry ($TODAY)"
+        requireNotNull(blank.reverse()).description shouldBe "Reversal of an earlier entry ($TODAY)"
+    }
+
+    @Test
+    fun `the wording helper is the one the reversal uses, so a display can rebuild it for an old row`() {
+        JournalEntry.reversalWording("Rent", LocalDate.of(2026, 10, 3)) shouldBe "Reversal of Rent (2026-10-03)"
+        JournalEntry.reversalWording(null, LocalDate.of(2026, 10, 3)) shouldBe "Reversal of an earlier entry (2026-10-03)"
+    }
+
+    private fun describedEntry(description: String): JournalEntry {
+        val lines = listOf(
+            JournalLine(AccountId.generate(), Money(BigDecimal("100.00"), GBP), TransactionSide.DEBIT),
+            JournalLine(AccountId.generate(), Money(BigDecimal("100.00"), GBP), TransactionSide.CREDIT)
+        )
+        return JournalEntry.create(PeriodId.generate(), TODAY, lines, JournalSource.MANUAL, description)
     }
 
     @Test

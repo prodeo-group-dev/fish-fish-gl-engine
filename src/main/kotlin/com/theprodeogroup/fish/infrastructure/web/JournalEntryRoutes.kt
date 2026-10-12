@@ -245,14 +245,16 @@ fun Route.journalEntryRoutes(
         if (!call.verifyClaimedTenant(tenantId)) return@get
         call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
-        val entries = journalEntryRepository.findAllByCompany(companyId)
+        val all = journalEntryRepository.findAllByCompany(companyId)
+        val byId = all.associateBy { it.id }
+        val entries = all
             // Newest first: the day, then (V35) the order recorded within the day, latest recorded first.
             .sortedWith(compareByDescending<JournalEntry> { it.date }.thenByDescending { it.recordedSeq ?: Long.MIN_VALUE })
             .map { entry ->
                 JournalEntryRecordDto(
                     id = entry.id.value.toString(),
                     date = entry.date.toString(),
-                    description = humanDescription(entry.description),
+                    description = humanDescription(entry.description) { id -> byId[id] },
                     status = entry.status.name,
                     source = entry.source.name,
                     lines = entry.lines.map { line ->

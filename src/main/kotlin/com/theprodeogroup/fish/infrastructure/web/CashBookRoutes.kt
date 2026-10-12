@@ -12,6 +12,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.CashBookKind
 import com.theprodeogroup.fish.domain.ledger.CashDirection
 import com.theprodeogroup.fish.domain.ledger.CashFlowActivity
+import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
@@ -108,7 +109,7 @@ fun Route.cashBookRoutes(
                             CashBookRowDto(
                                 entryId = row.entryId.value.toString(),
                                 date = row.date.toString(),
-                                description = humanDescription(row.description),
+                                description = humanDescription(row.description) { id -> result.entriesById[id] },
                                 source = row.source.name,
                                 counterAccounts = row.counterAccounts.map {
                                     CashBookCounterAccountDto(it.id.value.toString(), it.code, it.name)
@@ -256,12 +257,24 @@ private const val MAX_IDEMPOTENCY_KEY_LENGTH = 200
 
 private val typedIdInText = Regex("""[A-Za-z]+Id\(value=([0-9a-fA-F-]{36})\)""")
 
+private val reversalOfPlainId = Regex("""^Reversal of ([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$""")
+
 /**
  * Descriptions written before 2026-10-11 can contain a typed id printed raw ("Reversal of JournalEntryId(value=...)",
  * "Pay run - PayRunId(value=...)"): a bug since fixed at the source. Those rows are already stored, so the book unwraps
  * them for display (it never changes the stored entry).
+ *
+ * An old reversal reads "Reversal of <id of the original>" (the wording before 2026-10-12). Where [find] can produce
+ * the original, it is worded like a new one: "Reversal of <original description> (<original date>)". Where it cannot,
+ * the stored text is left as it is: nothing is guessed. Only a description that is exactly that old form is touched.
  */
-internal fun humanDescription(description: String?): String? = description?.replace(typedIdInText) { it.groupValues[1] }
+internal fun humanDescription(description: String?, find: (JournalEntryId) -> JournalEntry? = { null }): String? {
+    val unwrapped = description?.replace(typedIdInText) { it.groupValues[1] } ?: return null
+    val originalId = reversalOfPlainId.matchEntire(unwrapped)?.groupValues?.get(1)?.let { JournalEntryId(java.util.UUID.fromString(it)) }
+        ?: return unwrapped
+    val original = find(originalId) ?: return unwrapped
+    return JournalEntry.reversalWording(original.description?.replace(typedIdInText) { it.groupValues[1] }, original.date)
+}
 
 private suspend fun ApplicationCall.handleCashBookTransfer(
     recordCashBookTransferUseCase: RecordCashBookTransferUseCase,
