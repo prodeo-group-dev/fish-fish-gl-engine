@@ -528,6 +528,8 @@ fun Application.fishModule(
             "$status ${call.request.httpMethod.value} ${call.request.path()}"
         }
     }
+    // One structured line per request with the duration and the result class (alongside the access line above).
+    installRequestLine()
     // fish-gl-web (a browser-based PWA) calls this API cross-origin -
     // discovered missing 2026-08-26 testing the first real deploy
     // against the new frontend, which every browser would otherwise
