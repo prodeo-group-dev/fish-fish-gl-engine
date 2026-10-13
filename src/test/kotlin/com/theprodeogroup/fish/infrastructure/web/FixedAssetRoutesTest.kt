@@ -611,7 +611,12 @@ class FixedAssetRoutesTest {
             withClue("$name B's asset with B's Period, as A's writer, B's header") {
                 client.call(io.ktor.http.HttpMethod.Post, "/api/fixed-assets/$assetB/$path", TEST_EMAIL, b.tenantId, body(a, b.period.id.value.toString())) shouldBe HttpStatusCode.Forbidden
             }
-            withClue("$name B's asset with A's Period (the F-FA1 shape: authorized at A, asset of B)") {
+            // The F-FA1 shape, with B's own accounts so the account check cannot be what stops it: authorized at A,
+            // A's Period, B's asset. Only the Period-belongs-to-the-asset's-Company check refuses this.
+            withClue("$name B's asset with A's Period and B's accounts (the F-FA1 shape)") {
+                client.call(io.ktor.http.HttpMethod.Post, "/api/fixed-assets/$assetB/$path", TEST_EMAIL, a.tenantId, body(b, a.period.id.value.toString())) shouldBe HttpStatusCode.NotFound
+            }
+            withClue("$name B's asset with A's Period and A's accounts") {
                 client.call(io.ktor.http.HttpMethod.Post, "/api/fixed-assets/$assetB/$path", TEST_EMAIL, a.tenantId, body(a, a.period.id.value.toString())) shouldBe HttpStatusCode.NotFound
             }
             withClue("$name A's asset with B's Period") {
