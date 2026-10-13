@@ -16,7 +16,6 @@ import com.theprodeogroup.fish.domain.sales.CustomerId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import java.time.LocalDate
-import java.time.ZoneOffset
 import java.util.UUID
 
 /**
@@ -30,14 +29,16 @@ import java.util.UUID
 class ComputeReceivablesPayablesSummaryUseCase(
     private val companyRepository: CompanyRepository,
     private val accountRepository: AccountRepository,
-    private val journalEntryRepository: JournalEntryRepository
+    private val journalEntryRepository: JournalEntryRepository,
+    /** The source of "today"; a test (the contract fixtures) fixes it so a response with dates is reproducible. */
+    private val clock: java.time.Clock = java.time.Clock.systemUTC()
 ) {
     sealed class Result {
         data class Success(val summary: ReceivablesPayablesSummary) : Result()
         data object CompanyNotFound : Result()
     }
 
-    fun execute(companyId: CompanyId, asOf: LocalDate = LocalDate.now(ZoneOffset.UTC)): Result {
+    fun execute(companyId: CompanyId, asOf: LocalDate = LocalDate.now(clock)): Result {
         val company = companyRepository.findById(companyId) ?: return Result.CompanyNotFound
         val currency = company.baseCurrency
         val accounts = accountRepository.findAllByCompany(companyId)

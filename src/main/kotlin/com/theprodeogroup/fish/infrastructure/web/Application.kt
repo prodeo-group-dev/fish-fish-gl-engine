@@ -424,6 +424,7 @@ fun Application.fishModule(
     listBankReconciliationsUseCase: ListBankReconciliationsUseCase? = null,
     listCashBooksUseCase: ListCashBooksUseCase? = null,
     computeCashBalanceSeriesUseCase: ComputeCashBalanceSeriesUseCase? = null,
+    computeReceivablesPayablesSummaryUseCase: ComputeReceivablesPayablesSummaryUseCase? = null,
     computeCashBookUseCase: ComputeCashBookUseCase? = null,
     changeCashBookKindUseCase: ChangeCashBookKindUseCase? = null,
     addMissingStandardAccountsUseCase: AddMissingStandardAccountsUseCase? = null,
@@ -632,7 +633,9 @@ fun Application.fishModule(
                 )
                 openPeriodRoutes(ComputeOpenPeriodUseCase(companyRepository, periodRepository), companyRepository)
                 receivablesPayablesSummaryRoutes(
-                    ComputeReceivablesPayablesSummaryUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository
+                    computeReceivablesPayablesSummaryUseCase
+                        ?: ComputeReceivablesPayablesSummaryUseCase(companyRepository, accountRepository, journalEntryRepository),
+                    companyRepository
                 )
                 purchasePostingContextRoutes(
                     ComputePurchasePostingContextUseCase(companyRepository, periodRepository, accountRepository), companyRepository

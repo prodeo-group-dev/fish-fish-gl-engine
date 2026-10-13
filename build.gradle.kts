@@ -107,6 +107,8 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform()
+    // The pinned fish-contracts submodule (golden cross-service fixtures); no default, a missing setting must fail loudly.
+    systemProperty("contracts.dir", "$projectDir/contracts")
 }
 
 // Ktor's `buildFatJar` task depends on this `shadowJar` task (the
