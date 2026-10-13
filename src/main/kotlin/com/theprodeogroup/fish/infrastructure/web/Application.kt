@@ -21,6 +21,7 @@ import com.theprodeogroup.fish.application.ComputePayrollPostingContextUseCase
 import com.theprodeogroup.fish.application.ComputePurchasePostingContextUseCase
 import com.theprodeogroup.fish.application.ComputeAccountsPayableAgingUseCase
 import com.theprodeogroup.fish.application.ComputeAccountsReceivableAgingUseCase
+import com.theprodeogroup.fish.application.ComputeOpenPeriodUseCase
 import com.theprodeogroup.fish.application.ComputeReceivablesPayablesSummaryUseCase
 import com.theprodeogroup.fish.application.ComputeCustomerBalancesUseCase
 import com.theprodeogroup.fish.application.ComputeSupplierBalancesUseCase
@@ -528,6 +529,8 @@ fun Application.fishModule(
             "$status ${call.request.httpMethod.value} ${call.request.path()}"
         }
     }
+    // One structured line per request with the duration and the result class (alongside the access line above).
+    installRequestLine()
     // fish-gl-web (a browser-based PWA) calls this API cross-origin -
     // discovered missing 2026-08-26 testing the first real deploy
     // against the new frontend, which every browser would otherwise
@@ -627,6 +630,7 @@ fun Application.fishModule(
                 accountsPayableAgingRoutes(
                     ComputeAccountsPayableAgingUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository
                 )
+                openPeriodRoutes(ComputeOpenPeriodUseCase(companyRepository, periodRepository), companyRepository)
                 receivablesPayablesSummaryRoutes(
                     ComputeReceivablesPayablesSummaryUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository
                 )

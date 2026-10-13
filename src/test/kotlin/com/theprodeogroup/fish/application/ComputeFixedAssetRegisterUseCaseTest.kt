@@ -56,12 +56,16 @@ class ComputeFixedAssetRegisterUseCaseTest {
     }
 
     @Test
-    fun `given a Company with no Fixed Asset Register entries, when executed, then it returns NoFixedAssetsForCompany`() {
+    fun `given a Company with no Fixed Asset Register entries, when executed, then it is an empty register in the Company's currency, not an error`() {
         val company = company()
 
-        val result = useCase.execute(company.id)
+        val success = useCase.execute(company.id).shouldBeInstanceOf<ComputeFixedAssetRegisterUseCase.Result.Success>()
 
-        result.shouldBeInstanceOf<ComputeFixedAssetRegisterUseCase.Result.NoFixedAssetsForCompany>()
+        success.register.lines shouldBe emptyList()
+        success.register.currency shouldBe GBP
+        success.register.totalCost shouldBe Money(BigDecimal.ZERO, GBP)
+        success.register.totalNetBookValue shouldBe Money(BigDecimal.ZERO, GBP)
+        success.register.totalCarryingAmount shouldBe Money(BigDecimal.ZERO, GBP)
     }
 
     @Test

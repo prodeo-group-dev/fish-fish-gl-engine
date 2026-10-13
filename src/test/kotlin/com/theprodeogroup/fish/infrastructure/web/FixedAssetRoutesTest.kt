@@ -1,5 +1,8 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import io.ktor.client.request.request
+import com.theprodeogroup.fish.domain.tenancy.AccessLevel
+import io.ktor.client.statement.bodyAsText
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.AssessFixedAssetImpairmentUseCase
 import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
@@ -363,5 +366,93 @@ class FixedAssetRoutesTest {
         val register: FixedAssetRegisterResponseDto = registerResponse.body()
         register.lines.single().isDisposed shouldBe true
         register.totalCost shouldBe "0.00"
+    }
+
+    @Test
+    fun `given a Company with no assets, when the register is read, then it is an empty 200 with these exact fields`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/reports/fixed-asset-register") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        response.bodyAsText() shouldBe """{"currency":"GBP","lines":[],"totalCost":"0.00","totalAccumulatedDepreciation":"0.00","totalAccumulatedImpairmentLoss":"0.00","totalNetBookValue":"0.00","totalCarryingAmount":"0.00"}"""
+    }
+
+    // ---- GET open-period (the Period id the asset create needs) ----
+
+    private fun openPeriodPath(companyId: String) = "/api/companies/$companyId/open-period"
+
+    private suspend fun io.ktor.client.HttpClient.openPeriodStatus(path: String, email: String?, tenant: TenantId): HttpStatusCode =
+        request(path) {
+            if (email != null) header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(email)}")
+            header("X-Tenant-Id", tenant.value.toString())
+        }.status
+
+    @Test
+    fun `given an open Period, when open-period is read, then it is exactly periodId, startDate, endDate and status`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get(openPeriodPath(fixture.company.id.value.toString())) {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        response.bodyAsText() shouldBe """{"periodId":"${fixture.period.id.value}","startDate":"${fixture.period.startDate}","endDate":"${fixture.period.endDate}","status":"OPEN"}"""
+    }
+
+    @Test
+    fun `given the only Period is closed, when open-period is read, then it is 409 no_open_period`() = testApplication {
+        val fixture = Fixture()
+        fixture.period.close()
+        fixture.periodRepository.save(fixture.period)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get(openPeriodPath(fixture.company.id.value.toString())) {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.Conflict
+        response.body<ErrorResponseDto>().error shouldBe "no_open_period"
+    }
+
+    @Test
+    fun `open-period needs only READ, refuses no token and no membership, and never shows another Company's Period`() = testApplication {
+        val a = Fixture()
+        val b = Fixture()
+        val reader = User.create("fa-op-reader@example.com", "Reader").also { a.userRepository.save(it) }
+        a.membershipRepository.save(Membership.grant(reader.id, a.tenantId, Role.ACCOUNTANT, a.company.id, accessLevel = AccessLevel.READ))
+        val stranger = User.create("fa-op-stranger@example.com", "Stranger").also { a.userRepository.save(it) }
+        // B's Company and Period live in A's repositories, with B's own member.
+        a.companyRepository.save(b.company); a.periodRepository.save(b.period)
+        application { a.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val aPath = openPeriodPath(a.company.id.value.toString())
+        val bPath = openPeriodPath(b.company.id.value.toString())
+
+        client.openPeriodStatus(aPath, "fa-op-reader@example.com", a.tenantId) shouldBe HttpStatusCode.OK
+        client.openPeriodStatus(aPath, null, a.tenantId) shouldBe HttpStatusCode.Unauthorized
+        val noMembership = client.openPeriodStatus(aPath, stranger.email, a.tenantId)
+        (noMembership == HttpStatusCode.Forbidden || noMembership == HttpStatusCode.Unauthorized) shouldBe true
+        // A's writer asking for B's Company, with either Tenant header: refused, and B's Period id is never in the answer.
+        for (tenant in listOf(a.tenantId, b.tenantId)) {
+            val response = client.request(bPath) {
+                header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+                header("X-Tenant-Id", tenant.value.toString())
+            }
+            response.status shouldBe HttpStatusCode.Forbidden
+            response.bodyAsText().contains(b.period.id.value.toString()) shouldBe false
+        }
+        // Unknown Company.
+        client.openPeriodStatus(openPeriodPath(java.util.UUID.randomUUID().toString()), TEST_EMAIL, a.tenantId) shouldBe HttpStatusCode.NotFound
     }
 }

@@ -628,7 +628,7 @@ class TenantIsolationMatrixRouteTest {
         "GET /companies/{companyId}/reports/trial-balance", "GET /companies/{companyId}/reports/trading-profit-and-loss",
         "GET /companies/{companyId}/reports/fixed-asset-register",
         "POST /companies/{companyId}/accounts-payable-aging", "POST /companies/{companyId}/accounts-receivable-aging",
-        "GET /companies/{companyId}/receivables-payables-summary",
+        "GET /companies/{companyId}/receivables-payables-summary", "GET /companies/{companyId}/open-period",
         "POST /companies/{companyId}/supplier-balances",
         "GET /companies/{companyId}/tax", "POST /companies/{companyId}/tax", "POST /companies/{companyId}/vat-return",
         "GET /companies/{companyId}/bank-reconciliations", "POST /companies/{companyId}/bank-reconciliations",

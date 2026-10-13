@@ -1062,6 +1062,10 @@ data class CashBalanceSeriesResponseDto(
     val points: List<CashBalancePointDto>
 )
 
+/** `GET /companies/{id}/open-period`: the Period a caller may post into. */
+@Serializable
+data class OpenPeriodResponseDto(val periodId: String, val startDate: String, val endDate: String, val status: String)
+
 /** One side of the receivables and payables summary: everything unpaid, and the part older than 30 days. */
 @Serializable
 data class ReceivablesPayablesSideDto(val total: String, val overdueTotal: String, val overdueCount: Int)

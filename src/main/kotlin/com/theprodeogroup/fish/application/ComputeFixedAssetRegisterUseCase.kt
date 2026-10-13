@@ -13,9 +13,11 @@ import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
  * built alongside [CreateFixedAssetUseCase]/[RecordFixedAssetDepreciationUseCase]/
  * [AssessFixedAssetImpairmentUseCase]/[DisposeFixedAssetUseCase] as the
  * first end-to-end wiring of `FixedAsset` (domain-only since 2026-08-12).
- * `NoFixedAssetsForCompany` mirrors `ComputeBalanceSheetUseCase.Result.NoAccountsForCompany` -
- * an empty register is a distinct, callable-out state, not folded into
- * an empty-list `Success`.
+ * A Company with no assets is an **empty register**, not an error
+ * (2026-10-13, found by the Fixed Assets test: it used to answer 409
+ * `no_fixed_assets`, which treated a normal state as a failure and broke
+ * the screen): `Success` with no lines and zero totals, in the Company's
+ * own currency.
  */
 class ComputeFixedAssetRegisterUseCase(
     private val companyRepository: CompanyRepository,
@@ -24,14 +26,12 @@ class ComputeFixedAssetRegisterUseCase(
     sealed class Result {
         data class Success(val register: FixedAssetRegister) : Result()
         data object CompanyNotFound : Result()
-        data object NoFixedAssetsForCompany : Result()
     }
 
     fun execute(companyId: CompanyId): Result {
         val company = companyRepository.findById(companyId) ?: return Result.CompanyNotFound
 
         val assets = fixedAssetRepository.findAllByCompany(companyId)
-        if (assets.isEmpty()) return Result.NoFixedAssetsForCompany
 
         return Result.Success(FixedAssetRegister.of(assets, company.baseCurrency))
     }
