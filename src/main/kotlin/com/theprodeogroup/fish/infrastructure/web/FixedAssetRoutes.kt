@@ -118,8 +118,6 @@ fun Route.fixedAssetRoutes(
             }
             ComputeFixedAssetRegisterUseCase.Result.CompanyNotFound ->
                 call.respond(HttpStatusCode.NotFound, ErrorResponseDto("company_not_found", "Company not found"))
-            ComputeFixedAssetRegisterUseCase.Result.NoFixedAssetsForCompany ->
-                call.respond(HttpStatusCode.Conflict, ErrorResponseDto("no_fixed_assets", "This Company has no Fixed Asset Register entries"))
         }
     }
 

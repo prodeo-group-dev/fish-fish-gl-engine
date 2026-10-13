@@ -1,5 +1,6 @@
 package com.theprodeogroup.fish.infrastructure.web
 
+import io.ktor.client.statement.bodyAsText
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.AssessFixedAssetImpairmentUseCase
 import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
@@ -363,5 +364,20 @@ class FixedAssetRoutesTest {
         val register: FixedAssetRegisterResponseDto = registerResponse.body()
         register.lines.single().isDisposed shouldBe true
         register.totalCost shouldBe "0.00"
+    }
+
+    @Test
+    fun `given a Company with no assets, when the register is read, then it is an empty 200 with these exact fields`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/reports/fixed-asset-register") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        response.bodyAsText() shouldBe """{"currency":"GBP","lines":[],"totalCost":"0.00","totalAccumulatedDepreciation":"0.00","totalAccumulatedImpairmentLoss":"0.00","totalNetBookValue":"0.00","totalCarryingAmount":"0.00"}"""
     }
 }
