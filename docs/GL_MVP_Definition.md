@@ -3,7 +3,7 @@
 **Status: refreshed 2026-10-13** (first pass 2026-10-02), per the platform-wide
 instruction (via CM) to determine the smallest real, working slice of each
 service's domain that could actually go live, not full backlog completion.
-Checked directly against the code on `master` `ccddf1b` (live as GL :126),
+Checked directly against the code on `master` `54ff75c` (live as GL :128),
 the declared routes and the migrations through V35, not from memory or from
 the backlog's own framing. Same shape as `HR/docs/HR_MVP_Definition.md`: the
 floor, then what a Company can route around, then real pre-go-live flags
@@ -40,7 +40,7 @@ What a Company can do on GL **today, over the API and the screens that call it**
 - **Financial statements.** Balance sheet, profit and loss (date range supported), cash flow (date range supported), trial balance, trading profit and loss, working capital, fixed-asset register, all derived from posted entries.
 - **VAT** for the United Kingdom and Ireland: category per line, rate as of the transaction date, the VAT control account, the return, the category breakdown.
 - **Integration postings** from SOP, POP, IM and HR (sale, collection, sales return, supplier obligation and payment, inventory receipt and issue, pay run, leave accruals), each with Idempotency-Key support, behind the service allow-list.
-- **Dashboard reads** (live :126): `cash-balance-series` and `receivables-payables-summary`, plus money velocity, expense velocity and sales-to-expense ratio.
+- **Dashboard reads** (live :128): `cash-balance-series` and `receivables-payables-summary`, plus money velocity, expense velocity and sales-to-expense ratio; `GET /companies/{id}/open-period` (the Period a caller may post into, so a screen can name a `periodId`); an empty Fixed Asset Register is an empty 200, not an error.
 - **Multi-tenancy and authorization.** Tenant resolved from the Company, `X-Tenant-Id` verified, access checked against EA (`/me`, fail-closed 503), per-Company read or write level, strict decoding.
 
 ## The floor is not fully met (said plainly)
@@ -87,4 +87,4 @@ Nothing here changes `docs/GL_POP_IM_SOP_Backlog.md`'s priorities. It changes th
 
 ## Not addressed here
 
-Jurisdiction-specific go-live criteria are their own documents (`docs/IE/IE_MVP_Definition.md`, `docs/IE/IE_VAT_MVP_Design.md`, `docs/UK/NI_Jurisdiction_Specification.md`). SOP, POP, IM, HR and EA each answer this question for their own domain in their own repo. The operator sheet (`docs/GL_Playbook_Draft.md`) is the support-facing view of the same facts.
+Jurisdiction-specific go-live criteria are their own documents (`docs/IE/IE_MVP_Definition.md`, `docs/IE/IE_VAT_MVP_Design.md`, `docs/UK/NI_Jurisdiction_Specification.md`). SOP, POP, IM, HR and EA each answer this question for their own domain in their own repo. The operator sheet (`docs/GL_Playbook_Draft.md`) is the support-facing view of the same facts. Every request now writes one structured log line (route template, status, result class, `durationMs`, Company id; GL :128), which is how server time is told from client time.
