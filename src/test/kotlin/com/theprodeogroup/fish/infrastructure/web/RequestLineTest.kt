@@ -49,6 +49,7 @@ class RequestLineTest {
             get("/api/people/{email}/probe") { call.respondText("ok") }
             get("/api/refused") { call.respond(HttpStatusCode.Forbidden) }
             get("/api/fails") { call.respond(HttpStatusCode.InternalServerError) }
+            get("/api/slow") { kotlinx.coroutines.delay(120); call.respondText("ok") }
         }
     }
 
@@ -125,5 +126,16 @@ class RequestLineTest {
         resultClass(404) shouldBe "4xx"
         resultClass(503) shouldBe "5xx"
         resultClass(0) shouldBe "unknown"
+    }
+
+    @Test
+    fun `the duration is the real time the request took`() = testApplication {
+        application { probe() }
+
+        client.get("/api/slow")
+
+        val ms = lines().single().mdcPropertyMap["durationMs"]!!.toLong()
+        (ms >= 100) shouldBe true
+        (ms < 5_000) shouldBe true
     }
 }
