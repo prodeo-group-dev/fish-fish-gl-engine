@@ -3,6 +3,7 @@ package com.theprodeogroup.fish.infrastructure.web
 import io.ktor.client.request.request
 import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import io.ktor.client.statement.bodyAsText
+import io.kotest.assertions.withClue
 import com.theprodeogroup.fish.application.AddCompanyToTenantUseCase
 import com.theprodeogroup.fish.application.AssessFixedAssetImpairmentUseCase
 import com.theprodeogroup.fish.application.ComputeBalanceSheetUseCase
@@ -454,5 +455,200 @@ class FixedAssetRoutesTest {
         }
         // Unknown Company.
         client.openPeriodStatus(openPeriodPath(java.util.UUID.randomUUID().toString()), TEST_EMAIL, a.tenantId) shouldBe HttpStatusCode.NotFound
+    }
+
+    // ---- FS-14 (Fixed Assets Security Playbook): role and Company negative tests for the six Fixed Asset routes ----
+
+    private fun createBody(fixture: Fixture, companyId: String = fixture.company.id.value.toString(), periodId: String = fixture.period.id.value.toString()) =
+        """{"companyId": "$companyId", "name": "Delivery Van", "category": "VEHICLES",
+            |"cost": "10000.00", "currency": "GBP", "acquisitionDate": "$TODAY", "usefulLifeYears": 5,
+            |"periodId": "$periodId", "fixedAssetAccountId": "${fixture.fixedAssetAccount.id.value}",
+            |"fundingMethod": "CASH", "cashAccountId": "${fixture.cashAccount.id.value}"}""".trimMargin()
+
+    private fun depreciationBody(fixture: Fixture, periodId: String = fixture.period.id.value.toString()) =
+        """{"depreciationExpenseAccountId": "${fixture.depreciationExpenseAccount.id.value}",
+            |"accumulatedDepreciationAccountId": "${fixture.accumulatedDepreciationAccount.id.value}",
+            |"periodId": "$periodId", "date": "$TODAY"}""".trimMargin()
+
+    private fun impairmentBody(fixture: Fixture, periodId: String = fixture.period.id.value.toString()) =
+        """{"recoverableAmount": "1000.00", "currency": "GBP",
+            |"impairmentExpenseAccountId": "${fixture.depreciationExpenseAccount.id.value}",
+            |"accumulatedImpairmentAccountId": "${fixture.accumulatedDepreciationAccount.id.value}",
+            |"periodId": "$periodId", "date": "$TODAY"}""".trimMargin()
+
+    private fun disposeBody(fixture: Fixture, periodId: String = fixture.period.id.value.toString()) =
+        """{"proceeds": "6000.00", "currency": "GBP", "cashAccountId": "${fixture.cashAccount.id.value}",
+            |"fixedAssetAccountId": "${fixture.fixedAssetAccount.id.value}",
+            |"accumulatedDepreciationAccountId": "${fixture.accumulatedDepreciationAccount.id.value}",
+            |"saleOfFixedAssetAccountId": "${fixture.saleOfFixedAssetAccount.id.value}",
+            |"periodId": "$periodId", "date": "$TODAY"}""".trimMargin()
+
+    private suspend fun io.ktor.client.HttpClient.call(
+        method: io.ktor.http.HttpMethod, path: String, email: String?, tenant: TenantId, body: String? = null
+    ): HttpStatusCode =
+        request(path) {
+            this.method = method
+            if (email != null) header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(email)}")
+            header("X-Tenant-Id", tenant.value.toString())
+            if (body != null) { contentType(ContentType.Application.Json); setBody(body) }
+        }.status
+
+    private suspend fun io.ktor.client.HttpClient.createAsset(fixture: Fixture, email: String = TEST_EMAIL): String {
+        val response = post("/api/fixed-assets") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(email)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(createBody(fixture))
+        }
+        response.status shouldBe HttpStatusCode.OK
+        return response.body<FixedAssetPostingResponseDto>().fixedAsset.id
+    }
+
+    /** The four mutation routes, and the two reads, as (name, method, path, body) for one asset in one Company. */
+    private fun routes(fixture: Fixture, assetId: String, periodId: String = fixture.period.id.value.toString(), companyId: String = fixture.company.id.value.toString()) = listOf(
+        listOf("create", io.ktor.http.HttpMethod.Post, "/api/fixed-assets", createBody(fixture, companyId, periodId)),
+        listOf("depreciate", io.ktor.http.HttpMethod.Post, "/api/fixed-assets/$assetId/record-depreciation", depreciationBody(fixture, periodId)),
+        listOf("impair", io.ktor.http.HttpMethod.Post, "/api/fixed-assets/$assetId/assess-impairment", impairmentBody(fixture, periodId)),
+        listOf("dispose", io.ktor.http.HttpMethod.Post, "/api/fixed-assets/$assetId/dispose", disposeBody(fixture, periodId))
+    )
+
+    @Test
+    fun `FS-14 a read-only member is refused on every Fixed Asset write, nothing is posted, and the reads still work`() = testApplication {
+        val fixture = Fixture()
+        val reader = User.create("fa-reader@example.com", "Reader").also { fixture.userRepository.save(it) }
+        fixture.membershipRepository.save(Membership.grant(reader.id, fixture.tenantId, Role.ACCOUNTANT, fixture.company.id, accessLevel = AccessLevel.READ))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val assetId = client.createAsset(fixture)
+        val entriesBefore = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).size
+        val registerBefore = fixture.fixedAssetRepository.findAllByCompany(fixture.company.id).single()
+
+        for (route in routes(fixture, assetId)) {
+            withClue("a READ member on ${route[0]}") {
+                client.call(route[1] as io.ktor.http.HttpMethod, route[2] as String, "fa-reader@example.com", fixture.tenantId, route[3] as String) shouldBe HttpStatusCode.Forbidden
+            }
+        }
+        fixture.journalEntryRepository.findAllByCompany(fixture.company.id).size shouldBe entriesBefore
+        val after = fixture.fixedAssetRepository.findAllByCompany(fixture.company.id).single()
+        after.netBookValue shouldBe registerBefore.netBookValue
+        after.isDisposed shouldBe false
+
+        client.call(io.ktor.http.HttpMethod.Get, "/api/companies/${fixture.company.id.value}/fixed-assets", "fa-reader@example.com", fixture.tenantId) shouldBe HttpStatusCode.OK
+        client.call(io.ktor.http.HttpMethod.Get, "/api/companies/${fixture.company.id.value}/reports/fixed-asset-register", "fa-reader@example.com", fixture.tenantId) shouldBe HttpStatusCode.OK
+    }
+
+    @Test
+    fun `FS-14 a caller with no membership at the Company is refused on all six Fixed Asset routes, and with no token on all six`() = testApplication {
+        val fixture = Fixture()
+        val stranger = User.create("fa-stranger@example.com", "Stranger").also { fixture.userRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val assetId = client.createAsset(fixture)
+        val entriesBefore = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).size
+        val reads = listOf(
+            "/api/companies/${fixture.company.id.value}/fixed-assets",
+            "/api/companies/${fixture.company.id.value}/reports/fixed-asset-register"
+        )
+
+        for (route in routes(fixture, assetId)) {
+            val status = client.call(route[1] as io.ktor.http.HttpMethod, route[2] as String, stranger.email, fixture.tenantId, route[3] as String)
+            withClue("no membership on ${route[0]} was ${status.value}") { (status == HttpStatusCode.Forbidden || status == HttpStatusCode.Unauthorized) shouldBe true }
+            withClue("no token on ${route[0]}") {
+                client.call(route[1] as io.ktor.http.HttpMethod, route[2] as String, null, fixture.tenantId, route[3] as String) shouldBe HttpStatusCode.Unauthorized
+            }
+        }
+        for (read in reads) {
+            val status = client.call(io.ktor.http.HttpMethod.Get, read, stranger.email, fixture.tenantId)
+            withClue("no membership on $read was ${status.value}") { (status == HttpStatusCode.Forbidden || status == HttpStatusCode.Unauthorized) shouldBe true }
+            client.call(io.ktor.http.HttpMethod.Get, read, null, fixture.tenantId) shouldBe HttpStatusCode.Unauthorized
+        }
+        fixture.journalEntryRepository.findAllByCompany(fixture.company.id).size shouldBe entriesBefore
+    }
+
+    @Test
+    fun `FS-14 a writer at one Company cannot reach another Company's assets, Period or books, and nothing is posted there`() = testApplication {
+        val a = Fixture()
+        val b = Fixture()
+        // Two separate Companies, two Tenants, two writers; A's caller is TEST_EMAIL, B's has another email.
+        val bWriter = User.create("fa-b-writer@example.com", "B writer").also { a.userRepository.save(it); b.userRepository.save(it) }
+        // Put both worlds in one application: B's Company, Period, accounts and asset live in A's repositories.
+        a.companyRepository.save(b.company); a.periodRepository.save(b.period)
+        listOf(b.cashAccount, b.fixedAssetAccount, b.accumulatedDepreciationAccount, b.depreciationExpenseAccount, b.saleOfFixedAssetAccount, b.suspenseAccount)
+            .forEach { a.accountRepository.save(it) }
+        a.membershipRepository.save(Membership.grant(bWriter.id, b.tenantId, Role.ACCOUNTANT, b.company.id))
+        application { a.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val assetA = client.createAsset(a)
+        val assetB = client.run {
+            val response = post("/api/fixed-assets") {
+                header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken("fa-b-writer@example.com")}")
+                header("X-Tenant-Id", b.tenantId.value.toString())
+                contentType(ContentType.Application.Json)
+                setBody(createBody(b))
+            }
+            response.status shouldBe HttpStatusCode.OK
+            response.body<FixedAssetPostingResponseDto>().fixedAsset.id
+        }
+        val entriesB = a.journalEntryRepository.findAllByCompany(b.company.id).size
+        val entriesA = a.journalEntryRepository.findAllByCompany(a.company.id).size
+        val refused = setOf(HttpStatusCode.Forbidden, HttpStatusCode.NotFound)
+
+        // A's writer, with A's tenant header, naming B's Company, B's Period or B's asset: refused every way round.
+        withClue("create at B's Company") {
+            client.call(io.ktor.http.HttpMethod.Post, "/api/fixed-assets", TEST_EMAIL, a.tenantId, createBody(a, b.company.id.value.toString(), b.period.id.value.toString())) shouldBe HttpStatusCode.Forbidden
+        }
+        withClue("create at A's Company with B's Period") {
+            (client.call(io.ktor.http.HttpMethod.Post, "/api/fixed-assets", TEST_EMAIL, a.tenantId, createBody(a, a.company.id.value.toString(), b.period.id.value.toString())) in refused) shouldBe true
+        }
+        for ((name, path, body) in listOf(
+            Triple("depreciate", "record-depreciation", ::depreciationBody),
+            Triple("impair", "assess-impairment", ::impairmentBody),
+            Triple("dispose", "dispose", ::disposeBody)
+        )) {
+            withClue("$name B's asset with B's Period, as A's writer, A's header") {
+                client.call(io.ktor.http.HttpMethod.Post, "/api/fixed-assets/$assetB/$path", TEST_EMAIL, a.tenantId, body(a, b.period.id.value.toString())) shouldBe HttpStatusCode.Forbidden
+            }
+            withClue("$name B's asset with B's Period, as A's writer, B's header") {
+                client.call(io.ktor.http.HttpMethod.Post, "/api/fixed-assets/$assetB/$path", TEST_EMAIL, b.tenantId, body(a, b.period.id.value.toString())) shouldBe HttpStatusCode.Forbidden
+            }
+            // The F-FA1 shape, with B's own accounts so the account check cannot be what stops it: authorized at A,
+            // A's Period, B's asset. Only the Period-belongs-to-the-asset's-Company check refuses this.
+            withClue("$name B's asset with A's Period and B's accounts (the F-FA1 shape)") {
+                client.call(io.ktor.http.HttpMethod.Post, "/api/fixed-assets/$assetB/$path", TEST_EMAIL, a.tenantId, body(b, a.period.id.value.toString())) shouldBe HttpStatusCode.NotFound
+            }
+            withClue("$name B's asset with A's Period and A's accounts") {
+                client.call(io.ktor.http.HttpMethod.Post, "/api/fixed-assets/$assetB/$path", TEST_EMAIL, a.tenantId, body(a, a.period.id.value.toString())) shouldBe HttpStatusCode.NotFound
+            }
+            withClue("$name A's asset with B's Period") {
+                (client.call(io.ktor.http.HttpMethod.Post, "/api/fixed-assets/$assetA/$path", TEST_EMAIL, a.tenantId, body(a, b.period.id.value.toString())) in refused) shouldBe true
+            }
+        }
+        withClue("reads of B's Company as A's writer") {
+            client.call(io.ktor.http.HttpMethod.Get, "/api/companies/${b.company.id.value}/fixed-assets", TEST_EMAIL, a.tenantId) shouldBe HttpStatusCode.Forbidden
+            client.call(io.ktor.http.HttpMethod.Get, "/api/companies/${b.company.id.value}/fixed-assets", TEST_EMAIL, b.tenantId) shouldBe HttpStatusCode.Forbidden
+            client.call(io.ktor.http.HttpMethod.Get, "/api/companies/${b.company.id.value}/reports/fixed-asset-register", TEST_EMAIL, b.tenantId) shouldBe HttpStatusCode.Forbidden
+        }
+        a.journalEntryRepository.findAllByCompany(b.company.id).size shouldBe entriesB
+        a.journalEntryRepository.findAllByCompany(a.company.id).size shouldBe entriesA
+        a.fixedAssetRepository.findById(com.theprodeogroup.fish.domain.fixedassets.FixedAssetId(java.util.UUID.fromString(assetB)))!!.isDisposed shouldBe false
+    }
+
+    @Test
+    fun `FS-14 positive control - a write member does all four Fixed Asset writes on their own assets`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val sold = client.createAsset(fixture)
+        val impaired = client.createAsset(fixture)
+
+        client.call(io.ktor.http.HttpMethod.Post, "/api/fixed-assets/$sold/record-depreciation", TEST_EMAIL, fixture.tenantId, depreciationBody(fixture)) shouldBe HttpStatusCode.OK
+        client.call(io.ktor.http.HttpMethod.Post, "/api/fixed-assets/$sold/dispose", TEST_EMAIL, fixture.tenantId, disposeBody(fixture)) shouldBe HttpStatusCode.OK
+        val impair = client.post("/api/fixed-assets/$impaired/assess-impairment") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(impairmentBody(fixture))
+        }
+        withClue("impairment answered ${impair.status.value}: ${impair.bodyAsText()}") { impair.status shouldBe HttpStatusCode.OK }
     }
 }
