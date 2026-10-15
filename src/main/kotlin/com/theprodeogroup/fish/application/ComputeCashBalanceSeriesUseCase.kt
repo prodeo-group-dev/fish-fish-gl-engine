@@ -16,7 +16,9 @@ import java.time.LocalDate
 class ComputeCashBalanceSeriesUseCase(
     private val companyRepository: CompanyRepository,
     private val accountRepository: AccountRepository,
-    private val journalEntryRepository: JournalEntryRepository
+    private val journalEntryRepository: JournalEntryRepository,
+    /** The source of "today"; a test (the contract fixtures) fixes it so a response with dates is reproducible. */
+    private val clock: java.time.Clock = java.time.Clock.systemUTC()
 ) {
     sealed class Result {
         data class Success(val series: CashBalanceSeries) : Result()
@@ -24,7 +26,7 @@ class ComputeCashBalanceSeriesUseCase(
         data object InvalidDays : Result()
     }
 
-    fun execute(companyId: CompanyId, days: Int, today: LocalDate = LocalDate.now(java.time.ZoneOffset.UTC)): Result {
+    fun execute(companyId: CompanyId, days: Int, today: LocalDate = LocalDate.now(clock)): Result {
         if (days !in CashBalanceSeries.MIN_DAYS..CashBalanceSeries.MAX_DAYS) return Result.InvalidDays
         val company = companyRepository.findById(companyId) ?: return Result.CompanyNotFound
 

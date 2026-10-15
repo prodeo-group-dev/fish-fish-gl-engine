@@ -1,3 +1,6 @@
 [submodule "common"]
 	path = common
 	url = https://github.com/prodeo-group-dev/fish-common.git
+[submodule "contracts"]
+	path = contracts
+	url = https://github.com/prodeo-group-dev/fish-contracts.git
