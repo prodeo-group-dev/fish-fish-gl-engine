@@ -6,6 +6,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AgingBucketAmount
 import com.theprodeogroup.fish.domain.ledger.AgingBucketLabel
 import com.theprodeogroup.fish.domain.ledger.UnpaidItem
+import com.theprodeogroup.fish.domain.ledger.fifoUnpaidItems
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.hasHistoricalEffect
@@ -41,6 +42,30 @@ class AccountsPayableAging private constructor(
         get() = buckets.fold(Money(BigDecimal.ZERO, currency)) { sum, bucket -> sum + bucket.amount }
 
     companion object {
+        /**
+         * The unpaid payables on the control account that belong to NO known supplier: lines with no supplier tag (an
+         * inventory receipt credits Accounts Payable without one), or a tag [isKnownSupplierTag] does not recognise. One
+         * anonymous party, first in first out among themselves, aged by their own dates, so a dashboard total can agree
+         * with the ledger's Accounts Payable balance.
+         */
+        fun unattributedUnpaidItems(
+            apControlAccountId: AccountId,
+            postedEntries: List<JournalEntry>,
+            asOfDate: LocalDate,
+            currency: Currency,
+            isKnownSupplierTag: (String) -> Boolean
+        ): List<UnpaidItem> {
+            val zero = Money(BigDecimal.ZERO, currency)
+            val lines = postedEntries.filter { it.status.hasHistoricalEffect() }
+                .flatMap { entry -> entry.lines.map { entry.date to it } }
+                .filter { (_, line) ->
+                    line.accountId == apControlAccountId && line.dimensions[DimensionType.VENDOR].let { it == null || !isKnownSupplierTag(it) }
+                }
+            val charges = lines.filter { (_, line) -> line.side == TransactionSide.CREDIT }.map { (date, line) -> date to line.amount }
+            val payments = lines.filter { (_, line) -> line.side == TransactionSide.DEBIT }.fold(zero) { sum, (_, line) -> sum + line.amount }
+            return fifoUnpaidItems(charges, payments, asOfDate, currency)
+        }
+
         fun of(
             supplierId: SupplierId,
             apControlAccountId: AccountId,

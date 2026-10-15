@@ -130,4 +130,38 @@ class ReceivablesPayablesSummaryTest {
         summary.currency shouldBe gbp
         summary.asOf shouldBe asOf
     }
+
+    @Test
+    fun `receivables with no customer tag form their own allocation and leave tagged ones out`() {
+        val tagged = sale(5, "40.00") // tagged to the customer
+        val untaggedSale = entry(asOf.minusDays(50), JournalLine(ar, money("70.00"), TransactionSide.DEBIT), JournalLine(other, money("70.00"), TransactionSide.CREDIT))
+        val untaggedReceipt = entry(asOf.minusDays(2), JournalLine(other, money("20.00"), TransactionSide.DEBIT), JournalLine(ar, money("20.00"), TransactionSide.CREDIT))
+
+        val items = AccountsReceivableAging.unattributedUnpaidItems(ar, listOf(tagged, untaggedSale, untaggedReceipt), asOf, gbp) { true } // every tag is a known customer
+
+        items.map { it.amount } shouldBe listOf(money("50.00"))
+        items.single().bucket shouldBe AgingBucketLabel.DAYS_31_TO_60
+    }
+
+    @Test
+    fun `a tag that belongs to a known party is not unattributed, and one that does not is`() {
+        val known = sale(5, "40.00")                                       // tagged to `customer`
+        val stranger = entry(asOf.minusDays(3), JournalLine(ar, money("9.00"), TransactionSide.DEBIT, mapOf(DimensionType.CUSTOMER to "someone-else")), JournalLine(other, money("9.00"), TransactionSide.CREDIT))
+
+        val items = AccountsReceivableAging.unattributedUnpaidItems(ar, listOf(known, stranger), asOf, gbp) { it == customer.value.toString() }
+
+        items.map { it.amount } shouldBe listOf(money("9.00"))
+    }
+
+    @Test
+    fun `payables with no supplier tag form their own allocation`() {
+        val untaggedCharge = entry(asOf.minusDays(45), JournalLine(other, money("500.00"), TransactionSide.DEBIT), JournalLine(ap, money("500.00"), TransactionSide.CREDIT))
+        val untaggedPayment = entry(asOf.minusDays(1), JournalLine(ap, money("200.00"), TransactionSide.DEBIT), JournalLine(other, money("200.00"), TransactionSide.CREDIT))
+        val tagged = purchase(3, "80.00")
+
+        val items = AccountsPayableAging.unattributedUnpaidItems(ap, listOf(untaggedCharge, untaggedPayment, tagged), asOf, gbp) { true } // every tag is a known supplier
+
+        items.map { it.amount } shouldBe listOf(money("300.00"))
+        items.single().bucket shouldBe AgingBucketLabel.DAYS_31_TO_60
+    }
 }
