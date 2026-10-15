@@ -62,7 +62,7 @@ class ChartOfAccountsTemplateTest {
         accounts.filter { it.type == AccountType.EQUITY }.map { it.name } shouldContainExactlyInAnyOrder
             listOf("Unrestricted Net Assets", "Restricted Net Assets", "Opening Balance Equity", "Suspense Account")
         accounts.filter { it.type == AccountType.REVENUE }.map { it.name } shouldContainExactlyInAnyOrder
-            listOf("Donations Income", "Grants Income")
+            listOf("Donations Income", "Grants Income", "Discounts Received")
     }
 
     @Test
@@ -189,6 +189,27 @@ class ChartOfAccountsTemplateTest {
             vatControlAccount.type shouldBe AccountType.LIABILITY
             vatControlAccount.classification shouldBe AccountClassification.CURRENT
         }
+    }
+
+    @Test
+    fun `given every business ClientType, when a template is requested, then it includes Discounts Received as a revenue account at the documented code`() {
+        for (clientType in ClientType.entries.filter { it != ClientType.INDIVIDUAL }) {
+            val accounts = ChartOfAccountsTemplate.accountsFor(clientType, CompanyId.generate())
+
+            val discountsReceived = accounts.single { it.code == ChartOfAccountsTemplate.DISCOUNTS_RECEIVED_CODE }
+            ChartOfAccountsTemplate.DISCOUNTS_RECEIVED_CODE shouldBe "4920"
+            discountsReceived.name shouldBe "Discounts Received"
+            discountsReceived.type shouldBe AccountType.REVENUE
+            // Sales posting picks the lowest-coded revenue account, which must stay 4000, never 4920.
+            accounts.filter { it.type == AccountType.REVENUE }.minBy { it.code }.code shouldBe "4000"
+        }
+    }
+
+    @Test
+    fun `given INDIVIDUAL, when a template is requested, then it has no Discounts Received account`() {
+        val accounts = ChartOfAccountsTemplate.accountsFor(ClientType.INDIVIDUAL, CompanyId.generate())
+
+        accounts.none { it.code == ChartOfAccountsTemplate.DISCOUNTS_RECEIVED_CODE } shouldBe true
     }
 
     @Test

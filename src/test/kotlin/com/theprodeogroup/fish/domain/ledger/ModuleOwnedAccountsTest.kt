@@ -25,6 +25,15 @@ class ModuleOwnedAccountsTest {
     }
 
     @Test
+    fun `given the Discounts Received account, then a cash book may not post straight to it, and Purchases is named instead`() {
+        useInstead(account(AccountType.REVENUE, "4920")) shouldBe UseInstead.PURCHASE_PAYMENT
+        // Only the revenue account at that code: the same code as another type is not the reserved account.
+        useInstead(account(AccountType.EXPENSE, "4920")) shouldBe null
+        // An Individual's chart has no such account and reserves nothing here.
+        useInstead(account(AccountType.REVENUE, "4920"), ClientType.INDIVIDUAL) shouldBe null
+    }
+
+    @Test
     fun `given the opening-figure accounts, then they point to opening figures for every client type`() {
         for (type in ClientType.entries) {
             useInstead(account(AccountType.EQUITY, "3900"), type) shouldBe UseInstead.OPENING_FIGURES
@@ -61,6 +70,7 @@ class ModuleOwnedAccountsTest {
             reserved["1100"] shouldBe UseInstead.SALES_COLLECTION
             reserved["2000"] shouldBe UseInstead.PURCHASE_PAYMENT
             reserved["2150"] shouldBe UseInstead.VAT
+            reserved["4920"] shouldBe UseInstead.PURCHASE_PAYMENT
         }
     }
 }

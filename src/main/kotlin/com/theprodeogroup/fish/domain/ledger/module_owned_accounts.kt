@@ -64,6 +64,7 @@ object ModuleOwnedAccounts {
             account.type == AccountType.ASSET && account.code == ChartOfAccountsTemplate.INVENTORY_CODE -> UseInstead.INVENTORY
             account.type == AccountType.ASSET && (account.code == FIXED_ASSETS_CODE || account.code == ChartOfAccountsTemplate.ACCUMULATED_DEPRECIATION_CODE) -> UseInstead.FIXED_ASSETS
             account.type == AccountType.LIABILITY && account.code == ChartOfAccountsTemplate.VAT_CONTROL_ACCOUNT_CODE -> UseInstead.VAT
+            account.type == AccountType.REVENUE && account.code == ChartOfAccountsTemplate.DISCOUNTS_RECEIVED_CODE -> UseInstead.PURCHASE_PAYMENT
             else -> null
         }
     }
