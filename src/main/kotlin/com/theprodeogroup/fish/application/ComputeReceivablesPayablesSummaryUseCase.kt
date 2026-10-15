@@ -28,6 +28,11 @@ import java.util.UUID
  * tile read 120 against a ledger balance of 50,220): they form one anonymous party, allocated first in first out among
  * themselves and aged by their own dates, so `total` agrees with the ledger's control balance (gross owed: a customer or
  * supplier in credit is not netted off). The aging routes themselves are unchanged. Read-only.
+ *
+ * **Known limit, accepted by CM 2026-10-15, until GRNI lands:** a tagged payment that exceeds its own supplier's tagged
+ * charges (for example, paying a receipt-origin liability with a payment tagged to the supplier) leaves the anonymous
+ * party's untagged credit unreduced, because tagged lines never allocate against untagged ones. Until then `total` can
+ * exceed the ledger control balance by that amount. This is gross owed by design, not a netting error.
  */
 class ComputeReceivablesPayablesSummaryUseCase(
     private val companyRepository: CompanyRepository,
