@@ -133,4 +133,59 @@ class KtorEaMembershipGatewayTest {
             company.grantedModules shouldBe setOf(ManagedModule.EDUCATION_RUNTIME)
         }
     }
+    private fun profileWithModules(modulesJson: String) = """
+        {
+          "email": "owner@school.test",
+          "name": "Owner",
+          "kycStatus": "VERIFIED",
+          "userId": "51657c7d-743b-4f32-9f00-000000000000",
+          "tenants": [
+            {
+              "tenantId": "9fa2198b-2a6f-467d-97ac-6f6fbce6a9fd",
+              "tenantName": "Test Tenant",
+              "isOwnerAdmin": true,
+              "tenantStatus": "ACTIVE",
+              "kybStatus": "VERIFIED",
+              "adminPhoneNumber": null,
+              "adminPhoneVerificationStatus": "VERIFIED",
+              "phoneVerificationDeadline": null,
+              "companies": [
+                {
+                  "id": "ea2846a5-76f7-4f1f-9a5a-15baff987290",
+                  "name": "Test Co",
+                  "role": null,
+                  "accessLevel": null,
+                  "grantedModules": $modulesJson
+                }
+              ]
+            }
+          ]
+        }
+    """.trimIndent()
+
+    private fun grantedModulesFor(modulesJson: String): Set<ManagedModule> = runBlocking {
+        val gateway = KtorEaMembershipGateway(clientReturning(profileWithModules(modulesJson)), "http://ea.test")
+        gateway.lookupCaller("test-token").shouldBeInstanceOf<EaCallerLookupResult.Success>()
+            .memberships.single().companies.single().grantedModules
+    }
+
+    @Test
+    fun `PAYROLL in a Company's grantedModules maps to GL's own PAYROLL value`() {
+        grantedModulesFor("""["GL", "PAYROLL"]""") shouldBe setOf(ManagedModule.GL, ManagedModule.PAYROLL)
+    }
+
+    @Test
+    fun `a module value GL does not know is dropped, so it grants nothing, and does not throw or hide the known ones`() {
+        grantedModulesFor("""["GL", "SOMETHING_NEW", "TAX"]""") shouldBe setOf(ManagedModule.GL, ManagedModule.TAX)
+    }
+
+    @Test
+    fun `only unknown module values leave the Company with no granted modules, not an error`() {
+        grantedModulesFor("""["SOMETHING_NEW"]""") shouldBe emptySet()
+    }
+
+    @Test
+    fun `module values are matched exactly, so a different case is unknown and grants nothing`() {
+        grantedModulesFor("""["gl", "Tax"]""") shouldBe emptySet()
+    }
 }

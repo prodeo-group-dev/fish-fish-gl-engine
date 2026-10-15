@@ -47,5 +47,6 @@ enum class ManagedModule {
     POP,
     IM,
     TAX,
-    EDUCATION_RUNTIME
+    EDUCATION_RUNTIME,
+    PAYROLL
 }
