@@ -46,7 +46,8 @@ fun Route.purchasePostingContextRoutes(
                     settlementAccountId = result.settlementAccountId.value.toString(),
                     vatControlAccountId = result.vatControlAccountId.value.toString(),
                     currency = result.currency.currencyCode,
-                    facilityLiabilityAccountId = result.facilityLiabilityAccountId?.value?.toString()
+                    facilityLiabilityAccountId = result.facilityLiabilityAccountId?.value?.toString(),
+                    discountsReceivedAccountId = result.discountsReceivedAccountId?.value?.toString()
                 )
             )
             PurchasePostingContextResult.CompanyNotFound ->

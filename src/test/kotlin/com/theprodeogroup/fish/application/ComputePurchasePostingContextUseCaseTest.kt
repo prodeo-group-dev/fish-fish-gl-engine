@@ -60,6 +60,46 @@ class ComputePurchasePostingContextUseCaseTest {
     }
 
     @Test
+    fun `given a Discounts Received revenue account at 4920, when resolved, then its id is returned`() {
+        openPeriod()
+        account("2000", AccountType.LIABILITY)
+        account("5000", AccountType.EXPENSE)
+        account("1000", AccountType.ASSET)
+        account("2150", AccountType.LIABILITY)
+        val discounts = Account.create(company.id, AccountType.REVENUE, null, "4920", "Discounts Received").also { accountRepository.save(it) }
+
+        val success = useCase.execute(company.id).shouldBeInstanceOf<PurchasePostingContextResult.Success>()
+
+        success.discountsReceivedAccountId shouldBe discounts.id
+    }
+
+    @Test
+    fun `given no 4920 account, or one of another type, when resolved, then discountsReceivedAccountId is null and nothing else is refused`() {
+        openPeriod()
+        account("2000", AccountType.LIABILITY)
+        account("5000", AccountType.EXPENSE)
+        account("1000", AccountType.ASSET)
+        account("2150", AccountType.LIABILITY)
+
+        useCase.execute(company.id).shouldBeInstanceOf<PurchasePostingContextResult.Success>().discountsReceivedAccountId shouldBe null
+
+        account("4920", AccountType.EXPENSE)
+        useCase.execute(company.id).shouldBeInstanceOf<PurchasePostingContextResult.Success>().discountsReceivedAccountId shouldBe null
+    }
+
+    @Test
+    fun `given another Company has a 4920 account, when resolved, then it is never returned`() {
+        openPeriod()
+        account("2000", AccountType.LIABILITY)
+        account("5000", AccountType.EXPENSE)
+        account("1000", AccountType.ASSET)
+        account("2150", AccountType.LIABILITY)
+        Account.create(CompanyId.generate(), AccountType.REVENUE, null, "4920", "Another Company").also { accountRepository.save(it) }
+
+        useCase.execute(company.id).shouldBeInstanceOf<PurchasePostingContextResult.Success>().discountsReceivedAccountId shouldBe null
+    }
+
+    @Test
     fun `given no VAT Control Account configured, when resolved, then it returns VatControlAccountNotConfigured`() {
         openPeriod()
         account("2000", AccountType.LIABILITY)
