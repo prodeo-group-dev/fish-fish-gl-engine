@@ -13,6 +13,7 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
+import org.slf4j.LoggerFactory
 import java.util.UUID
 
 /**
@@ -70,6 +71,23 @@ class KtorEaMembershipGateway(
         name = name,
         role = role?.let { Role.valueOf(it) },
         accessLevel = accessLevel?.let { AccessLevel.valueOf(it) },
-        grantedModules = grantedModules.map { ManagedModule.valueOf(it) }.toSet()
+        grantedModules = grantedModules.mapNotNull { knownModuleOrNull(it) }.toSet()
     )
+
+    /**
+     * Fail closed on a module value GL does not know (2026-10-15): it grants nothing and is logged, it never throws.
+     * `valueOf` used to throw here, which 500'd every authorised GL request for the Company the day EA first sent
+     * EDUCATION_RUNTIME (2026-09-29). Only the module *value* is tolerated this way: unknown keys in the payload
+     * still fail loudly (strict decoding is unchanged), and a value is matched exactly, never case-folded.
+     */
+    private fun knownModuleOrNull(value: String): ManagedModule? =
+        ManagedModule.entries.firstOrNull { it.name == value }
+            ?: run {
+                log.warn("EA /me sent a module GL does not know; granting nothing for it: {}", value.take(64))
+                null
+            }
+
+    private companion object {
+        private val log = LoggerFactory.getLogger(KtorEaMembershipGateway::class.java)
+    }
 }

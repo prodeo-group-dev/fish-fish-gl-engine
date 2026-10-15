@@ -53,7 +53,8 @@ class EaContractFixturesTest {
         val primary = springfield.companies.first { it.name == "Springfield Primary" }
         primary.role shouldBe Role.OWNER_ADMIN
         primary.accessLevel shouldBe AccessLevel.ADMIN
-        primary.grantedModules shouldBe ManagedModule.entries.toSet()
+        // Every module EA's fixture grants today. PAYROLL is a GL value that EA's fixture does not send yet (EA ships it inert).
+        primary.grantedModules shouldBe (ManagedModule.entries.toSet() - ManagedModule.PAYROLL)
         val newVenture = springfield.companies.first { it.name == "Springfield New Venture" }
         newVenture.role shouldBe null
         newVenture.accessLevel shouldBe null
