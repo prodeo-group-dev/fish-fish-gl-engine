@@ -49,6 +49,29 @@ class AddMissingStandardAccountsUseCaseTest {
     }
 
     @Test
+    fun `given an older chart without Discounts Received, when run, then 4920 is added as a revenue account`() {
+        val co = company()
+        olderChart(co, without = setOf(ChartOfAccountsTemplate.DISCOUNTS_RECEIVED_CODE))
+
+        val result = useCase.execute(co.id).shouldBeInstanceOf<AddMissingStandardAccountsUseCase.Result.Success>()
+
+        result.added.map { it.code } shouldBe listOf("4920")
+        accounts.findAllByCompany(co.id).any { it.code == "4920" && it.type == AccountType.REVENUE && it.name == "Discounts Received" } shouldBe true
+    }
+
+    @Test
+    fun `given 4920 already used by an account of another type, when run, then it is reported as a conflict and left alone`() {
+        val co = company()
+        olderChart(co, without = setOf(ChartOfAccountsTemplate.DISCOUNTS_RECEIVED_CODE))
+        accounts.save(Account.create(co.id, AccountType.EXPENSE, null, "4920", "Something else"))
+
+        val result = useCase.execute(co.id).shouldBeInstanceOf<AddMissingStandardAccountsUseCase.Result.Success>()
+
+        result.added shouldBe emptyList()
+        result.conflicts.map { it.code to it.existingType } shouldBe listOf("4920" to AccountType.EXPENSE)
+    }
+
+    @Test
     fun `given the same Company, when run twice, then the second run adds nothing`() {
         val co = company()
         olderChart(co, without = setOf("2150"))

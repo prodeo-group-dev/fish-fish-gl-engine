@@ -129,6 +129,17 @@ object ChartOfAccountsTemplate {
      */
     const val VAT_CONTROL_ACCOUNT_CODE = "2150"
 
+    /**
+     * Discounts Received (2026-10-15, Femi 2026-10-13 and POP's Discounts Received design): what a business gets
+     * from its suppliers off what it owes them, for example a settlement discount taken at payment. One REVENUE-type
+     * account (credit-normal), presented as other income. 4920 is deliberately above 4000, so the lowest-coded
+     * revenue account (the one sales posting uses) stays the sales revenue account. Seeded on every business
+     * template; an older Company gets it from the standard-accounts route. Module-owned ([ModuleOwnedAccounts]):
+     * it is posted by a supplier payment, never by hand in a cash book. The first build keeps the cost of stock
+     * unchanged (no reclassification), so this is the whole accounting effect.
+     */
+    const val DISCOUNTS_RECEIVED_CODE = "4920"
+
     fun accountsFor(clientType: ClientType, companyId: CompanyId): List<Account> =
         when (clientType) {
             ClientType.INDIVIDUAL -> individualAccounts(companyId)
@@ -171,6 +182,7 @@ object ChartOfAccountsTemplate {
         fixedAssetAndInventoryAccounts(companyId),
         facilityLiabilityAccounts(companyId),
         vatAccounts(companyId),
+        discountsReceivedAccounts(companyId),
     ).flatten()
 
     private fun partnershipAccounts(companyId: CompanyId): List<Account> = listOf(
@@ -192,6 +204,7 @@ object ChartOfAccountsTemplate {
         fixedAssetAndInventoryAccounts(companyId),
         facilityLiabilityAccounts(companyId),
         vatAccounts(companyId),
+        discountsReceivedAccounts(companyId),
     ).flatten()
 
     private fun companyLimitedAccounts(companyId: CompanyId): List<Account> = listOf(
@@ -214,6 +227,7 @@ object ChartOfAccountsTemplate {
         fixedAssetAndInventoryAccounts(companyId),
         facilityLiabilityAccounts(companyId),
         vatAccounts(companyId),
+        discountsReceivedAccounts(companyId),
     ).flatten()
 
     private fun nonProfitAccounts(companyId: CompanyId): List<Account> = listOf(
@@ -236,6 +250,7 @@ object ChartOfAccountsTemplate {
         fixedAssetAndInventoryAccounts(companyId),
         facilityLiabilityAccounts(companyId),
         vatAccounts(companyId),
+        discountsReceivedAccounts(companyId),
     ).flatten()
 
     /**
@@ -257,6 +272,10 @@ object ChartOfAccountsTemplate {
 
     private fun facilityLiabilityAccounts(companyId: CompanyId): List<Account> = listOf(
         liability(companyId, FACILITY_LIABILITY_CODE, "Trade Finance Facility Payable", AccountClassification.CURRENT),
+    )
+
+    private fun discountsReceivedAccounts(companyId: CompanyId): List<Account> = listOf(
+        revenue(companyId, DISCOUNTS_RECEIVED_CODE, "Discounts Received"),
     )
 
     private fun vatAccounts(companyId: CompanyId): List<Account> = listOf(
