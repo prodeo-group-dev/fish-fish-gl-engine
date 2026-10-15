@@ -23,8 +23,11 @@ import java.util.UUID
  * to call on every dashboard load. GL finds the customers and suppliers itself, from the CUSTOMER and VENDOR tags on
  * the AR (1100) and AP (2000) control lines, and applies the existing first-in-first-out aging
  * ([AccountsReceivableAging], [AccountsPayableAging], unchanged). A Company with no AR or AP control account gets zeros
- * on that side, not an error. Postings to a control account that carry no customer or supplier tag are outside the
- * aging, as they are in the aging routes and the customer balances. Read-only.
+ * on that side, not an error. **Postings to a control account that carry no customer or supplier tag are counted too**
+ * (2026-10-15, found by the dashboard test: an inventory receipt credits Accounts Payable with no supplier tag, so the
+ * tile read 120 against a ledger balance of 50,220): they form one anonymous party, allocated first in first out among
+ * themselves and aged by their own dates, so `total` agrees with the ledger's control balance (gross owed: a customer or
+ * supplier in credit is not netted off). The aging routes themselves are unchanged. Read-only.
  */
 class ComputeReceivablesPayablesSummaryUseCase(
     private val companyRepository: CompanyRepository,
@@ -50,14 +53,16 @@ class ComputeReceivablesPayablesSummaryUseCase(
 
         val entries = journalEntryRepository.findAllByCompany(companyId)
         val receivableItems: List<UnpaidItem> = arAccount?.let { account ->
-            taggedIds(entries, account.id, DimensionType.CUSTOMER).flatMap {
-                AccountsReceivableAging.of(CustomerId(it), account.id, entries, asOf, currency).unpaidItems
-            }
+            val customers = taggedIds(entries, account.id, DimensionType.CUSTOMER)
+            val known = customers.map { it.toString() }.toSet()
+            customers.flatMap { AccountsReceivableAging.of(CustomerId(it), account.id, entries, asOf, currency).unpaidItems } +
+                AccountsReceivableAging.unattributedUnpaidItems(account.id, entries, asOf, currency) { it in known }
         } ?: emptyList()
         val payableItems: List<UnpaidItem> = apAccount?.let { account ->
-            taggedIds(entries, account.id, DimensionType.VENDOR).flatMap {
-                AccountsPayableAging.of(SupplierId(it), account.id, entries, asOf, currency).unpaidItems
-            }
+            val suppliers = taggedIds(entries, account.id, DimensionType.VENDOR)
+            val known = suppliers.map { it.toString() }.toSet()
+            suppliers.flatMap { AccountsPayableAging.of(SupplierId(it), account.id, entries, asOf, currency).unpaidItems } +
+                AccountsPayableAging.unattributedUnpaidItems(account.id, entries, asOf, currency) { it in known }
         } ?: emptyList()
         return Result.Success(ReceivablesPayablesSummary.of(receivableItems, payableItems, asOf, currency))
     }

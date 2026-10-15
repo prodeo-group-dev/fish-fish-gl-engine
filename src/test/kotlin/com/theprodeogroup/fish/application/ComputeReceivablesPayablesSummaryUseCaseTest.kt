@@ -137,7 +137,7 @@ class ComputeReceivablesPayablesSummaryUseCaseTest {
     }
 
     @Test
-    fun `given postings with no customer tag or a tag that is not an id, then they are outside the aging and cause no error`() {
+    fun `given postings with no customer tag or a tag that is not an id, then they are counted too, aged by their own date, and cause no error`() {
         val ar = arAccount()
         post(date = asOf.minusDays(50), lines = arrayOf(JournalLine(ar.id, money("99.00"), TransactionSide.DEBIT), JournalLine(counter.id, money("99.00"), TransactionSide.CREDIT)))
         post(
@@ -148,7 +148,43 @@ class ComputeReceivablesPayablesSummaryUseCaseTest {
             )
         )
 
-        summary().receivables.total shouldBe money("0.00")
+        val receivables = summary().receivables
+        receivables.total shouldBe money("104.00")
+        receivables.overdueTotal shouldBe money("104.00")
+        receivables.overdueCount shouldBe 2
+    }
+
+    @Test
+    fun `given a stock receipt credited to Accounts Payable with no supplier tag, as IM posts it, then the payables total agrees with the ledger balance and the old part is overdue`() {
+        val ap = apAccount()
+        val tagged = UUID.randomUUID()
+        purchase(ap, tagged, 3, "120.00")                                  // POP's tagged purchase, current
+        post(date = asOf.minusDays(40), lines = arrayOf(                   // IM receipts, untagged
+            JournalLine(counter.id, money("50000.00"), TransactionSide.DEBIT), JournalLine(ap.id, money("50000.00"), TransactionSide.CREDIT)
+        ))
+        post(date = asOf.minusDays(2), lines = arrayOf(
+            JournalLine(counter.id, money("100.00"), TransactionSide.DEBIT), JournalLine(ap.id, money("100.00"), TransactionSide.CREDIT)
+        ))
+
+        val payables = summary().payables
+
+        payables.total shouldBe money("50220.00")                          // the ledger's Accounts Payable balance
+        payables.overdueTotal shouldBe money("50000.00")
+        payables.overdueCount shouldBe 1
+    }
+
+    @Test
+    fun `given untagged payments against untagged charges, then they allocate among themselves first in first out`() {
+        val ap = apAccount()
+        post(date = asOf.minusDays(60), lines = arrayOf(JournalLine(counter.id, money("300.00"), TransactionSide.DEBIT), JournalLine(ap.id, money("300.00"), TransactionSide.CREDIT)))
+        post(date = asOf.minusDays(5), lines = arrayOf(JournalLine(counter.id, money("200.00"), TransactionSide.DEBIT), JournalLine(ap.id, money("200.00"), TransactionSide.CREDIT)))
+        post(date = asOf.minusDays(1), lines = arrayOf(JournalLine(ap.id, money("250.00"), TransactionSide.DEBIT), JournalLine(counter.id, money("250.00"), TransactionSide.CREDIT)))
+
+        val payables = summary().payables
+
+        payables.total shouldBe money("250.00")                            // 300 - 250 left of the old charge, plus the 200
+        payables.overdueTotal shouldBe money("50.00")
+        payables.overdueCount shouldBe 1
     }
 
     @Test

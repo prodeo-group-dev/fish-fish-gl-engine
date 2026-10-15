@@ -6,6 +6,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AgingBucketAmount
 import com.theprodeogroup.fish.domain.ledger.AgingBucketLabel
 import com.theprodeogroup.fish.domain.ledger.UnpaidItem
+import com.theprodeogroup.fish.domain.ledger.fifoUnpaidItems
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.hasHistoricalEffect
@@ -45,6 +46,30 @@ class AccountsReceivableAging private constructor(
         get() = buckets.fold(Money(BigDecimal.ZERO, currency)) { sum, bucket -> sum + bucket.amount }
 
     companion object {
+        /**
+         * The unpaid receivables on the control account that belong to NO known customer: lines with no customer tag, or a
+         * tag [isKnownCustomerTag] does not recognise. They are one anonymous party, allocated first in first out among
+         * themselves and aged by their own dates, so a dashboard total can agree with the ledger's Accounts Receivable
+         * balance (a posting that carries no customer tag is still money owed).
+         */
+        fun unattributedUnpaidItems(
+            arControlAccountId: AccountId,
+            postedEntries: List<JournalEntry>,
+            asOfDate: LocalDate,
+            currency: Currency,
+            isKnownCustomerTag: (String) -> Boolean
+        ): List<UnpaidItem> {
+            val zero = Money(BigDecimal.ZERO, currency)
+            val lines = postedEntries.filter { it.status.hasHistoricalEffect() }
+                .flatMap { entry -> entry.lines.map { entry.date to it } }
+                .filter { (_, line) ->
+                    line.accountId == arControlAccountId && line.dimensions[DimensionType.CUSTOMER].let { it == null || !isKnownCustomerTag(it) }
+                }
+            val sales = lines.filter { (_, line) -> line.side == TransactionSide.DEBIT }.map { (date, line) -> date to line.amount }
+            val receipts = lines.filter { (_, line) -> line.side == TransactionSide.CREDIT }.fold(zero) { sum, (_, line) -> sum + line.amount }
+            return fifoUnpaidItems(sales, receipts, asOfDate, currency)
+        }
+
         fun of(
             customerId: CustomerId,
             arControlAccountId: AccountId,
