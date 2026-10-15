@@ -169,6 +169,132 @@ class VatReturnTest {
         vatReturn.vatControlAccountId shouldBe vatAccountId
     }
 
+    // ---- VAT_DIRECTION (2026-10-15): a tag says which side of the return a line belongs to, whatever its debit/credit side.
+
+    private fun money(amount: String) = Money(BigDecimal(amount), EUR)
+
+    private fun tagged(accountId: AccountId, amount: String, side: TransactionSide, direction: String?, category: VatCategory = VatCategory.STANDARD): JournalLine =
+        JournalLine(
+            accountId, money(amount), side,
+            buildMap {
+                put(DimensionType.VAT_CATEGORY, category.name)
+                if (direction != null) put(DimensionType.VAT_DIRECTION, direction)
+            }
+        )
+
+    private fun entryOf(date: LocalDate, vatLine: JournalLine): JournalEntry =
+        postedEntry(
+            date,
+            vatLine,
+            JournalLine(
+                AccountId.generate(), vatLine.amount,
+                if (vatLine.side == TransactionSide.DEBIT) TransactionSide.CREDIT else TransactionSide.DEBIT
+            )
+        )
+
+    @Test
+    fun `given a legacy mix of tagged-by-category and untagged lines with no direction tag, then every figure is exactly as before (golden)`() {
+        val companyId = CompanyId.generate()
+        val vatAccountId = AccountId.generate()
+        val untagged = postedEntry(
+            LocalDate.of(2026, 1, 15),
+            JournalLine(AccountId.generate(), money("50.00"), TransactionSide.DEBIT),
+            JournalLine(vatAccountId, money("50.00"), TransactionSide.CREDIT)
+        )
+        val entries = listOf(
+            saleEntry(vatAccountId, money("230.00"), VatCategory.STANDARD, LocalDate.of(2026, 1, 15)),
+            saleEntry(vatAccountId, money("135.00"), VatCategory.REDUCED, LocalDate.of(2026, 1, 20)),
+            purchaseEntry(vatAccountId, money("23.00"), VatCategory.STANDARD, LocalDate.of(2026, 2, 1)),
+            untagged
+        )
+
+        val vatReturn = VatReturn.of(companyId, JAN_FEB_2026, vatAccountId, entries, EUR)
+
+        vatReturn.outputVat shouldBe money("415.00")
+        vatReturn.inputVat shouldBe money("23.00")
+        vatReturn.netVatDue shouldBe money("392.00")
+        vatReturn.direction shouldBe VatReturnDirection.PAYABLE
+        vatReturn.categoryBreakdown shouldBe mapOf(VatCategory.STANDARD to money("207.00"), VatCategory.REDUCED to money("135.00"))
+    }
+
+    @Test
+    fun `given a credit tagged INPUT, then it reduces input VAT and does not count as output VAT`() {
+        val vatAccountId = AccountId.generate()
+        val entries = listOf(
+            purchaseEntry(vatAccountId, money("200.00"), VatCategory.STANDARD, LocalDate.of(2026, 1, 10)),
+            entryOf(LocalDate.of(2026, 1, 20), tagged(vatAccountId, "4.00", TransactionSide.CREDIT, "INPUT"))
+        )
+
+        val vatReturn = VatReturn.of(CompanyId.generate(), JAN_FEB_2026, vatAccountId, entries, EUR)
+
+        vatReturn.inputVat shouldBe money("196.00")
+        vatReturn.outputVat shouldBe money("0.00")
+        vatReturn.netVatDue shouldBe money("-196.00")
+        vatReturn.categoryBreakdown[VatCategory.STANDARD] shouldBe money("-196.00")
+    }
+
+    @Test
+    fun `given a debit tagged OUTPUT, then it reduces output VAT and does not count as input VAT`() {
+        val vatAccountId = AccountId.generate()
+        val entries = listOf(
+            saleEntry(vatAccountId, money("230.00"), VatCategory.STANDARD, LocalDate.of(2026, 1, 15)),
+            entryOf(LocalDate.of(2026, 1, 25), tagged(vatAccountId, "23.00", TransactionSide.DEBIT, "OUTPUT"))
+        )
+
+        val vatReturn = VatReturn.of(CompanyId.generate(), JAN_FEB_2026, vatAccountId, entries, EUR)
+
+        vatReturn.outputVat shouldBe money("207.00")
+        vatReturn.inputVat shouldBe money("0.00")
+        vatReturn.netVatDue shouldBe money("207.00")
+    }
+
+    @Test
+    fun `given lines tagged with the direction matching their side, then they count exactly like untagged lines`() {
+        val vatAccountId = AccountId.generate()
+        val entries = listOf(
+            entryOf(LocalDate.of(2026, 1, 5), tagged(vatAccountId, "100.00", TransactionSide.CREDIT, "OUTPUT")),
+            entryOf(LocalDate.of(2026, 1, 6), tagged(vatAccountId, "30.00", TransactionSide.DEBIT, "INPUT"))
+        )
+
+        val vatReturn = VatReturn.of(CompanyId.generate(), JAN_FEB_2026, vatAccountId, entries, EUR)
+
+        vatReturn.outputVat shouldBe money("100.00")
+        vatReturn.inputVat shouldBe money("30.00")
+        vatReturn.netVatDue shouldBe money("70.00")
+    }
+
+    @Test
+    fun `given the same postings with and without direction tags, then net VAT due and the category breakdown never change`() {
+        val vatAccountId = AccountId.generate()
+        fun entries(withTags: Boolean) = listOf(
+            entryOf(LocalDate.of(2026, 1, 5), tagged(vatAccountId, "100.00", TransactionSide.CREDIT, if (withTags) "OUTPUT" else null)),
+            entryOf(LocalDate.of(2026, 1, 6), tagged(vatAccountId, "30.00", TransactionSide.DEBIT, if (withTags) "INPUT" else null)),
+            entryOf(LocalDate.of(2026, 1, 7), tagged(vatAccountId, "4.00", TransactionSide.CREDIT, if (withTags) "INPUT" else null, VatCategory.REDUCED)),
+            entryOf(LocalDate.of(2026, 1, 8), tagged(vatAccountId, "9.00", TransactionSide.DEBIT, if (withTags) "OUTPUT" else null, VatCategory.REDUCED))
+        )
+
+        val plain = VatReturn.of(CompanyId.generate(), JAN_FEB_2026, vatAccountId, entries(false), EUR)
+        val withTags = VatReturn.of(CompanyId.generate(), JAN_FEB_2026, vatAccountId, entries(true), EUR)
+
+        withTags.netVatDue shouldBe plain.netVatDue
+        withTags.categoryBreakdown shouldBe plain.categoryBreakdown
+        withTags.direction shouldBe plain.direction
+    }
+
+    @Test
+    fun `given a direction tag that is not OUTPUT or INPUT, then the line is classified by its side like an untagged one`() {
+        val vatAccountId = AccountId.generate()
+        val entries = listOf(
+            entryOf(LocalDate.of(2026, 1, 5), tagged(vatAccountId, "10.00", TransactionSide.CREDIT, "banana")),
+            entryOf(LocalDate.of(2026, 1, 6), tagged(vatAccountId, "3.00", TransactionSide.DEBIT, "banana"))
+        )
+
+        val vatReturn = VatReturn.of(CompanyId.generate(), JAN_FEB_2026, vatAccountId, entries, EUR)
+
+        vatReturn.outputVat shouldBe money("10.00")
+        vatReturn.inputVat shouldBe money("3.00")
+    }
+
     private fun saleEntry(vatAccountId: AccountId, vatAmount: Money, category: VatCategory, date: LocalDate): JournalEntry =
         postedEntry(
             date,
