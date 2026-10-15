@@ -5,10 +5,27 @@ import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
+import com.theprodeogroup.fish.domain.ledger.JournalLine
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.Currency
+
+/**
+ * The side of a VAT return a line on the VAT Control Account belongs to, carried by the `DimensionType.VAT_DIRECTION`
+ * tag (2026-10-15). It exists for adjustments, which sit on the opposite debit/credit side to the figure they adjust:
+ * a debit tagged [OUTPUT] reduces output VAT (a sales credit note), a credit tagged [INPUT] reduces input VAT (a
+ * discount received from a supplier).
+ */
+enum class VatLineDirection {
+    OUTPUT,
+    INPUT;
+
+    companion object {
+        /** The direction a line's tag names, or null if untagged or tagged with anything else. */
+        fun of(tag: String?): VatLineDirection? = entries.firstOrNull { it.name == tag }
+    }
+}
 
 /** Whether a [VatReturn]'s net figure is owed to Revenue or reclaimable from it - never a raw signed number a caller has to reinterpret. */
 enum class VatReturnDirection {
@@ -72,6 +89,11 @@ class VatReturn private constructor(
          * regardless of tagging completeness) but is excluded from
          * [categoryBreakdown] - an untagged posting can't be attributed
          * to a category it never recorded, only counted.
+         *
+         * **VAT_DIRECTION (2026-10-15):** [outputVat] and [inputVat] are classified by the line's `DimensionType.VAT_DIRECTION`
+         * tag when it is `OUTPUT` or `INPUT`, otherwise by side (credit = output, debit = input), exactly as before. A
+         * tagged adjustment reduces its own side: a debit tagged OUTPUT reduces [outputVat], a credit tagged INPUT
+         * reduces [inputVat]. [netVatDue] and [categoryBreakdown] are credits less debits and never depend on the tag.
          */
         fun of(
             companyId: CompanyId,
@@ -88,10 +110,20 @@ class VatReturn private constructor(
                 .filter { it.status.affectsBalance() && it.date in filingPeriod }
                 .flatMap { entry -> entry.lines.filter { it.accountId == vatControlAccountId } }
 
-            val outputVat = vatLines.filter { it.side == TransactionSide.CREDIT }
-                .fold(zero) { sum, line -> sum + line.amount }
-            val inputVat = vatLines.filter { it.side == TransactionSide.DEBIT }
-                .fold(zero) { sum, line -> sum + line.amount }
+            // A line's return side: its VAT_DIRECTION tag if it has a valid one, else its debit/credit side (credit =
+            // output, debit = input), exactly as before the tag existed. An adjustment (a debit tagged OUTPUT, a credit
+            // tagged INPUT) reduces its own side instead of growing the other one. Net is credits less debits either way.
+            fun directionOf(line: JournalLine): VatLineDirection =
+                VatLineDirection.of(line.dimensions[DimensionType.VAT_DIRECTION])
+                    ?: if (line.side == TransactionSide.CREDIT) VatLineDirection.OUTPUT else VatLineDirection.INPUT
+            fun signedForSide(line: JournalLine): Money =
+                // The line increases its side when its debit/credit side is the natural one for that side.
+                if ((directionOf(line) == VatLineDirection.OUTPUT) == (line.side == TransactionSide.CREDIT)) line.amount else zero - line.amount
+
+            val outputVat = vatLines.filter { directionOf(it) == VatLineDirection.OUTPUT }
+                .fold(zero) { sum, line -> sum + signedForSide(line) }
+            val inputVat = vatLines.filter { directionOf(it) == VatLineDirection.INPUT }
+                .fold(zero) { sum, line -> sum + signedForSide(line) }
             val netVatDue = outputVat - inputVat
             val direction = if (netVatDue.amount.signum() >= 0) VatReturnDirection.PAYABLE else VatReturnDirection.RECLAIMABLE
 

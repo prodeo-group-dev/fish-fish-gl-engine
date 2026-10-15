@@ -118,6 +118,16 @@ enum class DimensionType {
     VAT_CATEGORY,
 
     /**
+     * Which side of the VAT return a line on the VAT Control Account belongs to (2026-10-15, docs/Sales_Returns_Credit_Notes_GL_Half.md
+     * D-SR4, needed by the supplier discount posting): value `OUTPUT` or `INPUT`
+     * (`domain.tax.VatLineDirection`). Without it a line is classified by its side (credit = output, debit = input),
+     * which is wrong for an adjustment: a credit note reverses output VAT with a debit, and a discount from a supplier
+     * reduces input VAT with a credit. `VatReturn` reads this tag when present; an untagged line, or one with any other
+     * value, is classified by its side exactly as before. Every posting made before this existed is untagged.
+     */
+    VAT_DIRECTION,
+
+    /**
      * Custom dimension 1 (client-defined)
      */
     CUSTOM_1,
