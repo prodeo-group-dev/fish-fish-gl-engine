@@ -40,7 +40,8 @@ object ServiceEndpointAllowList {
         "pop" to setOf(
             "GET /companies/{companyId}/purchase-posting-context",
             "POST /purchasing/record-obligation",
-            "POST /purchasing/record-payment"
+            "POST /purchasing/record-payment",
+            "POST /purchasing/record-credit-note"
         ),
         "im" to setOf(
             "GET /companies/{companyId}/inventory-posting-context",

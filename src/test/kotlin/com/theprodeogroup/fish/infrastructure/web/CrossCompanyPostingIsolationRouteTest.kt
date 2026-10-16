@@ -230,6 +230,7 @@ class CrossCompanyPostingIsolationRouteTest {
         val inventory = account(AccountType.ASSET, "1300", AccountClassification.CURRENT).id.value
         val revenue = account(AccountType.REVENUE, "4000").id.value
         val salesReturns = account(AccountType.REVENUE, "4100").id.value
+        val discounts = account(AccountType.REVENUE, "4920").id.value
         val expense = account(AccountType.EXPENSE, "5000").id.value
         val expense2 = account(AccountType.EXPENSE, "5100").id.value
         val vat = account(AccountType.LIABILITY, "2150", AccountClassification.CURRENT).id.value
@@ -272,6 +273,11 @@ class CrossCompanyPostingIsolationRouteTest {
         Route("record-payment", "/api/purchasing/record-payment") { c, p, a ->
             """{"companyId": "$c", "periodId": "${p.period.id.value}", "date": "$TODAY", "apControlAccountId": "${a.ap}",
               |"settlementAccountId": "${a.cash}", "amount": "100.00", "currency": "GBP", "supplierId": "${UUID.randomUUID()}"}""".trimMargin()
+        },
+        Route("record-credit-note", "/api/purchasing/record-credit-note") { c, p, a ->
+            """{"companyId": "$c", "periodId": "${p.period.id.value}", "date": "$TODAY", "supplierId": "${UUID.randomUUID()}", "kind": "DISCOUNT",
+              |"apControlAccountId": "${a.ap}", "discountsReceivedAccountId": "${a.discounts}", "vatControlAccountId": "${a.vat}",
+              |"lines": [{"netAmount": "100.00", "vatCategory": "EXEMPT"}], "currency": "GBP"}""".trimMargin()
         },
         Route("record-receipt", "/api/inventory/record-receipt") { c, p, a ->
             """{"companyId": "$c", "periodId": "${p.period.id.value}", "date": "$TODAY", "inventoryAssetAccountId": "${a.inventory}",
@@ -354,7 +360,7 @@ class CrossCompanyPostingIsolationRouteTest {
      */
     private val postingRoutesByService = mapOf(
         "sop" to listOf("record-sale", "record-collection", "record-sales-return"),
-        "pop" to listOf("record-obligation", "record-payment"),
+        "pop" to listOf("record-obligation", "record-payment", "record-credit-note"),
         "im" to listOf("record-receipt", "record-issue"),
         "hr" to listOf("record-pay-run")
     )
