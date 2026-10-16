@@ -306,7 +306,7 @@ class TenantIsolationMatrixRouteTest {
         "GET /health", "GET /jurisdictions", "GET /me",
         "POST /tenants/{tenantId}/companies",
         "POST /sales/record-sale", "POST /sales/record-collection", "POST /sales/record-sales-return", "POST /sales/create-invoice",
-        "POST /purchasing/record-obligation", "POST /purchasing/record-payment",
+        "POST /purchasing/record-obligation", "POST /purchasing/record-payment", "POST /purchasing/record-credit-note",
         "POST /inventory/record-receipt", "POST /inventory/record-issue",
         "POST /payroll/record-pay-run", "POST /leave-accruals",
         "POST /leave-accruals/{leaveAccrualId}/remeasure", "POST /leave-accruals/{leaveAccrualId}/utilize",

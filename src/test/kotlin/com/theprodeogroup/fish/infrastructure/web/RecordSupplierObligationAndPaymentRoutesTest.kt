@@ -496,4 +496,128 @@ class RecordSupplierObligationAndPaymentRoutesTest {
 
         response.status shouldBe HttpStatusCode.BadRequest
     }
+    // ---- POST /purchasing/record-credit-note (2026-10-16): a supplier credit note for a discount or a rebate ----
+
+    private fun creditNoteBody(
+        fixture: Fixture,
+        discountsAccountId: UUID,
+        kind: String = "DISCOUNT",
+        lines: String = """[{"netAmount": "100.00", "vatCategory": "STANDARD"}]""",
+        apControlAccountId: UUID = fixture.apControlAccount.id.value
+    ) = """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}", "date": "$TODAY",
+        |"supplierId": "${UUID.randomUUID()}", "kind": "$kind", "apControlAccountId": "$apControlAccountId",
+        |"discountsReceivedAccountId": "$discountsAccountId", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+        |"lines": $lines, "currency": "GBP"}""".trimMargin()
+
+    private fun discountsAccount(fixture: Fixture) =
+        Account.create(fixture.company.id, AccountType.REVENUE, null, "4920", "Discounts Received").also { fixture.accountRepository.save(it) }
+
+    private suspend fun io.ktor.client.HttpClient.postCreditNote(fixture: Fixture, body: String, key: String? = null) =
+        post("/api/purchasing/record-credit-note") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            if (key != null) header("Idempotency-Key", key)
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+
+    @Test
+    fun `given a valid record-credit-note request on a UK Company, when posted, then it returns 200 with what GL computed and posts three lines`() = testApplication {
+        val fixture = Fixture()
+        val discounts = discountsAccount(fixture)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postCreditNote(fixture, creditNoteBody(fixture, discounts.id.value))
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: RecordSupplierCreditNoteResponseDto = response.body()
+        body.status shouldBe "POSTED"
+        body.creditNoteTotal shouldBe MoneyAmountDto("120.00", "GBP")
+        body.vat shouldBe MoneyAmountDto("20.00", "GBP")
+        val entry = fixture.journalEntryRepository.findById(com.theprodeogroup.fish.domain.ledger.JournalEntryId(UUID.fromString(body.journalEntryId)))!!
+        entry.lines.size shouldBe 3
+        entry.description shouldBe "DISCOUNT"
+    }
+
+    @Test
+    fun `given a Company whose jurisdiction has no verified VAT rates, when record-credit-note is posted, then it returns 409 no_vat_rate_schedule and posts nothing`() = testApplication {
+        val fixture = Fixture(jurisdiction = Jurisdiction.SL)
+        val discounts = discountsAccount(fixture)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postCreditNote(fixture, creditNoteBody(fixture, discounts.id.value))
+
+        response.status shouldBe HttpStatusCode.Conflict
+        response.body<ErrorResponseDto>().error shouldBe "no_vat_rate_schedule"
+        fixture.journalEntryRepository.saveCalls.size shouldBe 0
+    }
+
+    @Test
+    fun `given an unknown kind or no lines, when record-credit-note is posted, then it returns 400`() = testApplication {
+        val fixture = Fixture()
+        val discounts = discountsAccount(fixture)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.postCreditNote(fixture, creditNoteBody(fixture, discounts.id.value, kind = "RETURN")).status shouldBe HttpStatusCode.BadRequest
+        client.postCreditNote(fixture, creditNoteBody(fixture, discounts.id.value, lines = "[]")).status shouldBe HttpStatusCode.BadRequest
+        client.postCreditNote(fixture, creditNoteBody(fixture, discounts.id.value, lines = """[{"netAmount": "0.00", "vatCategory": "EXEMPT"}]""")).status shouldBe HttpStatusCode.BadRequest
+        client.postCreditNote(fixture, creditNoteBody(fixture, discounts.id.value, lines = """[{"netAmount": "5.00", "vatCategory": "NOPE"}]""")).status shouldBe HttpStatusCode.BadRequest
+        fixture.journalEntryRepository.saveCalls.size shouldBe 0
+    }
+
+    @Test
+    fun `given a READ-only caller or a claimed Tenant that does not own the Company, when record-credit-note is posted, then it returns 403`() = testApplication {
+        val readOnly = Fixture(accessLevel = AccessLevel.READ)
+        val discountsA = discountsAccount(readOnly)
+        application { readOnly.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.postCreditNote(readOnly, creditNoteBody(readOnly, discountsA.id.value)).status shouldBe HttpStatusCode.Forbidden
+        val wrongTenant = client.post("/api/purchasing/record-credit-note") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", TenantId.generate().value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(creditNoteBody(readOnly, discountsA.id.value))
+        }
+        wrongTenant.status shouldBe HttpStatusCode.Forbidden
+    }
+
+    @Test
+    fun `given the same Idempotency-Key and body twice, when record-credit-note is posted, then it posts once and replays the answer`() = testApplication {
+        val fixture = Fixture()
+        val discounts = discountsAccount(fixture)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val body = creditNoteBody(fixture, discounts.id.value)
+
+        val first: RecordSupplierCreditNoteResponseDto = client.postCreditNote(fixture, body, key = "po-credit:1").body()
+        val second: RecordSupplierCreditNoteResponseDto = client.postCreditNote(fixture, body, key = "po-credit:1").body()
+
+        second.journalEntryId shouldBe first.journalEntryId
+        fixture.journalEntryRepository.saveCalls.size shouldBe 1
+    }
+
+    @Test
+    fun `given a refused request then the same key and body once the cause is fixed, when record-credit-note is posted, then the refusal did not spend the key`() = testApplication {
+        val fixture = Fixture()
+        val discounts = discountsAccount(fixture)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val missingAp = UUID.randomUUID()
+
+        val refused = client.postCreditNote(fixture, creditNoteBody(fixture, discounts.id.value, apControlAccountId = missingAp), key = "po-credit:2")
+        refused.status shouldBe HttpStatusCode.NotFound
+        fixture.journalEntryRepository.saveCalls.size shouldBe 0
+
+        // The cause is fixed (an account with that id now exists), same key, same body.
+        fixture.accountRepository.save(
+            Account.create(fixture.company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2000", "Accounts Payable", id = com.theprodeogroup.fish.domain.ledger.AccountId(missingAp))
+        )
+        val retried = client.postCreditNote(fixture, creditNoteBody(fixture, discounts.id.value, apControlAccountId = missingAp), key = "po-credit:2")
+        retried.status shouldBe HttpStatusCode.OK
+        fixture.journalEntryRepository.saveCalls.size shouldBe 1
+    }
 }

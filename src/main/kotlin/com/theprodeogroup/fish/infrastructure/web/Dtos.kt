@@ -401,6 +401,45 @@ data class RecordSupplierPaymentResponseDto(
     val status: String
 )
 
+/** An amount and its currency, as the credit note answer reports what GL computed. */
+@Serializable
+data class MoneyAmountDto(
+    val amount: String,
+    val currency: String
+)
+
+/**
+ * `POST /purchasing/record-credit-note` (2026-10-16): a supplier credit note for a discount or a rebate. Lines are net
+ * amounts with a VAT category (GL computes the VAT, like [PurchaseLineDto] on `record-obligation`); `kind` is DISCOUNT or
+ * REBATE; `originalSupplyDate` (optional, default the credit note date) is the date of the supply being credited and
+ * drives the VAT rate.
+ */
+@Serializable
+data class RecordSupplierCreditNoteRequestDto(
+    val companyId: String,
+    val periodId: String,
+    val date: String,
+    val supplierId: String,
+    val kind: String,
+    val apControlAccountId: String,
+    val discountsReceivedAccountId: String,
+    val vatControlAccountId: String,
+    val currency: String,
+    val lines: List<PurchaseLineDto>,
+    val originalSupplyDate: String? = null,
+    val description: String? = null
+)
+
+@Serializable
+data class RecordSupplierCreditNoteResponseDto(
+    val journalEntryId: String,
+    val status: String,
+    /** What the payable fell by: the net amounts plus the VAT on them. */
+    val creditNoteTotal: MoneyAmountDto,
+    /** The VAT GL computed on the credit note (zero when no line carries VAT). */
+    val vat: MoneyAmountDto
+)
+
 /**
  * Wire shapes for `RecordInventoryReceiptUseCase`/`RecordInventoryIssueUseCase`
  * (Option B resolution, `docs/Ecosystem_Extraction_DDD_Design.md` Section
