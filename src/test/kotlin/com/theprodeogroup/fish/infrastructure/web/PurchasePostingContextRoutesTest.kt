@@ -244,6 +244,45 @@ class PurchasePostingContextRoutesTest {
     }
 
     @Test
+    fun `given a Discounts Received account at 4920, when GET purchase-posting-context is called, then discountsReceivedAccountId is returned and every other field is unchanged`() = testApplication {
+        val fixture = Fixture()
+        val discounts = Account.create(fixture.company.id, AccountType.REVENUE, null, "4920", "Discounts Received").also { fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/purchase-posting-context") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: PurchasePostingContextResponseDto = response.body()
+        body.discountsReceivedAccountId shouldBe discounts.id.value.toString()
+        body.periodId shouldBe fixture.period!!.id.value.toString()
+        body.apControlAccountId shouldBe fixture.apAccount!!.id.value.toString()
+        body.expenseOrAssetAccountId shouldBe fixture.expenseAccount!!.id.value.toString()
+        body.settlementAccountId shouldBe fixture.cashAccount!!.id.value.toString()
+        body.vatControlAccountId shouldBe fixture.vatAccount!!.id.value.toString()
+        body.currency shouldBe "GBP"
+        body.facilityLiabilityAccountId shouldBe fixture.facilityLiabilityAccount!!.id.value.toString()
+    }
+
+    @Test
+    fun `given no 4920 account, when GET purchase-posting-context is called, then it still returns 200 with a null discountsReceivedAccountId`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/purchase-posting-context") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        response.body<PurchasePostingContextResponseDto>().discountsReceivedAccountId shouldBe null
+    }
+
+    @Test
     fun `given no bearer token, when GET purchase-posting-context is called, then it returns 401`() = testApplication {
         val fixture = Fixture()
         application { fixture.installInto(this) }

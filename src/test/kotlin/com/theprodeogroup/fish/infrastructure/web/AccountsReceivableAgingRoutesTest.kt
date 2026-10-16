@@ -356,12 +356,14 @@ class AccountsReceivableAgingRoutesTest {
     fun `given receivables and payables, when the summary is read, then each side has its total, its overdue part older than 30 days and the count, and the shape is exactly the contract`() = testApplication {
         val fixture = Fixture()
         val customer = CustomerId.generate()
-        fixture.postSale(customer, "100.00", TODAY.minusDays(100))
-        fixture.postSale(customer, "200.00", TODAY.minusDays(40))
-        fixture.postSale(customer, "400.00", TODAY.minusDays(5))
-        fixture.postReceipt(customer, "100.00", TODAY.minusDays(2)) // clears the 100 sale
-        fixture.postCharge(UUID.randomUUID(), "50.00", TODAY.minusDays(31))
-        fixture.postCharge(UUID.randomUUID(), "70.00", TODAY.minusDays(2))
+        // The summary route dates itself in UTC; TODAY (the machine local date) differs from it for an hour after local midnight in BST.
+        val utcToday = LocalDate.now(java.time.ZoneOffset.UTC)
+        fixture.postSale(customer, "100.00", utcToday.minusDays(100))
+        fixture.postSale(customer, "200.00", utcToday.minusDays(40))
+        fixture.postSale(customer, "400.00", utcToday.minusDays(5))
+        fixture.postReceipt(customer, "100.00", utcToday.minusDays(2)) // clears the 100 sale
+        fixture.postCharge(UUID.randomUUID(), "50.00", utcToday.minusDays(31))
+        fixture.postCharge(UUID.randomUUID(), "70.00", utcToday.minusDays(2))
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 

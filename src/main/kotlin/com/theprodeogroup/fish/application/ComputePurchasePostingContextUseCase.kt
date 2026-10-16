@@ -21,7 +21,9 @@ sealed class PurchasePostingContextResult {
         val settlementAccountId: AccountId,
         val vatControlAccountId: AccountId,
         val currency: Currency,
-        val facilityLiabilityAccountId: AccountId? = null
+        val facilityLiabilityAccountId: AccountId? = null,
+        /** The Company's Discounts Received account (4920, revenue type), or null when it has none: absence never refuses the context. */
+        val discountsReceivedAccountId: AccountId? = null
     ) : PurchasePostingContextResult()
     data object CompanyNotFound : PurchasePostingContextResult()
     data object NoOpenPeriod : PurchasePostingContextResult()
@@ -60,6 +62,10 @@ sealed class PurchasePostingContextResult {
  * (POP's `/purchase-orders/{id}/pay`, when `ExecutingParty.BANK`) is
  * responsible for treating a `null` here as its own configuration
  * error, not this use case.
+ *
+ * `discountsReceivedAccountId` (2026-10-16, POP's Discounts Received design) is the same kind of optional answer: the
+ * Company's 4920 account of REVENUE type, or null. Absence never refuses the context; a caller that needs it for a
+ * discount treats null as its own configuration error. Older Companies get 4920 from the standard-accounts route.
  */
 class ComputePurchasePostingContextUseCase(
     private val companyRepository: CompanyRepository,
@@ -82,11 +88,13 @@ class ComputePurchasePostingContextUseCase(
         val facilityLiabilityAccount = accounts.firstOrNull {
             it.type == AccountType.LIABILITY && it.code == ChartOfAccountsTemplate.FACILITY_LIABILITY_CODE
         }
+        val discountsReceivedAccount = accounts.firstOrNull { it.type == AccountType.REVENUE && it.code == ChartOfAccountsTemplate.DISCOUNTS_RECEIVED_CODE }
         val vatAccount = accounts.firstOrNull { it.type == AccountType.LIABILITY && it.code == ChartOfAccountsTemplate.VAT_CONTROL_ACCOUNT_CODE }
             ?: return PurchasePostingContextResult.VatControlAccountNotConfigured
 
         return PurchasePostingContextResult.Success(
-            period.id, apAccount.id, expenseAccount.id, cashAccount.id, vatAccount.id, company.baseCurrency, facilityLiabilityAccount?.id
+            period.id, apAccount.id, expenseAccount.id, cashAccount.id, vatAccount.id, company.baseCurrency, facilityLiabilityAccount?.id,
+            discountsReceivedAccountId = discountsReceivedAccount?.id
         )
     }
 }

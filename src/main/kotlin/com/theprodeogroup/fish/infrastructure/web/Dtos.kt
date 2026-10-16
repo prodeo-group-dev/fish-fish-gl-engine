@@ -101,7 +101,9 @@ data class PurchasePostingContextResponseDto(
     val settlementAccountId: String,
     val vatControlAccountId: String,
     val currency: String,
-    val facilityLiabilityAccountId: String? = null
+    val facilityLiabilityAccountId: String? = null,
+    /** The Company's Discounts Received account (4920), or null (2026-10-16). Optional: POP declares it before GL sends it. */
+    val discountsReceivedAccountId: String? = null
 )
 
 @Serializable
