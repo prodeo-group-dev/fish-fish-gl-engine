@@ -106,6 +106,8 @@ fun Route.recordSupplierObligationAndPaymentRoutes(
                 is RecordSupplierObligationResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
                 is RecordSupplierObligationResult.VatCategoryNotSupported ->
                     HttpStatusCode.BadRequest to errorResponseJson("vat_category_not_supported", result.category.name)
+                is RecordSupplierObligationResult.VatRateNotInForce ->
+                    HttpStatusCode.BadRequest to errorResponseJson("vat_rate_not_in_force", "${result.category.name} on ${result.asOf}")
                 is RecordSupplierObligationResult.ExpenseOrAssetAccountNotFound ->
                     HttpStatusCode.NotFound to errorResponseJson("expense_or_asset_account_not_found", result.accountId.value.toString())
                 is RecordSupplierObligationResult.ApControlAccountNotFound ->
