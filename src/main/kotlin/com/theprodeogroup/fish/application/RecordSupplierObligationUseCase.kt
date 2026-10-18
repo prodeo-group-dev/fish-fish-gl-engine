@@ -29,7 +29,11 @@ import java.time.LocalDate
 sealed class RecordSupplierObligationResult {
     data class Success(
         val journalEntry: JournalEntry,
-        val events: List<DomainEvent>
+        val events: List<DomainEvent>,
+        /** The whole credit to the payable: every line's net plus the VAT on them (what the supplier is owed), whichever account a line debited. */
+        val grossTotal: Money,
+        /** The input VAT inside [grossTotal]; zero when every line is zero-rated or exempt. */
+        val vatTotal: Money
     ) : RecordSupplierObligationResult()
     data object InvalidAmount : RecordSupplierObligationResult()
     data object PeriodNotFound : RecordSupplierObligationResult()
@@ -176,6 +180,6 @@ class RecordSupplierObligationUseCase(
 
         journalEntryRepository.save(entry)
 
-        return RecordSupplierObligationResult.Success(entry, entry.pullDomainEvents())
+        return RecordSupplierObligationResult.Success(entry, entry.pullDomainEvents(), grossTotal, vatTotal)
     }
 }
