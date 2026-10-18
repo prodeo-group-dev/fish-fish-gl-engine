@@ -132,91 +132,6 @@ class FixedAssetTest {
     }
 
     @Test
-    fun `given an asset with accumulated depreciation, when disposed for proceeds above net book value, then the Sale of Fixed Asset account nets to a gain`() {
-        val asset = FixedAsset.create(
-            CompanyId.generate(), "Delivery Van", AssetCategory.VEHICLES,
-            Money(BigDecimal("1000.00"), GBP), TODAY, 4
-        )
-        asset.recordDepreciation(AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY)
-        // netBookValue is now 750.00
-        val cashAccountId = AccountId.generate()
-        val fixedAssetAccountId = AccountId.generate()
-        val accumulatedDepreciationAccountId = AccountId.generate()
-        val saleOfFixedAssetAccountId = AccountId.generate()
-
-        val entry = requireNotNull(
-            asset.dispose(
-                Money(BigDecimal("800.00"), GBP), cashAccountId, fixedAssetAccountId,
-                accumulatedDepreciationAccountId, saleOfFixedAssetAccountId, PeriodId.generate(), TODAY
-            )
-        )
-
-        JournalEntry.validateLines(entry.lines).isValid shouldBe true
-        entry.lines.first { it.accountId == fixedAssetAccountId }.let {
-            it.side shouldBe TransactionSide.CREDIT
-            it.amount shouldBe Money(BigDecimal("1000.00"), GBP)
-        }
-        entry.lines.first { it.accountId == accumulatedDepreciationAccountId }.let {
-            it.side shouldBe TransactionSide.DEBIT
-            it.amount shouldBe Money(BigDecimal("250.00"), GBP)
-        }
-        entry.lines.first { it.accountId == cashAccountId }.let {
-            it.side shouldBe TransactionSide.DEBIT
-            it.amount shouldBe Money(BigDecimal("800.00"), GBP)
-            it.dimensions[DimensionType.CASH_FLOW_ACTIVITY] shouldBe CashFlowActivity.INVESTING.name
-        }
-        val saleLines = entry.lines.filter { it.accountId == saleOfFixedAssetAccountId }
-        val netSaleBalance = saleLines.fold(Money(BigDecimal.ZERO, GBP)) { sum, line ->
-            if (line.side == TransactionSide.CREDIT) sum + line.amount else sum - line.amount
-        }
-        netSaleBalance shouldBe Money(BigDecimal("50.00"), GBP)
-    }
-
-    @Test
-    fun `given an asset with accumulated depreciation, when disposed for proceeds below net book value, then the Sale of Fixed Asset account nets to a loss`() {
-        val asset = FixedAsset.create(
-            CompanyId.generate(), "Delivery Van", AssetCategory.VEHICLES,
-            Money(BigDecimal("1000.00"), GBP), TODAY, 4
-        )
-        asset.recordDepreciation(AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY)
-        // netBookValue is now 750.00
-        val saleOfFixedAssetAccountId = AccountId.generate()
-
-        val entry = requireNotNull(
-            asset.dispose(
-                Money(BigDecimal("500.00"), GBP), AccountId.generate(), AccountId.generate(),
-                AccountId.generate(), saleOfFixedAssetAccountId, PeriodId.generate(), TODAY
-            )
-        )
-
-        val saleLines = entry.lines.filter { it.accountId == saleOfFixedAssetAccountId }
-        val netSaleBalance = saleLines.fold(Money(BigDecimal.ZERO, GBP)) { sum, line ->
-            if (line.side == TransactionSide.CREDIT) sum + line.amount else sum - line.amount
-        }
-        // a negative (debit) balance on a Revenue-type account represents the loss
-        netSaleBalance shouldBe Money(BigDecimal("-250.00"), GBP)
-    }
-
-    @Test
-    fun `given no depreciation recorded yet, when disposed for proceeds equal to cost, then the accumulated depreciation line is omitted and the Sale account nets to zero`() {
-        val asset = equipment()
-        // netBookValue is cost, 1000.00, no depreciation recorded yet
-        val accumulatedDepreciationAccountId = AccountId.generate()
-        val saleOfFixedAssetAccountId = AccountId.generate()
-
-        val entry = requireNotNull(
-            asset.dispose(
-                Money(BigDecimal("1000.00"), GBP), AccountId.generate(), AccountId.generate(),
-                accumulatedDepreciationAccountId, saleOfFixedAssetAccountId, PeriodId.generate(), TODAY
-            )
-        )
-
-        JournalEntry.validateLines(entry.lines).isValid shouldBe true
-        entry.lines.none { it.accountId == accumulatedDepreciationAccountId } shouldBe true
-        entry.lines shouldHaveSize 4
-    }
-
-    @Test
     fun `given an already-disposed asset, when disposed again, then it fails`() {
         val asset = equipment()
         asset.dispose(
@@ -342,37 +257,6 @@ class FixedAssetTest {
     }
 
     @Test
-    fun `given an impaired asset, when disposed with proceeds equal to carrying amount, then the Sale of Fixed Asset account nets to zero`() {
-        val cashAccountId = AccountId.generate()
-        val fixedAssetAccountId = AccountId.generate()
-        val accumulatedDepreciationAccountId = AccountId.generate()
-        val accumulatedImpairmentAccountId = AccountId.generate()
-        val saleOfFixedAssetAccountId = AccountId.generate()
-        val asset = machine()
-        asset.recordDepreciation(AccountId.generate(), accumulatedDepreciationAccountId, PeriodId.generate(), TODAY)
-        asset.assessImpairment(Money(BigDecimal("600.00"), GBP), AccountId.generate(), accumulatedImpairmentAccountId, PeriodId.generate(), TODAY)
-        // carryingAmount is now 600.00
-
-        val entry = requireNotNull(
-            asset.dispose(
-                Money(BigDecimal("600.00"), GBP), cashAccountId, fixedAssetAccountId,
-                accumulatedDepreciationAccountId, saleOfFixedAssetAccountId, PeriodId.generate(), TODAY,
-                accumulatedImpairmentAccountId
-            )
-        )
-
-        JournalEntry.validateLines(entry.lines).isValid shouldBe true
-        val impairmentLine = entry.lines.first { it.accountId == accumulatedImpairmentAccountId }
-        impairmentLine.side shouldBe TransactionSide.DEBIT
-        impairmentLine.amount shouldBe Money(BigDecimal("150.00"), GBP)
-        val saleLines = entry.lines.filter { it.accountId == saleOfFixedAssetAccountId }
-        val netSaleBalance = saleLines.fold(Money(BigDecimal.ZERO, GBP)) { sum, line ->
-            if (line.side == TransactionSide.CREDIT) sum + line.amount else sum - line.amount
-        }
-        netSaleBalance shouldBe Money(BigDecimal.ZERO, GBP)
-    }
-
-    @Test
     fun `given an impaired asset, when disposed without an accumulated impairment account, then it returns null`() {
         val asset = machine()
         asset.assessImpairment(Money(BigDecimal("600.00"), GBP), AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY)
@@ -383,6 +267,110 @@ class FixedAssetTest {
         )
 
         result shouldBe null
+    }
+
+    // --- disposal: the gain or loss is its own line on its own account, never left on a revenue clearing account
+    // (tester finding 2026-10-18: an 800 loss had been booked as negative Sales Revenue) ---
+
+    @Test
+    fun `given proceeds above the carrying amount, when disposed, then the gain is credited to the gain account and nothing is left on a clearing account`() {
+        val asset = FixedAsset.create(CompanyId.generate(), "Delivery Van", AssetCategory.VEHICLES, Money(BigDecimal("1000.00"), GBP), TODAY, 4)
+        asset.recordDepreciation(AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY)
+        // carrying amount is now 750.00
+        val cash = AccountId.generate()
+        val cost = AccountId.generate()
+        val accDep = AccountId.generate()
+        val gain = AccountId.generate()
+
+        val entry = requireNotNull(asset.dispose(Money(BigDecimal("800.00"), GBP), cash, cost, accDep, gain, PeriodId.generate(), TODAY))
+
+        JournalEntry.validateLines(entry.lines).isValid shouldBe true
+        entry.lines shouldHaveSize 4
+        entry.lines.single { it.accountId == cost }.let { it.side shouldBe TransactionSide.CREDIT; it.amount shouldBe Money(BigDecimal("1000.00"), GBP) }
+        entry.lines.single { it.accountId == accDep }.let { it.side shouldBe TransactionSide.DEBIT; it.amount shouldBe Money(BigDecimal("250.00"), GBP) }
+        entry.lines.single { it.accountId == cash }.let {
+            it.side shouldBe TransactionSide.DEBIT
+            it.amount shouldBe Money(BigDecimal("800.00"), GBP)
+            it.dimensions[DimensionType.CASH_FLOW_ACTIVITY] shouldBe CashFlowActivity.INVESTING.name
+        }
+        entry.lines.single { it.accountId == gain }.let { it.side shouldBe TransactionSide.CREDIT; it.amount shouldBe Money(BigDecimal("50.00"), GBP) }
+    }
+
+    @Test
+    fun `given proceeds below the carrying amount, when disposed, then the loss is debited to the loss account`() {
+        val asset = FixedAsset.create(CompanyId.generate(), "Delivery Van", AssetCategory.VEHICLES, Money(BigDecimal("1000.00"), GBP), TODAY, 4)
+        asset.recordDepreciation(AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY)
+        val loss = AccountId.generate()
+
+        val entry = requireNotNull(
+            asset.dispose(Money(BigDecimal("500.00"), GBP), AccountId.generate(), AccountId.generate(), AccountId.generate(), loss, PeriodId.generate(), TODAY)
+        )
+
+        JournalEntry.validateLines(entry.lines).isValid shouldBe true
+        entry.lines.single { it.accountId == loss }.let { it.side shouldBe TransactionSide.DEBIT; it.amount shouldBe Money(BigDecimal("250.00"), GBP) }
+    }
+
+    @Test
+    fun `given the tester's case, 1200 cost, 400 depreciated and nil proceeds, when disposed, then it is Dr accumulated depreciation 400, Dr loss 800, Cr cost 1200`() {
+        val asset = FixedAsset.create(CompanyId.generate(), "UAT Laptop", AssetCategory.EQUIPMENT, Money(BigDecimal("1200.00"), GBP), TODAY, 3)
+        asset.recordDepreciation(AccountId.generate(), AccountId.generate(), PeriodId.generate(), TODAY)
+        val cost = AccountId.generate()
+        val accDep = AccountId.generate()
+        val loss = AccountId.generate()
+
+        val entry = requireNotNull(
+            asset.dispose(Money(BigDecimal.ZERO, GBP), AccountId.generate(), cost, accDep, loss, PeriodId.generate(), TODAY)
+        )
+
+        JournalEntry.validateLines(entry.lines).isValid shouldBe true
+        entry.lines shouldHaveSize 3
+        entry.lines.single { it.accountId == accDep }.let { it.side shouldBe TransactionSide.DEBIT; it.amount shouldBe Money(BigDecimal("400.00"), GBP) }
+        entry.lines.single { it.accountId == loss }.let { it.side shouldBe TransactionSide.DEBIT; it.amount shouldBe Money(BigDecimal("800.00"), GBP) }
+        entry.lines.single { it.accountId == cost }.let { it.side shouldBe TransactionSide.CREDIT; it.amount shouldBe Money(BigDecimal("1200.00"), GBP) }
+    }
+
+    @Test
+    fun `given no depreciation and proceeds equal to cost, when disposed, then there is no gain or loss line and no account is needed`() {
+        val asset = equipment()
+        val accDep = AccountId.generate()
+
+        val entry = requireNotNull(
+            asset.dispose(Money(BigDecimal("1000.00"), GBP), AccountId.generate(), AccountId.generate(), accDep, null, PeriodId.generate(), TODAY)
+        )
+
+        JournalEntry.validateLines(entry.lines).isValid shouldBe true
+        entry.lines shouldHaveSize 2
+        entry.lines.none { it.accountId == accDep } shouldBe true
+    }
+
+    @Test
+    fun `given an impaired asset, when disposed with proceeds equal to the carrying amount, then the impairment is cleared and there is no gain or loss line`() {
+        val accDep = AccountId.generate()
+        val accImpairment = AccountId.generate()
+        val asset = machine()
+        asset.recordDepreciation(AccountId.generate(), accDep, PeriodId.generate(), TODAY)
+        asset.assessImpairment(Money(BigDecimal("600.00"), GBP), AccountId.generate(), accImpairment, PeriodId.generate(), TODAY)
+        // carrying amount is now 600.00
+
+        val entry = requireNotNull(
+            asset.dispose(
+                Money(BigDecimal("600.00"), GBP), AccountId.generate(), AccountId.generate(), accDep, null, PeriodId.generate(), TODAY, accImpairment
+            )
+        )
+
+        JournalEntry.validateLines(entry.lines).isValid shouldBe true
+        entry.lines.single { it.accountId == accImpairment }.let { it.side shouldBe TransactionSide.DEBIT; it.amount shouldBe Money(BigDecimal("150.00"), GBP) }
+        entry.lines shouldHaveSize 4
+    }
+
+    @Test
+    fun `given a gain or loss and no account to put it on, when disposed, then it is a programmer error, not a silent default`() {
+        val asset = equipment()
+
+        shouldThrow<IllegalArgumentException> {
+            asset.dispose(Money(BigDecimal("400.00"), GBP), AccountId.generate(), AccountId.generate(), AccountId.generate(), null, PeriodId.generate(), TODAY)
+        }
+        asset.isDisposed shouldBe false
     }
 
     private fun machine(): FixedAsset = FixedAsset.create(

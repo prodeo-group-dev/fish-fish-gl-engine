@@ -311,7 +311,8 @@ fun Route.fixedAssetRoutes(
         val cashAccountId = call.parseUuid(request.cashAccountId) ?: return@post
         val fixedAssetAccountId = call.parseUuid(request.fixedAssetAccountId) ?: return@post
         val accumulatedDepreciationAccountId = call.parseUuid(request.accumulatedDepreciationAccountId) ?: return@post
-        val saleOfFixedAssetAccountId = call.parseUuid(request.saleOfFixedAssetAccountId) ?: return@post
+        val gainOnDisposalAccountId = request.gainOnDisposalAccountId?.let { call.parseUuid(it) ?: return@post }
+        val lossOnDisposalAccountId = request.lossOnDisposalAccountId?.let { call.parseUuid(it) ?: return@post }
         val accumulatedImpairmentAccountId = request.accumulatedImpairmentAccountId?.let { call.parseUuid(it) ?: return@post }
         val date = call.parseLocalDate(request.date) ?: return@post
 
@@ -322,8 +323,10 @@ fun Route.fixedAssetRoutes(
             val result = disposeFixedAssetUseCase.execute(
                 DisposeFixedAssetUseCase.Request(
                     fixedAssetId, proceeds, AccountId(cashAccountId), AccountId(fixedAssetAccountId),
-                    AccountId(accumulatedDepreciationAccountId), AccountId(saleOfFixedAssetAccountId),
-                    period.id, date, accumulatedImpairmentAccountId?.let { AccountId(it) }
+                    AccountId(accumulatedDepreciationAccountId), null,
+                    period.id, date, accumulatedImpairmentAccountId?.let { AccountId(it) },
+                    gainOnDisposalAccountId = gainOnDisposalAccountId?.let { AccountId(it) },
+                    lossOnDisposalAccountId = lossOnDisposalAccountId?.let { AccountId(it) }
                 )
             )
             when (result) {
@@ -334,6 +337,8 @@ fun Route.fixedAssetRoutes(
                     )
                 is DisposeFixedAssetResult.FixedAssetNotFound -> HttpStatusCode.NotFound to errorResponseJson("fixed_asset_not_found")
                 is DisposeFixedAssetResult.AlreadyDisposed -> HttpStatusCode.Conflict to errorResponseJson("already_disposed")
+                DisposeFixedAssetResult.ProceedsNegative -> HttpStatusCode.BadRequest to errorResponseJson("proceeds_negative")
+                DisposeFixedAssetResult.ProceedsCurrencyMismatch -> HttpStatusCode.BadRequest to errorResponseJson("proceeds_currency_mismatch")
                 is DisposeFixedAssetResult.AccumulatedImpairmentAccountRequired ->
                     HttpStatusCode.BadRequest to errorResponseJson("accumulated_impairment_account_required")
                 is DisposeFixedAssetResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")
@@ -343,8 +348,12 @@ fun Route.fixedAssetRoutes(
                     HttpStatusCode.NotFound to errorResponseJson("fixed_asset_account_not_found", result.accountId.value.toString())
                 is DisposeFixedAssetResult.AccumulatedDepreciationAccountNotFound ->
                     HttpStatusCode.NotFound to errorResponseJson("accumulated_depreciation_account_not_found", result.accountId.value.toString())
-                is DisposeFixedAssetResult.SaleOfFixedAssetAccountNotFound ->
-                    HttpStatusCode.NotFound to errorResponseJson("sale_of_fixed_asset_account_not_found", result.accountId.value.toString())
+                is DisposeFixedAssetResult.GainLossAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("gain_loss_account_not_found", result.accountId.value.toString())
+                is DisposeFixedAssetResult.GainLossAccountNotAllowed ->
+                    HttpStatusCode.BadRequest to errorResponseJson("gain_loss_account_not_allowed", "${result.accountId.value}: ${result.reason.name.lowercase()}")
+                DisposeFixedAssetResult.SuspenseAccountNotConfigured ->
+                    HttpStatusCode.Conflict to errorResponseJson("suspense_account_not_configured")
                 is DisposeFixedAssetResult.AccumulatedImpairmentAccountNotFound ->
                     HttpStatusCode.NotFound to errorResponseJson("accumulated_impairment_account_not_found", result.accountId.value.toString())
             }

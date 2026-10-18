@@ -33,7 +33,7 @@ class LineAccountResolver(
     private val accountRepository: AccountRepository,
     private val companyRepository: CompanyRepository? = null
 ) {
-    enum class Kind { PURCHASE, SALE, PAYROLL_EXPENSE, PAYROLL_LIABILITY, SETTLEMENT }
+    enum class Kind { PURCHASE, SALE, GAIN_ON_DISPOSAL, LOSS_ON_DISPOSAL, PAYROLL_EXPENSE, PAYROLL_LIABILITY, SETTLEMENT }
 
     enum class Reason { INACTIVE, WRONG_TYPE, CONTROL_OR_MODULE_OWNED, NOT_A_CASH_BOOK }
 
@@ -67,8 +67,8 @@ class LineAccountResolver(
         if (kind == Kind.SETTLEMENT) return if (account.cashBookKind == null) Reason.NOT_A_CASH_BOOK else null
         val typeAllowed = when (kind) {
             Kind.PURCHASE -> account.type == AccountType.EXPENSE || account.type == AccountType.ASSET
-            Kind.SALE -> account.type == AccountType.REVENUE
-            Kind.PAYROLL_EXPENSE -> account.type == AccountType.EXPENSE
+            Kind.SALE, Kind.GAIN_ON_DISPOSAL -> account.type == AccountType.REVENUE
+            Kind.LOSS_ON_DISPOSAL, Kind.PAYROLL_EXPENSE -> account.type == AccountType.EXPENSE
             Kind.PAYROLL_LIABILITY -> account.type == AccountType.LIABILITY
             Kind.SETTLEMENT -> true
         }

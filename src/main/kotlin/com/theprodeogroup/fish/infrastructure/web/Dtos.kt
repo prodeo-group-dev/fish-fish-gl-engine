@@ -953,10 +953,15 @@ data class DisposeFixedAssetRequestDto(
     val cashAccountId: String,
     val fixedAssetAccountId: String,
     val accumulatedDepreciationAccountId: String,
-    val saleOfFixedAssetAccountId: String,
+    /** Legacy and ignored since 2026-10-18: the gain or loss is posted to its own account (below), never left on a revenue clearing account. */
+    val saleOfFixedAssetAccountId: String? = null,
     val periodId: String,
     val date: String,
-    val accumulatedImpairmentAccountId: String? = null
+    val accumulatedImpairmentAccountId: String? = null,
+    /** The income account a gain on disposal is credited to; omit it and a gain goes to Suspense. */
+    val gainOnDisposalAccountId: String? = null,
+    /** The expense account a loss on disposal is debited to; omit it and a loss goes to Suspense. */
+    val lossOnDisposalAccountId: String? = null
 )
 
 /** Response for the three fixed-asset posting routes (depreciation/impairment/disposal) - just the resulting `JournalEntry` plus the asset's refreshed figures. */
