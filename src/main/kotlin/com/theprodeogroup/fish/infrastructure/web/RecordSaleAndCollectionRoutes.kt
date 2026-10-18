@@ -112,6 +112,8 @@ fun Route.recordSaleAndCollectionRoutes(
                 is RecordSaleResult.PeriodNotOpen -> HttpStatusCode.Conflict to errorResponseJson("period_not_open")
                 is RecordSaleResult.VatCategoryNotSupported ->
                     HttpStatusCode.BadRequest to errorResponseJson("vat_category_not_supported", result.category.name)
+                is RecordSaleResult.VatRateNotInForce ->
+                    HttpStatusCode.BadRequest to errorResponseJson("vat_rate_not_in_force", "${result.category.name} on ${result.asOf}")
                 is RecordSaleResult.ArControlAccountNotFound ->
                     HttpStatusCode.NotFound to errorResponseJson("ar_control_account_not_found", result.accountId.value.toString())
                 is RecordSaleResult.RevenueAccountNotFound ->

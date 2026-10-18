@@ -384,4 +384,22 @@ class RecordSaleUseCaseTest {
         val failure = result.shouldBeInstanceOf<RecordSaleResult.VatCategoryNotSupported>()
         failure.category shouldBe VatCategory.SECOND_REDUCED
     }
+
+    @Test
+    fun `given a sale dated before the category's first rate is in force, when executed, then it is refused as VatRateNotInForce and nothing is posted`() {
+        val lateSchedule = VatRateSchedule(
+            mapOf(VatCategory.STANDARD to listOf(com.theprodeogroup.fish.domain.tax.VatRateEntry(BigDecimal("0.20"), LocalDate.of(2030, 1, 1))))
+        )
+        val period = openPeriod()
+        val ar = account("1100", AccountType.ASSET)
+        val revenue = account("4000", AccountType.REVENUE)
+        val vat = account("2150", AccountType.LIABILITY)
+
+        val result = useCase.execute(request(period.id, ar.id, revenue.id, vat.id, vatRateSchedule = lateSchedule))
+
+        val failure = result.shouldBeInstanceOf<RecordSaleResult.VatRateNotInForce>()
+        failure.category shouldBe VatCategory.STANDARD
+        failure.asOf shouldBe TODAY
+        journalEntryRepository.saveCalls shouldBe emptyList()
+    }
 }

@@ -38,6 +38,8 @@ sealed class RecordSupplierObligationResult {
     data class ApControlAccountNotFound(val accountId: AccountId) : RecordSupplierObligationResult()
     data class VatControlAccountNotFound(val accountId: AccountId) : RecordSupplierObligationResult()
     data class VatCategoryNotSupported(val category: VatCategory) : RecordSupplierObligationResult()
+    /** The category is configured, but no rate of it is in force on the transaction date: refused, never defaulted. */
+    data class VatRateNotInForce(val category: VatCategory, val asOf: LocalDate) : RecordSupplierObligationResult()
 }
 
 /**
@@ -124,6 +126,10 @@ class RecordSupplierObligationUseCase(
         val unsupportedCategory = request.lines.map { it.vatCategory }.firstOrNull { !request.vatRateSchedule.supports(it) }
         if (unsupportedCategory != null) {
             return RecordSupplierObligationResult.VatCategoryNotSupported(unsupportedCategory)
+        }
+        val ratesInForce = request.vatRateSchedule.categoriesAsOf(request.date).map { it.category }.toSet()
+        request.lines.map { it.vatCategory }.firstOrNull { it !in ratesInForce }?.let {
+            return RecordSupplierObligationResult.VatRateNotInForce(it, request.date)
         }
 
         val currency = request.lines.first().netAmount.currency
