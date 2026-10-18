@@ -473,4 +473,60 @@ class JournalEntryRoutesTest {
         fixture.journalEntryRepository.findAllByCompany(fixture.company.id).map { it.description }.toSet() shouldBe
             setOf("Takings", "Reversal of ${original.id.value}")
     }
+
+    // --- the chart as a picker for purchase and sale lines (Femi 2026-10-18: the account is chosen by transaction type) ---
+
+    private suspend fun io.ktor.client.HttpClient.getAccounts(fixture: Fixture, query: String) =
+        get("/api/companies/${fixture.company.id.value}/accounts$query") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+    private fun Fixture.add(code: String, type: AccountType, name: String) =
+        Account.create(company.id, type, if (type.requiresClassification()) AccountClassification.CURRENT else null, code, name)
+            .also { accountRepository.save(it) }
+
+    @Test
+    fun `given a type filter, when GET accounts is called, then only that type is returned, and a bad type is a 400`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        fixture.add("4000", AccountType.REVENUE, "Sales")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.getAccounts(fixture, "?type=EXPENSE").body<List<AccountSummaryDto>>().map { it.code } shouldBe listOf("5000")
+        client.getAccounts(fixture, "?type=REVENUE").body<List<AccountSummaryDto>>().map { it.code } shouldBe listOf("4000")
+        client.getAccounts(fixture, "?type=NONSENSE").status shouldBe HttpStatusCode.BadRequest
+    }
+
+    @Test
+    fun `given usableFor purchase-line, when GET accounts is called, then only accounts a purchase line may post to are listed, with Suspense last`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        fixture.add("1300", AccountType.ASSET, "Inventory")            // module-owned
+        fixture.add("2000", AccountType.LIABILITY, "Accounts Payable")  // wrong type
+        fixture.add("4000", AccountType.REVENUE, "Sales")               // wrong type
+        fixture.add("5100", AccountType.EXPENSE, "Rent")
+        fixture.add("3910", AccountType.EQUITY, "Suspense Account")
+        fixture.add("1150", AccountType.ASSET, "Prepayments")
+        fixture.add("5200", AccountType.EXPENSE, "Dormant").also { it.deactivate(); fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        // 1000 Test Cash is a plain asset in this fixture (no cash-book kind), so it is allowed like any non-owned asset.
+        client.getAccounts(fixture, "?usableFor=purchase-line").body<List<AccountSummaryDto>>().map { it.code } shouldBe
+            listOf("1000", "1150", "5000", "5100", "3910")
+    }
+
+    @Test
+    fun `given usableFor sale-line, when GET accounts is called, then only revenue accounts are listed, with Suspense last, and a bad value is a 400`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        fixture.add("4010", AccountType.REVENUE, "Goods")
+        fixture.add("4020", AccountType.REVENUE, "Fees")
+        fixture.add("4920", AccountType.REVENUE, "Discounts Received") // module-owned
+        fixture.add("3910", AccountType.EQUITY, "Suspense Account")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.getAccounts(fixture, "?usableFor=sale-line").body<List<AccountSummaryDto>>().map { it.code } shouldBe listOf("4010", "4020", "3910")
+        client.getAccounts(fixture, "?usableFor=nonsense").status shouldBe HttpStatusCode.BadRequest
+    }
 }

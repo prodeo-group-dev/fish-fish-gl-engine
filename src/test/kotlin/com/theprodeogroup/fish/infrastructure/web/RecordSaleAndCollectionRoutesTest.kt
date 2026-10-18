@@ -696,4 +696,86 @@ class RecordSaleAndCollectionRoutesTest {
         changed.status shouldBe HttpStatusCode.UnprocessableEntity
         fixture.journalEntryRepository.saveCalls.size shouldBe 1
     }
+
+    // --- per-line revenue accounts (Femi 2026-10-18: the account a transaction posts to is chosen by its type; none set means Suspense) ---
+
+    private fun lineAccountBody(fixture: Fixture, lines: String, legacyAccountId: UUID? = null) =
+        """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}", "date": "$TODAY",
+            |"arControlAccountId": "${fixture.arControlAccount.id.value}",
+            |${if (legacyAccountId != null) "\"revenueAccountId\": \"$legacyAccountId\"," else ""}
+            |"vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+            |"lines": $lines, "currency": "GBP", "customerId": "${UUID.randomUUID()}"}""".trimMargin()
+
+    private suspend fun io.ktor.client.HttpClient.postSale(fixture: Fixture, body: String) =
+        post("/api/sales/record-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+
+    private fun revenueAccount(fixture: Fixture, code: String, name: String) =
+        Account.create(fixture.company.id, AccountType.REVENUE, null, code, name).also { fixture.accountRepository.save(it) }
+
+    @Test
+    fun `given goods and fees lines each with its own revenue account and no request-level account, when record-sale is posted, then it credits the two accounts and tags the output VAT`() = testApplication {
+        val fixture = Fixture()
+        val goods = revenueAccount(fixture, "4010", "Sales of goods")
+        val fees = revenueAccount(fixture, "4020", "Fee income")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postSale(
+            fixture,
+            lineAccountBody(
+                fixture,
+                """[{"netAmount": "1000.00", "vatCategory": "STANDARD", "accountId": "${goods.id.value}"},
+                   |{"netAmount": "200.00", "vatCategory": "ZERO_RATED", "accountId": "${fees.id.value}"}]""".trimMargin()
+            )
+        )
+
+        response.status shouldBe HttpStatusCode.OK
+        val posted = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).single()
+        posted.lines.filter { it.accountId == goods.id || it.accountId == fees.id }.map { it.amount.amount.toPlainString() } shouldBe listOf("1000.00", "200.00")
+        posted.lines.single { it.accountId == fixture.arControlAccount.id }.amount.amount.toPlainString() shouldBe "1400.00"
+        posted.lines.filter { it.accountId == fixture.vatControlAccount.id }
+            .all { it.dimensions[com.theprodeogroup.fish.domain.common.DimensionType.VAT_DIRECTION] == "OUTPUT" } shouldBe true
+    }
+
+    @Test
+    fun `given no account anywhere, when record-sale is posted, then the net credits Suspense, or 409 suspense_account_not_configured without one`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val lines = """[{"netAmount": "1000.00", "vatCategory": "EXEMPT"}]"""
+
+        val refused = client.postSale(fixture, lineAccountBody(fixture, lines))
+        refused.status shouldBe HttpStatusCode.Conflict
+        refused.body<ErrorResponseDto>().error shouldBe "suspense_account_not_configured"
+        fixture.journalEntryRepository.saveCalls.size shouldBe 0
+
+        val suspense = Account.create(fixture.company.id, AccountType.EQUITY, null, "3910", "Suspense Account").also { fixture.accountRepository.save(it) }
+        client.postSale(fixture, lineAccountBody(fixture, lines)).status shouldBe HttpStatusCode.OK
+        fixture.journalEntryRepository.findAllByCompany(fixture.company.id).single().lines.any { it.accountId == suspense.id } shouldBe true
+    }
+
+    @Test
+    fun `given a line account of another Company or an expense account, when record-sale is posted, then it is 404 or 400 with the line codes`() = testApplication {
+        val fixture = Fixture()
+        val foreign = Account.create(com.theprodeogroup.fish.domain.tenancy.CompanyId.generate(), AccountType.REVENUE, null, "4010", "Sales")
+            .also { fixture.accountRepository.save(it) }
+        val expense = Account.create(fixture.company.id, AccountType.EXPENSE, null, "5000", "Operating Expenses").also { fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        fun lines(accountId: UUID) = """[{"netAmount": "100.00", "vatCategory": "EXEMPT", "accountId": "$accountId"}]"""
+
+        val notFound = client.postSale(fixture, lineAccountBody(fixture, lines(foreign.id.value)))
+        notFound.status shouldBe HttpStatusCode.NotFound
+        notFound.body<ErrorResponseDto>().error shouldBe "line_account_not_found"
+
+        val wrongType = client.postSale(fixture, lineAccountBody(fixture, lines(expense.id.value)))
+        wrongType.status shouldBe HttpStatusCode.BadRequest
+        wrongType.body<ErrorResponseDto>().detail shouldBe "${expense.id.value}: wrong_type"
+        fixture.journalEntryRepository.saveCalls.size shouldBe 0
+    }
 }

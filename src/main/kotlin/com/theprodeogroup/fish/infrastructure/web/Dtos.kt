@@ -137,7 +137,9 @@ data class PayrollPostingContextResponseDto(
 @Serializable
 data class SaleLineDto(
     val netAmount: String,
-    val vatCategory: String
+    val vatCategory: String,
+    /** The revenue account from the Company's own chart this line credits (optional): goods, services, fees, interest each their own; absent means the request-level account, else Suspense. */
+    val accountId: String? = null
 )
 
 @Serializable
@@ -146,7 +148,8 @@ data class RecordSaleRequestDto(
     val periodId: String,
     val date: String,
     val arControlAccountId: String,
-    val revenueAccountId: String,
+    /** Legacy: one revenue account for every line that names none; omit it and those lines go to Suspense. */
+    val revenueAccountId: String? = null,
     val vatControlAccountId: String,
     val lines: List<SaleLineDto>,
     val currency: String,
@@ -238,7 +241,9 @@ data class AccountSummaryDto(
     val type: String,
     val classification: String? = null,
     /** `CASH`, `BANK` or `null` (no book). Added 2026-10-10 (docs/GL_Cash_And_Bank_Books_SRS.md, FR-CB03); additive and nullable. */
-    val cashBookKind: String? = null
+    val cashBookKind: String? = null,
+    /** The expense classification name (for example `COST_OF_GOODS_SOLD`, `ADMINISTRATIVE`) or `null`; lets a picker group expense accounts. Added 2026-10-18; additive and nullable. */
+    val expenseClassification: String? = null
 )
 
 /**
@@ -357,7 +362,9 @@ data class CreateSalesInvoiceResponseDto(
 @Serializable
 data class PurchaseLineDto(
     val netAmount: String,
-    val vatCategory: String
+    val vatCategory: String,
+    /** The expense (or prepayment-style asset) account from the Company's own chart this line debits (optional): rent, electricity, consultants each their own; absent means the request-level account, else Suspense. */
+    val accountId: String? = null
 )
 
 @Serializable
@@ -365,7 +372,8 @@ data class RecordSupplierObligationRequestDto(
     val companyId: String,
     val periodId: String,
     val date: String,
-    val expenseOrAssetAccountId: String,
+    /** Legacy: one account for every line that names none; omit it and those lines go to Suspense. */
+    val expenseOrAssetAccountId: String? = null,
     val apControlAccountId: String,
     val vatControlAccountId: String,
     val lines: List<PurchaseLineDto>,

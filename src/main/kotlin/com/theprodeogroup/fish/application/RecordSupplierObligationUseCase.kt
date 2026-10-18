@@ -2,6 +2,7 @@ package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.fish.domain.ledger.findOwnedBy
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
+import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.DomainEvent
 import com.theprodeogroup.fish.domain.common.JournalSource
@@ -17,6 +18,7 @@ import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.purchasing.SupplierId
 import com.theprodeogroup.fish.domain.tax.VatCategory
+import com.theprodeogroup.fish.domain.tax.VatLineDirection
 import com.theprodeogroup.fish.domain.tax.VatRateSchedule
 import java.math.BigDecimal
 import java.time.LocalDate
@@ -41,6 +43,12 @@ sealed class RecordSupplierObligationResult {
     data class ExpenseOrAssetAccountNotFound(val accountId: AccountId) : RecordSupplierObligationResult()
     data class ApControlAccountNotFound(val accountId: AccountId) : RecordSupplierObligationResult()
     data class VatControlAccountNotFound(val accountId: AccountId) : RecordSupplierObligationResult()
+    /** A line named an account that is not an account of this Company. */
+    data class LineAccountNotFound(val accountId: AccountId) : RecordSupplierObligationResult()
+    /** A line named an account of this Company that a purchase line may not post to (wrong type, a control or module-owned account, or inactive). */
+    data class LineAccountNotAllowed(val accountId: AccountId, val reason: LineAccountResolver.Reason) : RecordSupplierObligationResult()
+    /** No account was named anywhere and the Company has no Suspense account to fall back to. */
+    data object SuspenseAccountNotConfigured : RecordSupplierObligationResult()
     data class VatCategoryNotSupported(val category: VatCategory) : RecordSupplierObligationResult()
     /** The category is configured, but no rate of it is in force on the transaction date: refused, never defaulted. */
     data class VatRateNotInForce(val category: VatCategory, val asOf: LocalDate) : RecordSupplierObligationResult()
@@ -77,10 +85,18 @@ sealed class RecordSupplierObligationResult {
 class RecordSupplierObligationUseCase(
     private val periodRepository: PeriodRepository,
     private val accountRepository: AccountRepository,
-    private val journalEntryRepository: JournalEntryRepository
+    private val journalEntryRepository: JournalEntryRepository,
+    companyRepository: CompanyRepository? = null
 ) {
-    /** One line of the purchase - net amount plus the VAT category it falls under. */
-    data class PurchaseLine(val netAmount: Money, val vatCategory: VatCategory) {
+    private val lineAccountResolver = LineAccountResolver(accountRepository, companyRepository)
+
+    /**
+     * One line of the purchase - net amount plus the VAT category it falls under, and (2026-10-18, Femi: the account
+     * a transaction posts to is chosen by its type) the account from the Company's own chart it posts to: rent to Rent,
+     * electricity to Electricity. [accountId] is optional: a line that names none uses [Request.expenseOrAssetAccountId]
+     * when the caller still sends one, otherwise the Company's Suspense account.
+     */
+    data class PurchaseLine(val netAmount: Money, val vatCategory: VatCategory, val accountId: AccountId? = null) {
         init {
             require(netAmount.amount.signum() > 0) { "PurchaseLine netAmount must be positive" }
         }
@@ -91,7 +107,8 @@ class RecordSupplierObligationUseCase(
         val companyId: CompanyId,
         val periodId: PeriodId,
         val date: LocalDate,
-        val expenseOrAssetAccountId: AccountId,
+        /** The account for every line that names none (legacy callers, which send one account for the whole purchase); `null` means those lines go to Suspense. Checked only for belonging to the Company, as it always was. */
+        val expenseOrAssetAccountId: AccountId?,
         val apControlAccountId: AccountId,
         val vatControlAccountId: AccountId,
         val lines: List<PurchaseLine>,
@@ -117,9 +134,11 @@ class RecordSupplierObligationUseCase(
         // each Account must belong to this Period's own Company, or it's treated as
         // AccountNotFound - never a distinct "forbidden" case, so this never confirms
         // another Company's Account exists.
-        val expenseOrAssetAccount = accountRepository.findById(request.expenseOrAssetAccountId)
-            ?.takeIf { it.companyId == period.companyId }
-            ?: return RecordSupplierObligationResult.ExpenseOrAssetAccountNotFound(request.expenseOrAssetAccountId)
+        val requestLevelAccount = request.expenseOrAssetAccountId?.let { accountId ->
+            accountRepository.findById(accountId)
+                ?.takeIf { it.companyId == period.companyId }
+                ?: return RecordSupplierObligationResult.ExpenseOrAssetAccountNotFound(accountId)
+        }
         val apControlAccount = accountRepository.findById(request.apControlAccountId)
             ?.takeIf { it.companyId == period.companyId }
             ?: return RecordSupplierObligationResult.ApControlAccountNotFound(request.apControlAccountId)
@@ -136,6 +155,23 @@ class RecordSupplierObligationUseCase(
             return RecordSupplierObligationResult.VatRateNotInForce(it, request.date)
         }
 
+        // Each line's account: its own, else the request-level one, else Suspense - all resolved before anything is built.
+        val lineAccounts = mutableListOf<Account>()
+        for (line in request.lines) {
+            val resolved = when {
+                line.accountId != null -> lineAccountResolver.resolve(period.companyId, LineAccountResolver.Kind.PURCHASE, line.accountId)
+                requestLevelAccount != null -> LineAccountResolver.Result.Resolved(requestLevelAccount)
+                else -> lineAccountResolver.suspense(period.companyId)
+            }
+            when (resolved) {
+                is LineAccountResolver.Result.Resolved -> lineAccounts.add(resolved.account)
+                is LineAccountResolver.Result.NotFound -> return RecordSupplierObligationResult.LineAccountNotFound(resolved.accountId)
+                is LineAccountResolver.Result.NotAllowed ->
+                    return RecordSupplierObligationResult.LineAccountNotAllowed(resolved.accountId, resolved.reason)
+                LineAccountResolver.Result.SuspenseNotConfigured -> return RecordSupplierObligationResult.SuspenseAccountNotConfigured
+            }
+        }
+
         val currency = request.lines.first().netAmount.currency
         val zero = Money(BigDecimal.ZERO, currency)
         val netTotal = request.lines.fold(zero) { sum, line -> sum + line.netAmount }
@@ -150,13 +186,24 @@ class RecordSupplierObligationUseCase(
         val vatTotal = vatByCategory.values.fold(zero) { sum, amount -> sum + amount }
         val grossTotal = netTotal + vatTotal
 
+        // Input VAT: the buyer's side of the VAT return, tagged so the return does not depend on the debit side.
         val vatLines = vatByCategory.map { (category, amount) ->
-            JournalLine(vatAccount.id, amount, TransactionSide.DEBIT, mapOf(DimensionType.VAT_CATEGORY to category.name))
+            JournalLine(
+                vatAccount.id, amount, TransactionSide.DEBIT,
+                mapOf(DimensionType.VAT_CATEGORY to category.name, DimensionType.VAT_DIRECTION to VatLineDirection.INPUT.name)
+            )
         }
 
-        val lines = listOf(
-            JournalLine(expenseOrAssetAccount.id, netTotal, TransactionSide.DEBIT)
-        ) + vatLines + listOf(
+        // One debit per distinct account (net amounts summed), in the order the accounts first appear on the lines.
+        val debitAccounts = LinkedHashMap<AccountId, Account>()
+        val netByAccount = LinkedHashMap<AccountId, Money>()
+        request.lines.zip(lineAccounts).forEach { (line, account) ->
+            debitAccounts[account.id] = account
+            netByAccount[account.id] = (netByAccount[account.id] ?: zero) + line.netAmount
+        }
+        val netLines = netByAccount.map { (accountId, net) -> JournalLine(accountId, net, TransactionSide.DEBIT) }
+
+        val lines = netLines + vatLines + listOf(
             JournalLine(
                 apControlAccount.id, grossTotal, TransactionSide.CREDIT,
                 mapOf(DimensionType.VENDOR to request.supplierId.value.toString())
@@ -172,7 +219,7 @@ class RecordSupplierObligationUseCase(
                 posting.errors.joinToString()
         }
 
-        val touchedAccounts: List<Account> = listOfNotNull(expenseOrAssetAccount, apControlAccount, vatAccount.takeIf { vatLines.isNotEmpty() })
+        val touchedAccounts: List<Account> = debitAccounts.values + listOfNotNull(apControlAccount, vatAccount.takeIf { vatLines.isNotEmpty() })
         for (account in touchedAccounts) {
             account.recordActivity()
             accountRepository.save(account)

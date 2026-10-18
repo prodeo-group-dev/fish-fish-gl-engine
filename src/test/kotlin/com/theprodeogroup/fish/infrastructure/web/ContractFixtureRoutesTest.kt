@@ -363,21 +363,22 @@ class ContractFixtureRoutesTest {
     fun `contract fixture - POST purchasing record-obligation`() = testApplication {
         val fixture = Fixture(configureAccounts = false, openPeriod = false)
         fixture.seed()
-        // The expense account is added here rather than in seed(), so no other fixture (reports list accounts) changes.
-        val expense = Account.create(fixture.company.id, AccountType.EXPENSE, null, "5100", "Rent", id = id(14)).also { fixture.accountRepository.save(it) }
+        // Rent and electricity are added here rather than in seed(), so no other fixture (reports list accounts) changes.
+        val rent = Account.create(fixture.company.id, AccountType.EXPENSE, null, "5100", "Rent", id = id(14)).also { fixture.accountRepository.save(it) }
+        val electricity = Account.create(fixture.company.id, AccountType.EXPENSE, null, "5110", "Electricity", id = id(15)).also { fixture.accountRepository.save(it) }
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        // Two lines at two rates (rent at the standard rate, electricity at the reduced rate).
+        // Two lines on two accounts (rent at the standard rate, electricity at the reduced rate); no request-level account.
         val response = client.post("/api/purchasing/record-obligation") {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
             header("X-Tenant-Id", fixture.tenant.value.toString())
             contentType(ContentType.Application.Json)
             setBody(
                 """{"companyId": "${fixture.company.id.value}", "periodId": "${periodId.value}", "date": "2026-10-12",
-                    |"supplierId": "$supplier", "expenseOrAssetAccountId": "${expense.id.value}",
-                    |"apControlAccountId": "${id(5).value}", "vatControlAccountId": "${id(6).value}",
-                    |"lines": [{"netAmount": "1000.00", "vatCategory": "STANDARD"}, {"netAmount": "400.00", "vatCategory": "REDUCED"}],
+                    |"supplierId": "$supplier", "apControlAccountId": "${id(5).value}", "vatControlAccountId": "${id(6).value}",
+                    |"lines": [{"netAmount": "1000.00", "vatCategory": "STANDARD", "accountId": "${rent.id.value}"},
+                    |          {"netAmount": "400.00", "vatCategory": "REDUCED", "accountId": "${electricity.id.value}"}],
                     |"currency": "GBP", "description": "Synthetic"}""".trimMargin()
             )
         }
