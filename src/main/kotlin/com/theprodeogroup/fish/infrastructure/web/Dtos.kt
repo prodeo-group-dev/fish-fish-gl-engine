@@ -176,7 +176,9 @@ data class RecordCollectionRequestDto(
     val amount: String,
     val currency: String,
     val customerId: String,
-    val description: String? = null
+    val description: String? = null,
+    /** The receipt number from the caller's register, 1 to 64 characters; written into the entry description (added 2026-10-18). */
+    val reference: String? = null
 )
 
 @Serializable
@@ -657,6 +659,9 @@ data class VatReturnResponseDto(
 )
 
 @Serializable
+data class SettlementAccountDto(val accountId: String, val code: String, val name: String, val kind: String)
+
+@Serializable
 data class SalesPostingContextResponseDto(
     val periodId: String,
     val arControlAccountId: String,
@@ -664,7 +669,9 @@ data class SalesPostingContextResponseDto(
     val vatControlAccountId: String,
     /** Nullable, no default (always present on the wire, `null` when the Company has no cash account "1000") - added 2026-10-06 for SOP's cash-sale move; same additive precedent as `suspenseAccountId` on inventory-posting-context. */
     val cashAccountId: String?,
-    val currency: String
+    val currency: String,
+    /** The Company's active cash and bank books by code (added 2026-10-18); empty when it has none. Always present on the wire. */
+    val settlementAccounts: List<SettlementAccountDto>
 )
 
 /**

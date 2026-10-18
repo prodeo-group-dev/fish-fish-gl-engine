@@ -69,7 +69,9 @@ class RecordCollectionUseCase(
         val arControlAccountId: AccountId,
         val amount: Money,
         val customerId: CustomerId,
-        val description: String? = null
+        val description: String? = null,
+        /** The receipt number from the caller's register (SOP), written into the entry description so the ledger entry can be traced from the receipt (2026-10-18). */
+        val reference: String? = null
     )
 
     fun execute(request: Request): RecordCollectionResult {
@@ -105,7 +107,8 @@ class RecordCollectionUseCase(
             )
         )
         val entry = JournalEntry.create(
-            request.periodId, request.date, lines, JournalSource.INTEGRATION, request.description
+            request.periodId, request.date, lines, JournalSource.INTEGRATION,
+            request.reference?.let { "${request.description ?: "Collection"} - receipt $it" } ?: request.description
         )
         val posting = entry.post()
         check(posting.isValid) {

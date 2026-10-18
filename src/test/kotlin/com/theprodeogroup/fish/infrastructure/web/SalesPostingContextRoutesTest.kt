@@ -295,4 +295,26 @@ class SalesPostingContextRoutesTest {
 
         response.status shouldBe HttpStatusCode.Conflict
     }
+
+    @Test
+    fun `given cash and bank books, when GET sales-posting-context is called, then settlementAccounts lists them with their kind`() = testApplication {
+        val fixture = Fixture()
+        val bank = Account.create(fixture.company.id, AccountType.ASSET, AccountClassification.CURRENT, "1010", "Current Account", cashBookKind = com.theprodeogroup.fish.domain.ledger.CashBookKind.BANK)
+            .also { fixture.accountRepository.save(it) }
+        val wallet = Account.create(fixture.company.id, AccountType.ASSET, AccountClassification.CURRENT, "1020", "Mobile Money Wallet", cashBookKind = com.theprodeogroup.fish.domain.ledger.CashBookKind.CASH)
+            .also { fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val body: SalesPostingContextResponseDto = client.get("/api/companies/${fixture.company.id.value}/sales-posting-context") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }.body()
+
+        body.settlementAccounts.map { Triple(it.accountId, it.code, it.kind) } shouldBe listOf(
+            Triple(bank.id.value.toString(), "1010", "BANK"),
+            Triple(wallet.id.value.toString(), "1020", "CASH")
+        )
+        body.settlementAccounts.map { it.name } shouldBe listOf("Current Account", "Mobile Money Wallet")
+    }
 }

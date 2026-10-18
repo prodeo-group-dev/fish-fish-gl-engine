@@ -359,6 +359,7 @@ class ContractFixtureRoutesTest {
     @Test
     fun `contract fixture - GET receivables-payables-summary`() = contract("contracts/gl/receivables-payables-summary.json", "receivables-payables-summary")
 
+@Test    fun `contract fixture - GET sales-posting-context`() = contract("contracts/gl/sales-posting-context.json", "sales-posting-context")
     @Test
     fun `contract fixture - POST purchasing record-obligation`() = testApplication {
         val fixture = Fixture(configureAccounts = false, openPeriod = false)

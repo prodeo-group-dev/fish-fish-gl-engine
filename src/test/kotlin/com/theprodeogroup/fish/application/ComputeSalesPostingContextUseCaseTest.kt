@@ -115,4 +115,43 @@ class ComputeSalesPostingContextUseCaseTest {
 
         result.shouldBeInstanceOf<SalesPostingContextResult.CompanyNotFound>()
     }
+
+    // --- settlementAccounts (2026-10-18, CM/Femi: the fee desk maps each payment method to a cash or bank book of the Company) ---
+
+    private fun book(code: String, name: String, kind: com.theprodeogroup.fish.domain.ledger.CashBookKind): Account =
+        Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, code, name, cashBookKind = kind)
+            .also { accountRepository.save(it) }
+
+    @Test
+    fun `given cash and bank books, when resolved, then settlementAccounts lists the active books by code with their kind`() {
+        openPeriod()
+        account("1100", AccountType.ASSET)
+        account("4000", AccountType.REVENUE)
+        account("2150", AccountType.LIABILITY)
+        val bank = book("1010", "Current Account", com.theprodeogroup.fish.domain.ledger.CashBookKind.BANK)
+        val cash = book("1000", "Cash", com.theprodeogroup.fish.domain.ledger.CashBookKind.CASH)
+        val wallet = book("1020", "Mobile Money Wallet", com.theprodeogroup.fish.domain.ledger.CashBookKind.CASH)
+        val retired = book("1030", "Old Account", com.theprodeogroup.fish.domain.ledger.CashBookKind.BANK).also { it.deactivate(); accountRepository.save(it) }
+        account("1200", AccountType.ASSET) // an ordinary asset account is not a book
+
+        val success = useCase.execute(company.id).shouldBeInstanceOf<SalesPostingContextResult.Success>()
+
+        success.settlementAccounts.map { it.accountId } shouldBe listOf(cash.id, bank.id, wallet.id)
+        success.settlementAccounts.map { it.kind } shouldBe listOf(
+            com.theprodeogroup.fish.domain.ledger.CashBookKind.CASH,
+            com.theprodeogroup.fish.domain.ledger.CashBookKind.BANK,
+            com.theprodeogroup.fish.domain.ledger.CashBookKind.CASH
+        )
+        success.settlementAccounts.map { it.accountId }.contains(retired.id) shouldBe false
+    }
+
+    @Test
+    fun `given no cash or bank books, when resolved, then settlementAccounts is empty and the context still resolves`() {
+        openPeriod()
+        account("1100", AccountType.ASSET)
+        account("4000", AccountType.REVENUE)
+        account("2150", AccountType.LIABILITY)
+
+        useCase.execute(company.id).shouldBeInstanceOf<SalesPostingContextResult.Success>().settlementAccounts shouldBe emptyList()
+    }
 }
