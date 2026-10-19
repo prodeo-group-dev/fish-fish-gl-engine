@@ -295,6 +295,11 @@ class CrossCompanyPostingIsolationRouteTest {
         Route("record-pay-run", "/api/payroll/record-pay-run") { c, p, a ->
             """{"companyId": "$c", "periodId": "${p.period.id.value}", "date": "$TODAY", "totalWages": "100.00", "totalSalaries": "200.00",
               |"currency": "GBP", "wagesExpenseAccountId": "${a.expense}", "salariesExpenseAccountId": "${a.expense2}", "cashAccountId": "${a.cash}"}""".trimMargin()
+        },
+        Route("record-pay-run-journal", "/api/payroll/record-pay-run-journal") { c, p, a ->
+            """{"companyId": "$c", "periodId": "${p.period.id.value}", "date": "$TODAY", "currency": "GBP", "lines": [
+              |{"element": "A", "kind": "EXPENSE", "side": "DEBIT", "amount": "100.00", "accountId": "${a.expense}"},
+              |{"element": "B", "kind": "EXPENSE", "side": "CREDIT", "amount": "100.00", "accountId": "${a.expense2}"}]}""".trimMargin()
         }
     )
 

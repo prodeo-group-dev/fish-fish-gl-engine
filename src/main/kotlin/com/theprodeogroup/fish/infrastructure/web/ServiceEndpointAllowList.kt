@@ -54,7 +54,8 @@ object ServiceEndpointAllowList {
             "POST /leave-accruals",
             "POST /leave-accruals/{leaveAccrualId}/remeasure",
             "POST /leave-accruals/{leaveAccrualId}/utilize",
-            "POST /payroll/record-pay-run"
+            "POST /payroll/record-pay-run",
+            "POST /payroll/record-pay-run-journal"
         )
     )
 

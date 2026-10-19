@@ -298,7 +298,7 @@ class TenantIsolationMatrixRouteTest {
     /**
      * Every route that is not scoped by a Company in its path, with why it is acceptable. A NEW route
      * outside /companies/{companyId} fails [every route outside a Company path is known] until it is
-     * added here with a reason AND given its own isolation checks (the 17 body-carrying posting routes
+     * added here with a reason AND given its own isolation checks (the body-carrying posting routes
      * are covered in CrossCompanyPostingIsolationRouteTest; /health, /jurisdictions and /me hold no
      * Company data).
      */
@@ -308,7 +308,7 @@ class TenantIsolationMatrixRouteTest {
         "POST /sales/record-sale", "POST /sales/record-collection", "POST /sales/record-sales-return", "POST /sales/create-invoice",
         "POST /purchasing/record-obligation", "POST /purchasing/record-payment", "POST /purchasing/record-credit-note",
         "POST /inventory/record-receipt", "POST /inventory/record-issue",
-        "POST /payroll/record-pay-run", "POST /leave-accruals",
+        "POST /payroll/record-pay-run", "POST /payroll/record-pay-run-journal", "POST /leave-accruals",
         "POST /leave-accruals/{leaveAccrualId}/remeasure", "POST /leave-accruals/{leaveAccrualId}/utilize",
         "POST /journal-entries", "POST /fixed-assets",
         "POST /fixed-assets/{fixedAssetId}/record-depreciation", "POST /fixed-assets/{fixedAssetId}/assess-impairment",
