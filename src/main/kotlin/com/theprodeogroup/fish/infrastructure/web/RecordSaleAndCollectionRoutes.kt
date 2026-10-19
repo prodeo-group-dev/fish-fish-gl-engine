@@ -80,7 +80,7 @@ fun Route.recordSaleAndCollectionRoutes(
 
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
         val arControlAccountUuid = call.parseUuid(request.arControlAccountId) ?: return@post
-        val revenueAccountUuid = call.parseUuid(request.revenueAccountId) ?: return@post
+        val revenueAccountUuid = request.revenueAccountId?.let { call.parseUuid(it) ?: return@post }
         val vatControlAccountUuid = call.parseUuid(request.vatControlAccountId) ?: return@post
         val customerUuid = call.parseUuid(request.customerId) ?: return@post
         val currency = call.parseCurrency(request.currency) ?: return@post
@@ -93,7 +93,7 @@ fun Route.recordSaleAndCollectionRoutes(
             val result = recordSaleUseCase.execute(
                 RecordSaleUseCase.Request(
                     CompanyId(companyUuid),
-                    PeriodId(periodUuid), date, AccountId(arControlAccountUuid), AccountId(revenueAccountUuid),
+                    PeriodId(periodUuid), date, AccountId(arControlAccountUuid), revenueAccountUuid?.let { AccountId(it) },
                     AccountId(vatControlAccountUuid), lines, CustomerId(customerUuid), vatRateSchedule, request.description
                 )
             )
@@ -114,6 +114,12 @@ fun Route.recordSaleAndCollectionRoutes(
                     HttpStatusCode.BadRequest to errorResponseJson("vat_category_not_supported", result.category.name)
                 is RecordSaleResult.VatRateNotInForce ->
                     HttpStatusCode.BadRequest to errorResponseJson("vat_rate_not_in_force", "${result.category.name} on ${result.asOf}")
+                is RecordSaleResult.LineAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("line_account_not_found", result.accountId.value.toString())
+                is RecordSaleResult.LineAccountNotAllowed ->
+                    HttpStatusCode.BadRequest to errorResponseJson("line_account_not_allowed", "${result.accountId.value}: ${result.reason.name.lowercase()}")
+                RecordSaleResult.SuspenseAccountNotConfigured ->
+                    HttpStatusCode.Conflict to errorResponseJson("suspense_account_not_configured")
                 is RecordSaleResult.ArControlAccountNotFound ->
                     HttpStatusCode.NotFound to errorResponseJson("ar_control_account_not_found", result.accountId.value.toString())
                 is RecordSaleResult.RevenueAccountNotFound ->
@@ -229,7 +235,8 @@ private suspend fun ApplicationCall.parseSaleLines(lines: List<SaleLineDto>, cur
             respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "'${line.vatCategory}' is not a valid vatCategory"))
             return null
         }
-        parsed.add(RecordSaleUseCase.SaleLine(Money(netAmountValue, currency), category))
+        val accountId = line.accountId?.let { parseUuid(it) ?: return null }
+        parsed.add(RecordSaleUseCase.SaleLine(Money(netAmountValue, currency), category, accountId?.let { AccountId(it) }))
     }
     return parsed
 }

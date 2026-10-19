@@ -74,7 +74,7 @@ fun Route.recordSupplierObligationAndPaymentRoutes(
         }
 
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
-        val expenseOrAssetAccountUuid = call.parseUuid(request.expenseOrAssetAccountId) ?: return@post
+        val expenseOrAssetAccountUuid = request.expenseOrAssetAccountId?.let { call.parseUuid(it) ?: return@post }
         val apControlAccountUuid = call.parseUuid(request.apControlAccountId) ?: return@post
         val vatControlAccountUuid = call.parseUuid(request.vatControlAccountId) ?: return@post
         val supplierUuid = call.parseUuid(request.supplierId) ?: return@post
@@ -90,7 +90,7 @@ fun Route.recordSupplierObligationAndPaymentRoutes(
             val result = recordSupplierObligationUseCase.execute(
                 RecordSupplierObligationUseCase.Request(
                     CompanyId(companyUuid),
-                    PeriodId(periodUuid), date, AccountId(expenseOrAssetAccountUuid), AccountId(apControlAccountUuid),
+                    PeriodId(periodUuid), date, expenseOrAssetAccountUuid?.let { AccountId(it) }, AccountId(apControlAccountUuid),
                     AccountId(vatControlAccountUuid), lines, SupplierId(supplierUuid), vatRateSchedule, request.description, journalSource
                 )
             )
@@ -112,6 +112,12 @@ fun Route.recordSupplierObligationAndPaymentRoutes(
                     HttpStatusCode.BadRequest to errorResponseJson("vat_category_not_supported", result.category.name)
                 is RecordSupplierObligationResult.VatRateNotInForce ->
                     HttpStatusCode.BadRequest to errorResponseJson("vat_rate_not_in_force", "${result.category.name} on ${result.asOf}")
+                is RecordSupplierObligationResult.LineAccountNotFound ->
+                    HttpStatusCode.NotFound to errorResponseJson("line_account_not_found", result.accountId.value.toString())
+                is RecordSupplierObligationResult.LineAccountNotAllowed ->
+                    HttpStatusCode.BadRequest to errorResponseJson("line_account_not_allowed", "${result.accountId.value}: ${result.reason.name.lowercase()}")
+                RecordSupplierObligationResult.SuspenseAccountNotConfigured ->
+                    HttpStatusCode.Conflict to errorResponseJson("suspense_account_not_configured")
                 is RecordSupplierObligationResult.ExpenseOrAssetAccountNotFound ->
                     HttpStatusCode.NotFound to errorResponseJson("expense_or_asset_account_not_found", result.accountId.value.toString())
                 is RecordSupplierObligationResult.ApControlAccountNotFound ->
@@ -225,7 +231,8 @@ private suspend fun ApplicationCall.parsePurchaseLines(lines: List<PurchaseLineD
             respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "'${line.vatCategory}' is not a valid vatCategory"))
             return null
         }
-        parsed.add(RecordSupplierObligationUseCase.PurchaseLine(Money(netAmountValue, currency), category))
+        val accountId = line.accountId?.let { parseUuid(it) ?: return null }
+        parsed.add(RecordSupplierObligationUseCase.PurchaseLine(Money(netAmountValue, currency), category, accountId?.let { AccountId(it) }))
     }
     return parsed
 }

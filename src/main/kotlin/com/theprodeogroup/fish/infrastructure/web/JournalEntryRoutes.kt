@@ -2,6 +2,7 @@ package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.application.CreateAccountUseCase
+import com.theprodeogroup.fish.application.LineAccountResolver
 import com.theprodeogroup.fish.application.PostJournalEntryResult
 import com.theprodeogroup.fish.application.PostJournalEntryUseCase
 import com.theprodeogroup.fish.application.RecordOpeningBalanceUseCase
@@ -12,6 +13,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.domain.ledger.AccountType
+import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.ledger.CashBookKind
 import com.theprodeogroup.fish.domain.ledger.ExpenseClassification
 import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
@@ -96,11 +98,37 @@ fun Route.journalEntryRoutes(
         if (!call.verifyClaimedTenant(tenantId)) return@get
         call.authorizeTenantForRead(tenantId, companyId) ?: return@get
 
-        val accounts = accountRepository.findAllByCompany(companyId)
-            .filter { it.active }
-            .sortedBy { it.code }
-            .map { AccountSummaryDto(it.id.value.toString(), it.code, it.name, it.type.name, it.classification?.name, it.cashBookKind?.name) }
-        call.respond(accounts)
+        // `?type=EXPENSE|REVENUE|...` narrows by account type; `?usableFor=purchase-line|sale-line` lists exactly the accounts a
+        // purchase or sale line may post to (LineAccountResolver's rule, Suspense last), so a screen never offers an account
+        // that GL would then refuse (Femi 2026-10-18: the account a transaction posts to is chosen by its type).
+        val typeFilter = call.request.queryParameters["type"]?.let { raw ->
+            AccountType.entries.firstOrNull { it.name == raw } ?: run {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "type must be one of ${AccountType.entries.joinToString()}"))
+                return@get
+            }
+        }
+        val usableFor = call.request.queryParameters["usableFor"]?.let { raw ->
+            when (raw) {
+                "purchase-line" -> LineAccountResolver.Kind.PURCHASE
+                "sale-line" -> LineAccountResolver.Kind.SALE
+                else -> {
+                    call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "usableFor must be purchase-line or sale-line"))
+                    return@get
+                }
+            }
+        }
+
+        val active = accountRepository.findAllByCompany(companyId).filter { it.active }
+        val listed = if (usableFor == null) {
+            active.sortedBy { it.code }
+        } else {
+            val clientType = companyRepository.findById(companyId)?.clientType ?: ClientType.COMPANY_LIMITED
+            LineAccountResolver(accountRepository).usableAccounts(active, usableFor, clientType)
+        }
+        call.respond(
+            listed.filter { typeFilter == null || it.type == typeFilter }
+                .map { AccountSummaryDto(it.id.value.toString(), it.code, it.name, it.type.name, it.classification?.name, it.cashBookKind?.name, it.expenseClassification?.name) }
+        )
     }
 
     /**

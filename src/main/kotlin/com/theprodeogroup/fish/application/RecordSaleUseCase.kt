@@ -2,6 +2,7 @@ package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.fish.domain.ledger.findOwnedBy
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
+import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.DomainEvent
 import com.theprodeogroup.fish.domain.common.JournalSource
@@ -17,6 +18,7 @@ import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.sales.CustomerId
 import com.theprodeogroup.fish.domain.tax.VatCategory
+import com.theprodeogroup.fish.domain.tax.VatLineDirection
 import com.theprodeogroup.fish.domain.tax.VatRateSchedule
 import java.math.BigDecimal
 import java.time.LocalDate
@@ -41,6 +43,12 @@ sealed class RecordSaleResult {
     data class ArControlAccountNotFound(val accountId: AccountId) : RecordSaleResult()
     data class RevenueAccountNotFound(val accountId: AccountId) : RecordSaleResult()
     data class VatControlAccountNotFound(val accountId: AccountId) : RecordSaleResult()
+    /** A line named an account that is not an account of this Company. */
+    data class LineAccountNotFound(val accountId: AccountId) : RecordSaleResult()
+    /** A line named an account of this Company that a sale line may not post to (wrong type, a control or module-owned account, or inactive). */
+    data class LineAccountNotAllowed(val accountId: AccountId, val reason: LineAccountResolver.Reason) : RecordSaleResult()
+    /** No account was named anywhere and the Company has no Suspense account to fall back to. */
+    data object SuspenseAccountNotConfigured : RecordSaleResult()
     data class VatCategoryNotSupported(val category: VatCategory) : RecordSaleResult()
     /** The category is configured, but no rate of it is in force on the transaction date: refused, never defaulted. */
     data class VatRateNotInForce(val category: VatCategory, val asOf: LocalDate) : RecordSaleResult()
@@ -95,10 +103,18 @@ sealed class RecordSaleResult {
 class RecordSaleUseCase(
     private val periodRepository: PeriodRepository,
     private val accountRepository: AccountRepository,
-    private val journalEntryRepository: JournalEntryRepository
+    private val journalEntryRepository: JournalEntryRepository,
+    companyRepository: CompanyRepository? = null
 ) {
-    /** One line of the sale - net amount plus the VAT category it falls under (docs/IE/IE_VAT_MVP_Design.md Decision 1: category lives on the line). */
-    data class SaleLine(val netAmount: Money, val vatCategory: VatCategory) {
+    private val lineAccountResolver = LineAccountResolver(accountRepository, companyRepository)
+
+    /**
+     * One line of the sale - net amount plus the VAT category it falls under (docs/IE/IE_VAT_MVP_Design.md Decision 1: category lives on the line),
+     * and (2026-10-18, Femi: the account a transaction posts to is chosen by its type) the revenue account from the Company's
+     * own chart it credits: goods, services, fees, interest each their own. [accountId] is optional: a line that names none
+     * uses [Request.revenueAccountId] when the caller still sends one, otherwise the Company's Suspense account.
+     */
+    data class SaleLine(val netAmount: Money, val vatCategory: VatCategory, val accountId: AccountId? = null) {
         init {
             require(netAmount.amount.signum() > 0) { "SaleLine netAmount must be positive" }
         }
@@ -110,7 +126,8 @@ class RecordSaleUseCase(
         val periodId: PeriodId,
         val date: LocalDate,
         val arControlAccountId: AccountId,
-        val revenueAccountId: AccountId,
+        /** The account for every line that names none (legacy callers, which send one account for the whole sale); `null` means those lines go to Suspense. Checked only for belonging to the Company, as it always was. */
+        val revenueAccountId: AccountId?,
         val vatControlAccountId: AccountId,
         val lines: List<SaleLine>,
         val customerId: CustomerId,
@@ -136,9 +153,11 @@ class RecordSaleUseCase(
         val arAccount = accountRepository.findById(request.arControlAccountId)
             ?.takeIf { it.companyId == period.companyId }
             ?: return RecordSaleResult.ArControlAccountNotFound(request.arControlAccountId)
-        val revenueAccount = accountRepository.findById(request.revenueAccountId)
-            ?.takeIf { it.companyId == period.companyId }
-            ?: return RecordSaleResult.RevenueAccountNotFound(request.revenueAccountId)
+        val requestLevelAccount = request.revenueAccountId?.let { accountId ->
+            accountRepository.findById(accountId)
+                ?.takeIf { it.companyId == period.companyId }
+                ?: return RecordSaleResult.RevenueAccountNotFound(accountId)
+        }
         val vatAccount = accountRepository.findById(request.vatControlAccountId)
             ?.takeIf { it.companyId == period.companyId }
             ?: return RecordSaleResult.VatControlAccountNotFound(request.vatControlAccountId)
@@ -150,6 +169,22 @@ class RecordSaleUseCase(
         val ratesInForce = request.vatRateSchedule.categoriesAsOf(request.date).map { it.category }.toSet()
         request.lines.map { it.vatCategory }.firstOrNull { it !in ratesInForce }?.let {
             return RecordSaleResult.VatRateNotInForce(it, request.date)
+        }
+
+        // Each line's account: its own, else the request-level one, else Suspense - all resolved before anything is built.
+        val lineAccounts = mutableListOf<Account>()
+        for (line in request.lines) {
+            val resolved = when {
+                line.accountId != null -> lineAccountResolver.resolve(period.companyId, LineAccountResolver.Kind.SALE, line.accountId)
+                requestLevelAccount != null -> LineAccountResolver.Result.Resolved(requestLevelAccount)
+                else -> lineAccountResolver.suspense(period.companyId)
+            }
+            when (resolved) {
+                is LineAccountResolver.Result.Resolved -> lineAccounts.add(resolved.account)
+                is LineAccountResolver.Result.NotFound -> return RecordSaleResult.LineAccountNotFound(resolved.accountId)
+                is LineAccountResolver.Result.NotAllowed -> return RecordSaleResult.LineAccountNotAllowed(resolved.accountId, resolved.reason)
+                LineAccountResolver.Result.SuspenseNotConfigured -> return RecordSaleResult.SuspenseAccountNotConfigured
+            }
         }
 
         val currency = request.lines.first().netAmount.currency
@@ -166,17 +201,29 @@ class RecordSaleUseCase(
         val vatTotal = vatByCategory.values.fold(zero) { sum, amount -> sum + amount }
         val grossTotal = netTotal + vatTotal
 
+        // Output VAT: the seller's side of the VAT return, tagged so the return does not depend on the credit side.
         val vatLines = vatByCategory.map { (category, amount) ->
-            JournalLine(vatAccount.id, amount, TransactionSide.CREDIT, mapOf(DimensionType.VAT_CATEGORY to category.name))
+            JournalLine(
+                vatAccount.id, amount, TransactionSide.CREDIT,
+                mapOf(DimensionType.VAT_CATEGORY to category.name, DimensionType.VAT_DIRECTION to VatLineDirection.OUTPUT.name)
+            )
         }
+
+        // One credit per distinct revenue account (net amounts summed), in the order the accounts first appear on the lines.
+        val creditAccounts = LinkedHashMap<AccountId, Account>()
+        val netByAccount = LinkedHashMap<AccountId, Money>()
+        request.lines.zip(lineAccounts).forEach { (line, account) ->
+            creditAccounts[account.id] = account
+            netByAccount[account.id] = (netByAccount[account.id] ?: zero) + line.netAmount
+        }
+        val revenueLines = netByAccount.map { (accountId, net) -> JournalLine(accountId, net, TransactionSide.CREDIT) }
 
         val lines = listOf(
             JournalLine(
                 arAccount.id, grossTotal, TransactionSide.DEBIT,
                 mapOf(DimensionType.CUSTOMER to request.customerId.value.toString())
-            ),
-            JournalLine(revenueAccount.id, netTotal, TransactionSide.CREDIT)
-        ) + vatLines
+            )
+        ) + revenueLines + vatLines
 
         val entry = JournalEntry.create(
             request.periodId, request.date, lines, JournalSource.INTEGRATION, request.description
@@ -187,7 +234,7 @@ class RecordSaleUseCase(
                 posting.errors.joinToString()
         }
 
-        val touchedAccounts: List<Account> = listOfNotNull(arAccount, revenueAccount, vatAccount.takeIf { vatLines.isNotEmpty() })
+        val touchedAccounts: List<Account> = listOf(arAccount) + creditAccounts.values + listOfNotNull(vatAccount.takeIf { vatLines.isNotEmpty() })
         for (account in touchedAccounts) {
             account.recordActivity()
             accountRepository.save(account)
