@@ -62,6 +62,12 @@ const val FISH_JWT_SERVICE_AUTH_NAME_HR = "fish-jwt-service-hr"
 /** POP's own service-account JWT auth configuration (docs/POP_GL_Service_Account_Closure_Plan.md) - see [installFishJwtAuth] and [buildJwksServiceVerifierForPop]. Same reasoning as [FISH_JWT_SERVICE_AUTH_NAME_IM]/[FISH_JWT_SERVICE_AUTH_NAME_HR]: a separate provider per service caller, not a shared audience. Closes the gap where POP_GL_ENGINE_BEARER_TOKEN was never actually wired to anything - `/purchasing/record-obligation`/`/purchasing/record-payment` previously had no way for POP to authenticate at all. */
 const val FISH_JWT_SERVICE_AUTH_NAME_POP = "fish-jwt-service-pop"
 
+/** The Cash and Bank Books service's own service-account JWT auth configuration (2026-10-19, Femi: CBB is its own service). A separate provider, same reasoning as [FISH_JWT_SERVICE_AUTH_NAME_IM]. */
+const val FISH_JWT_SERVICE_AUTH_NAME_CBB = "fish-jwt-service-cbb"
+
+/** The Payroll service's own service-account JWT auth configuration (2026-10-19, Femi: Payroll is its own service, split out of HR). A separate provider from HR's. */
+const val FISH_JWT_SERVICE_AUTH_NAME_PAYROLL = "fish-jwt-service-payroll"
+
 /**
  * JWT authentication (docs/DDD_Design.md Section 10.19) - **verifies
  * tokens in-process**, against whatever [verifier] the caller supplies,
@@ -127,6 +133,9 @@ fun Application.installFishJwtAuth(
     // POP's own service-account verifier, same shape as [imServiceVerifier]/
     // [hrServiceVerifier] - closes docs/POP_GL_Service_Account_Closure_Plan.md.
     popServiceVerifier: JWTVerifier = DenyAllJwtVerifier,
+    // Cash and Bank Books' and the Payroll service's own verifiers (2026-10-19), same shape as the others.
+    cbbServiceVerifier: JWTVerifier = DenyAllJwtVerifier,
+    payrollServiceVerifier: JWTVerifier = DenyAllJwtVerifier,
     // Whether a service call off its credential's allow-list is refused (the default) or only logged
     // (T15 / G3, [ServiceEndpointAllowList]); production reads FISH_SERVICE_ALLOWLIST_MODE.
     serviceAllowListMode: ServiceAllowListMode = ServiceAllowListMode.ENFORCE
@@ -170,6 +179,22 @@ fun Application.installFishJwtAuth(
         jwt(FISH_JWT_SERVICE_AUTH_NAME_POP) {
             this.verifier(popServiceVerifier)
             validate { credential -> credential.toAuthenticatedCaller(isServiceAccount = true, service = "pop") }
+            challenge { _, _ ->
+                call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
+            }
+        }
+
+        jwt(FISH_JWT_SERVICE_AUTH_NAME_CBB) {
+            this.verifier(cbbServiceVerifier)
+            validate { credential -> credential.toAuthenticatedCaller(isServiceAccount = true, service = "cbb") }
+            challenge { _, _ ->
+                call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
+            }
+        }
+
+        jwt(FISH_JWT_SERVICE_AUTH_NAME_PAYROLL) {
+            this.verifier(payrollServiceVerifier)
+            validate { credential -> credential.toAuthenticatedCaller(isServiceAccount = true, service = "payroll") }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
@@ -322,7 +347,7 @@ private fun buildJwksVerifierFor(issuer: String, audience: String): JWTVerifier 
  * itself is a [Route], so every existing call site still resolves.
  */
 fun Route.fishAuthenticated(build: Route.() -> Unit): Route =
-    authenticate(FISH_JWT_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME_IM, FISH_JWT_SERVICE_AUTH_NAME_HR, FISH_JWT_SERVICE_AUTH_NAME_POP) {
+    authenticate(FISH_JWT_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME_IM, FISH_JWT_SERVICE_AUTH_NAME_HR, FISH_JWT_SERVICE_AUTH_NAME_POP, FISH_JWT_SERVICE_AUTH_NAME_CBB, FISH_JWT_SERVICE_AUTH_NAME_PAYROLL) {
         // T15 / G3: after authentication and before any handler, a service credential may reach only the
         // routes on its own allow-list. People are not touched. A new route is unreachable by services
         // until it is listed.
@@ -618,4 +643,20 @@ suspend fun ApplicationCall.verifyClaimedTenant(actualTenantId: TenantId): Boole
         return false
     }
     return true
+}
+
+/** [buildJwksServiceVerifier]'s counterpart for the Cash and Bank Books service (`FISH_JWT_SERVICE_AUDIENCE_CBB`, its dedicated Cognito app client). Returns `null` when unset, same reasoning. */
+fun buildJwksServiceVerifierForCbb(): JWTVerifier? {
+    val issuer = System.getenv("FISH_JWT_ISSUER")
+        ?: error("FISH_JWT_ISSUER environment variable is required - no default for a security-relevant value")
+    val serviceAudience = System.getenv("FISH_JWT_SERVICE_AUDIENCE_CBB")?.takeIf { it.isNotBlank() } ?: return null
+    return buildJwksVerifierFor(issuer, serviceAudience)
+}
+
+/** [buildJwksServiceVerifier]'s counterpart for the Payroll service (`FISH_JWT_SERVICE_AUDIENCE_PAYROLL`, its dedicated Cognito app client). Returns `null` when unset, same reasoning. */
+fun buildJwksServiceVerifierForPayroll(): JWTVerifier? {
+    val issuer = System.getenv("FISH_JWT_ISSUER")
+        ?: error("FISH_JWT_ISSUER environment variable is required - no default for a security-relevant value")
+    val serviceAudience = System.getenv("FISH_JWT_SERVICE_AUDIENCE_PAYROLL")?.takeIf { it.isNotBlank() } ?: return null
+    return buildJwksVerifierFor(issuer, serviceAudience)
 }

@@ -1293,3 +1293,61 @@ data class RecordPayRunJournalResponseDto(
     /** The total of the debits (equal to the total of the credits). */
     val total: MoneyAmountDto
 )
+
+/** One line of a posting returned by `GET /companies/{companyId}/accounts/{accountId}/postings` (2026-10-19). */
+@Serializable
+data class AccountPostingLineDto(
+    val accountId: String,
+    val code: String,
+    val name: String,
+    val side: String,
+    val amount: String
+)
+
+@Serializable
+data class AccountPostingDto(
+    val entryId: String,
+    val periodId: String,
+    /** Whether the entry's period still accepts postings, so a caller offers Undo only where it can work. */
+    val periodOpen: Boolean,
+    val status: String,
+    val date: String,
+    val description: String?,
+    val source: String,
+    val reversalOfEntryId: String?,
+    val reversedByEntryId: String?,
+    val recordedSeq: Long?,
+    /** All the entry's lines (not only those on the requested account), so the counter-accounts can be named. */
+    val lines: List<AccountPostingLineDto>
+)
+
+/**
+ * `GET /companies/{companyId}/accounts/{accountId}/postings?from=&to=` (2026-10-19): the ledger postings on one account in a date
+ * range, oldest first, with the net before the range. `openingNet` is debits minus credits before `from` (negative when credits exceed).
+ */
+@Serializable
+data class AccountPostingsResponseDto(
+    val accountId: String,
+    val code: String,
+    val name: String,
+    val type: String,
+    val cashBookKind: String?,
+    val currency: String,
+    val from: String,
+    val to: String,
+    val openingNet: String,
+    val postings: List<AccountPostingDto>
+)
+
+/** `GET /companies/{companyId}/accounts/{accountId}/balance?asOf=`: a positive balance and the side it falls on (2026-10-19). */
+@Serializable
+data class AccountBalanceResponseDto(
+    val accountId: String,
+    val code: String,
+    val name: String,
+    val type: String,
+    val currency: String,
+    val asOf: String,
+    val balance: String,
+    val side: String
+)

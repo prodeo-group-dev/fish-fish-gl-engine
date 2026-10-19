@@ -273,6 +273,8 @@ class TenantIsolationMatrixRouteTest {
                 popServiceVerifier = TestJwtSupport.serviceVerifier("pop"),
                 imServiceVerifier = TestJwtSupport.serviceVerifier("im"),
                 hrServiceVerifier = TestJwtSupport.serviceVerifier("hr"),
+                cbbServiceVerifier = TestJwtSupport.serviceVerifier("cbb"),
+                payrollServiceVerifier = TestJwtSupport.serviceVerifier("payroll"),
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
                 computeTaxUseCase = computeTaxUseCase,
                 taxRuleRepository = taxRuleRepository,
@@ -417,7 +419,9 @@ class TenantIsolationMatrixRouteTest {
         ),
         "pop" to listOf(RouteDeclaration("GET", "/companies/{companyId}/purchase-posting-context")),
         "im" to listOf(RouteDeclaration("GET", "/companies/{companyId}/inventory-posting-context")),
-        "hr" to listOf(RouteDeclaration("GET", "/companies/{companyId}/payroll-posting-context"))
+        "hr" to listOf(RouteDeclaration("GET", "/companies/{companyId}/payroll-posting-context")),
+        "payroll" to listOf(RouteDeclaration("GET", "/companies/{companyId}/payroll-posting-context"), RouteDeclaration("GET", "/companies/{companyId}/accounts")),
+        "cbb" to listOf(RouteDeclaration("GET", "/companies/{companyId}/accounts"), RouteDeclaration("GET", "/companies/{companyId}/open-period"))
     )
 
     @Test
@@ -609,16 +613,16 @@ class TenantIsolationMatrixRouteTest {
         "POST /sales/create-invoice", "POST /fixed-assets",
         "POST /fixed-assets/{fixedAssetId}/record-depreciation", "POST /fixed-assets/{fixedAssetId}/assess-impairment",
         "POST /fixed-assets/{fixedAssetId}/dispose",
-        "GET /companies/{companyId}/accounts", "POST /companies/{companyId}/accounts",
+        "POST /companies/{companyId}/accounts",
         "POST /companies/{companyId}/accounts/{accountId}/opening-balance",
         "PUT /companies/{companyId}/accounts/{accountId}/expense-classification",
         "PUT /companies/{companyId}/accounts/{accountId}/cash-book-kind",
         "GET /companies/{companyId}/cash-books", "GET /companies/{companyId}/cash-books/{accountId}",
         "GET /companies/{companyId}/cash-balance-series",
         "POST /companies/{companyId}/standard-accounts",
-        "POST /companies/{companyId}/cash-books/{accountId}/receipts", "POST /companies/{companyId}/cash-books/{accountId}/payments",
+
         "GET /companies/{companyId}/cash-books/{accountId}/counter-accounts",
-        "POST /companies/{companyId}/cash-books/{accountId}/transfers", "POST /companies/{companyId}/cash-books/{accountId}/entries/{entryId}/undo",
+
         "GET /companies/{companyId}/journal-entries", "GET /companies/{companyId}/customers",
         "GET /companies/{companyId}/fixed-assets", "GET /companies/{companyId}/money-velocity",
         "GET /companies/{companyId}/expense-velocity", "GET /companies/{companyId}/sales-to-expense-ratio",
@@ -628,7 +632,7 @@ class TenantIsolationMatrixRouteTest {
         "GET /companies/{companyId}/reports/trial-balance", "GET /companies/{companyId}/reports/trading-profit-and-loss",
         "GET /companies/{companyId}/reports/fixed-asset-register",
         "POST /companies/{companyId}/accounts-payable-aging", "POST /companies/{companyId}/accounts-receivable-aging",
-        "GET /companies/{companyId}/receivables-payables-summary", "GET /companies/{companyId}/open-period",
+        "GET /companies/{companyId}/receivables-payables-summary",
         "POST /companies/{companyId}/supplier-balances",
         "GET /companies/{companyId}/tax", "POST /companies/{companyId}/tax", "POST /companies/{companyId}/vat-return",
         "GET /companies/{companyId}/bank-reconciliations", "POST /companies/{companyId}/bank-reconciliations",

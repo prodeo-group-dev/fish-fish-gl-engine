@@ -418,6 +418,29 @@ class ContractFixtureRoutesTest {
         ContractFixtures.verifyOrUpdate("contracts/gl/payroll-pay-run-journal.json", text)
     }
 
+    /** Entry ids are random in the seeded Company: pinned to a sequence by first appearance so the fixture is reproducible. */
+    private fun pinEntryIds(text: String): String {
+        val pinned = linkedMapOf<String, String>()
+        Regex("\"entryId\":\"([0-9a-f-]{36})\"").findAll(text).forEach { pinned.getOrPut(it.groupValues[1]) { "00000000-0000-4000-8000-%012d".format(300 + pinned.size) } }
+        return pinned.entries.fold(text) { acc, (real, fixed) -> acc.replace(real, fixed) }
+    }
+
+    @Test
+    fun `contract fixture - GET account postings`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.fetch(fixture, "accounts/${id(1).value}/postings?from=2026-10-04&to=2026-10-09")
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/account-postings.json", pinEntryIds(response.bodyAsText()))
+    }
+
+    @Test
+    fun `contract fixture - GET account balance`() = contract("contracts/gl/account-balance.json", "accounts/${id(1).value}/balance?asOf=2026-10-31")
+
     @Test
     fun `contract fixture - POST purchasing record-credit-note`() = testApplication {
         val fixture = Fixture(configureAccounts = false, openPeriod = false)
