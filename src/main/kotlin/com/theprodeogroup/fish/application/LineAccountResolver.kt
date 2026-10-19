@@ -22,6 +22,12 @@ import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
  *
  * [companyRepository] supplies the Company's client type, which decides whether the business control-account codes
  * (1100, 2000, 1300 ...) mean what they mean on a business chart; without it the chart is treated as a business one.
+ *
+ * **Module-owned accounts are refused for every caller.** A control or module-owned account (Accounts Receivable and Payable,
+ * Inventory, Fixed Assets, the VAT control account, a cash or bank book, Suspense used as an opening figure) is refused here
+ * whoever is calling; the rule that the owning module itself may post to it (Payroll to its own liability accounts, POP and SOP
+ * to their control accounts) is NOT implemented. Those modules post through their own dedicated posting interfaces, not through
+ * a per-line account, so nothing needs the exception yet; it is designed with step 2 if a per-line caller ever does.
  */
 class LineAccountResolver(
     private val accountRepository: AccountRepository,
@@ -42,14 +48,15 @@ class LineAccountResolver(
     fun resolve(companyId: CompanyId, kind: Kind, accountId: AccountId): Result {
         val account = accountRepository.findById(accountId)?.takeIf { it.companyId == companyId } ?: return Result.NotFound(accountId)
         // Suspense is the system's own "not yet classified" account: a person may name it deliberately too.
-        if (kind != Kind.SETTLEMENT && isSuspense(account)) return Result.Resolved(account)
+        // It must be active, like every other account: an inactive Suspense account is refused here and is not offered in the list.
+        if (kind != Kind.SETTLEMENT && isSuspense(account)) return if (account.active) Result.Resolved(account) else Result.NotAllowed(accountId, Reason.INACTIVE)
         val reason = refusalFor(account, kind, clientTypeOf(companyId))
         return if (reason == null) Result.Resolved(account) else Result.NotAllowed(accountId, reason)
     }
 
     /** The Company's Suspense account, for a line that names no account. */
     fun suspense(companyId: CompanyId): Result =
-        accountRepository.findAllByCompany(companyId).firstOrNull { isSuspense(it) }
+        accountRepository.findAllByCompany(companyId).firstOrNull { isSuspense(it) && it.active }
             ?.let { Result.Resolved(it) }
             ?: Result.SuspenseNotConfigured
 
