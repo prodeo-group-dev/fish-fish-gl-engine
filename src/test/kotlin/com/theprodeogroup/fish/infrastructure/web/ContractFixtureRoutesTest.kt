@@ -390,6 +390,35 @@ class ContractFixtureRoutesTest {
     }
 
     @Test
+    fun `contract fixture - POST payroll record-pay-run-journal`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        // Added here rather than in seed(), so no other fixture (reports list accounts) changes.
+        val netPay = Account.create(fixture.company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2210", "Net Pay Payable", id = id(16)).also { fixture.accountRepository.save(it) }
+        val paye = Account.create(fixture.company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2220", "PAYE Payable", id = id(17)).also { fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/payroll/record-pay-run-journal") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${periodId.value}", "date": "2026-10-19", "currency": "GBP",
+                    |"reference": "RUN-2026-10", "description": "Synthetic pay run",
+                    |"lines": [{"element": "SALARIES", "kind": "EXPENSE", "side": "DEBIT", "amount": "1000.00", "accountId": "${id(10).value}"},
+                    |          {"element": "NET_PAY_PAYABLE", "kind": "LIABILITY", "side": "CREDIT", "amount": "800.00", "accountId": "${netPay.id.value}"},
+                    |          {"element": "PAYE_PAYABLE", "kind": "LIABILITY", "side": "CREDIT", "amount": "200.00", "accountId": "${paye.id.value}"}]}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        // The only non-deterministic field is the new entry's id: pinned to a fixed value so the fixture is reproducible.
+        val text = response.bodyAsText().replace(Regex("\"journalEntryId\":\"[0-9a-f-]{36}\""), "\"journalEntryId\":\"00000000-0000-4000-8000-0000000000e3\"")
+        ContractFixtures.verifyOrUpdate("contracts/gl/payroll-pay-run-journal.json", text)
+    }
+
+    @Test
     fun `contract fixture - POST purchasing record-credit-note`() = testApplication {
         val fixture = Fixture(configureAccounts = false, openPeriod = false)
         fixture.seed()

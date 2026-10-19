@@ -1259,3 +1259,37 @@ data class CashBookTransferResponseDto(
 /** `POST .../entries/{entryId}/undo`: the reversing entry that was posted and the book's balance after it. */
 @Serializable
 data class CashBookUndoResponseDto(val reversalEntryId: String, val undoneEntryId: String, val balanceAfter: String, val currency: String)
+
+/**
+ * One line of `POST /payroll/record-pay-run-journal` (2026-10-19). `kind` is EXPENSE, LIABILITY or SETTLEMENT (decides the accounts the
+ * line may use); `side` is DEBIT or CREDIT; `element` is Payroll's own opaque code (stored as an audit tag, never validated); `accountId` is
+ * optional (none means Suspense, except a SETTLEMENT line, which must name a cash or bank book).
+ */
+@Serializable
+data class PayRunJournalLineDto(
+    val element: String,
+    val kind: String,
+    val side: String,
+    val amount: String,
+    val accountId: String? = null
+)
+
+@Serializable
+data class RecordPayRunJournalRequestDto(
+    val companyId: String,
+    val periodId: String,
+    val date: String,
+    val currency: String,
+    val lines: List<PayRunJournalLineDto>,
+    val description: String? = null,
+    /** An opaque reference from Payroll (the run id), written into the entry description for tracing. */
+    val reference: String? = null
+)
+
+@Serializable
+data class RecordPayRunJournalResponseDto(
+    val journalEntryId: String,
+    val status: String,
+    /** The total of the debits (equal to the total of the credits). */
+    val total: MoneyAmountDto
+)

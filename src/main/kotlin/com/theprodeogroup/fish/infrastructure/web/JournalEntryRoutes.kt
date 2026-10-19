@@ -111,8 +111,11 @@ fun Route.journalEntryRoutes(
             when (raw) {
                 "purchase-line" -> LineAccountResolver.Kind.PURCHASE
                 "sale-line" -> LineAccountResolver.Kind.SALE
+                "payroll-expense-line" -> LineAccountResolver.Kind.PAYROLL_EXPENSE
+                "payroll-liability-line" -> LineAccountResolver.Kind.PAYROLL_LIABILITY
+                "settlement-line" -> LineAccountResolver.Kind.SETTLEMENT
                 else -> {
-                    call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "usableFor must be purchase-line or sale-line"))
+                    call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "usableFor must be purchase-line, sale-line, payroll-expense-line, payroll-liability-line or settlement-line"))
                     return@get
                 }
             }

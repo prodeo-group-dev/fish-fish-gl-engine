@@ -27,9 +27,9 @@ class LineAccountResolver(
     private val accountRepository: AccountRepository,
     private val companyRepository: CompanyRepository? = null
 ) {
-    enum class Kind { PURCHASE, SALE }
+    enum class Kind { PURCHASE, SALE, PAYROLL_EXPENSE, PAYROLL_LIABILITY, SETTLEMENT }
 
-    enum class Reason { INACTIVE, WRONG_TYPE, CONTROL_OR_MODULE_OWNED }
+    enum class Reason { INACTIVE, WRONG_TYPE, CONTROL_OR_MODULE_OWNED, NOT_A_CASH_BOOK }
 
     sealed class Result {
         data class Resolved(val account: Account) : Result()
@@ -42,7 +42,7 @@ class LineAccountResolver(
     fun resolve(companyId: CompanyId, kind: Kind, accountId: AccountId): Result {
         val account = accountRepository.findById(accountId)?.takeIf { it.companyId == companyId } ?: return Result.NotFound(accountId)
         // Suspense is the system's own "not yet classified" account: a person may name it deliberately too.
-        if (isSuspense(account)) return Result.Resolved(account)
+        if (kind != Kind.SETTLEMENT && isSuspense(account)) return Result.Resolved(account)
         val reason = refusalFor(account, kind, clientTypeOf(companyId))
         return if (reason == null) Result.Resolved(account) else Result.NotAllowed(accountId, reason)
     }
@@ -56,12 +56,19 @@ class LineAccountResolver(
     /** Why [account] cannot take a line of [kind], or null when it can (the shared rule behind the account list). */
     fun refusalFor(account: Account, kind: Kind, clientType: ClientType): Reason? {
         if (!account.active) return Reason.INACTIVE
+        // A settlement line is the cash or bank side of a payment: it must be one of the Company's cash or bank books.
+        if (kind == Kind.SETTLEMENT) return if (account.cashBookKind == null) Reason.NOT_A_CASH_BOOK else null
         val typeAllowed = when (kind) {
             Kind.PURCHASE -> account.type == AccountType.EXPENSE || account.type == AccountType.ASSET
             Kind.SALE -> account.type == AccountType.REVENUE
+            Kind.PAYROLL_EXPENSE -> account.type == AccountType.EXPENSE
+            Kind.PAYROLL_LIABILITY -> account.type == AccountType.LIABILITY
+            Kind.SETTLEMENT -> true
         }
         if (!typeAllowed) return Reason.WRONG_TYPE
         if (ModuleOwnedAccounts.useInstead(account, clientType) != null) return Reason.CONTROL_OR_MODULE_OWNED
+        // The trade finance facility is not a payroll liability (HR, 2026-10-18); accrued leave 2200 is payroll-owned and stays usable.
+        if (kind == Kind.PAYROLL_LIABILITY && account.code == ChartOfAccountsTemplate.FACILITY_LIABILITY_CODE) return Reason.CONTROL_OR_MODULE_OWNED
         return null
     }
 
@@ -71,8 +78,8 @@ class LineAccountResolver(
      * [resolve] would accept, so a screen never offers an account GL would refuse.
      */
     fun usableAccounts(accounts: List<Account>, kind: Kind, clientType: ClientType): List<Account> {
-        val usable = accounts.filter { !isSuspense(it) && refusalFor(it, kind, clientType) == null }.sortedBy { it.code }
-        return usable + accounts.filter { isSuspense(it) && it.active }
+        val usable = accounts.filter { (kind == Kind.SETTLEMENT || !isSuspense(it)) && refusalFor(it, kind, clientType) == null }.sortedBy { it.code }
+        return if (kind == Kind.SETTLEMENT) usable else usable + accounts.filter { isSuspense(it) && it.active }
     }
 
     private fun clientTypeOf(companyId: CompanyId): ClientType =

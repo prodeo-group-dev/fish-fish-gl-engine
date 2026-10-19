@@ -62,6 +62,7 @@ import io.kotest.matchers.shouldBe
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.header
+import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -488,5 +489,151 @@ class PayrollRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.Unauthorized
+    }
+
+    // --- POST /payroll/record-pay-run-journal (2026-10-19) ---
+
+    private fun Fixture.account(code: String, type: AccountType, name: String, kind: com.theprodeogroup.fish.domain.ledger.CashBookKind? = null) =
+        Account.create(company.id, type, if (type.requiresClassification()) AccountClassification.CURRENT else null, code, name, cashBookKind = kind)
+            .also { accountRepository.save(it) }
+
+    private fun journalBody(fixture: Fixture, lines: String, reference: String = "RUN-1") =
+        """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}", "date": "$TODAY", "currency": "GBP",
+            |"reference": "$reference", "description": "Pay run", "lines": $lines}""".trimMargin()
+
+    private suspend fun io.ktor.client.HttpClient.postJournal(fixture: Fixture, body: String, key: String? = null, email: String? = TEST_EMAIL) =
+        post("/api/payroll/record-pay-run-journal") {
+            if (email != null) header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(email)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            if (key != null) header("Idempotency-Key", key)
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+
+    @Test
+    fun `given a liability-first pay run, when posted, then it returns 200 with the total and the lines carry their element`() = testApplication {
+        val fixture = Fixture()
+        val netPay = fixture.account("2210", AccountType.LIABILITY, "Net Pay Payable")
+        val paye = fixture.account("2220", AccountType.LIABILITY, "PAYE Payable")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postJournal(
+            fixture,
+            journalBody(
+                fixture,
+                """[{"element": "WAGES", "kind": "EXPENSE", "side": "DEBIT", "amount": "1000.00", "accountId": "${fixture.wagesExpenseAccount.id.value}"},
+                   |{"element": "NET_PAY_PAYABLE", "kind": "LIABILITY", "side": "CREDIT", "amount": "800.00", "accountId": "${netPay.id.value}"},
+                   |{"element": "PAYE_PAYABLE", "kind": "LIABILITY", "side": "CREDIT", "amount": "200.00", "accountId": "${paye.id.value}"}]""".trimMargin()
+            )
+        )
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: RecordPayRunJournalResponseDto = response.body()
+        body.status shouldBe "POSTED"
+        body.total shouldBe MoneyAmountDto("1000.00", "GBP")
+        val posted = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).single()
+        posted.lines.single { it.accountId == paye.id }.dimensions[com.theprodeogroup.fish.domain.common.DimensionType.PAYROLL_ELEMENT] shouldBe "PAYE_PAYABLE"
+        posted.description shouldBe "Pay run - run RUN-1"
+    }
+
+    @Test
+    fun `given a disbursement from a bank book, when posted, then it returns 200, and a non-cash account on a settlement line is 400`() = testApplication {
+        val fixture = Fixture()
+        val netPay = fixture.account("2210", AccountType.LIABILITY, "Net Pay Payable")
+        val bank = fixture.account("1010", AccountType.ASSET, "Current Account", com.theprodeogroup.fish.domain.ledger.CashBookKind.BANK)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        fun lines(settlement: String) =
+            """[{"element": "NET_PAY_PAYABLE", "kind": "LIABILITY", "side": "DEBIT", "amount": "800.00", "accountId": "${netPay.id.value}"},
+               |{"element": "DISBURSEMENT", "kind": "SETTLEMENT", "side": "CREDIT", "amount": "800.00", "accountId": "$settlement"}]""".trimMargin()
+
+        client.postJournal(fixture, journalBody(fixture, lines(bank.id.value.toString()))).status shouldBe HttpStatusCode.OK
+        val refused = client.postJournal(fixture, journalBody(fixture, lines(fixture.leaveExpenseAccount.id.value.toString())))
+        refused.status shouldBe HttpStatusCode.BadRequest
+        refused.body<ErrorResponseDto>().error shouldBe "line_account_not_allowed"
+    }
+
+    @Test
+    fun `given refusals, when posted, then the codes and statuses are the platform ones and nothing is posted`() = testApplication {
+        val fixture = Fixture()
+        val netPay = fixture.account("2210", AccountType.LIABILITY, "Net Pay Payable")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val good = """{"element": "NET_PAY_PAYABLE", "kind": "LIABILITY", "side": "CREDIT", "amount": "10.00", "accountId": "${netPay.id.value}"}"""
+        val debit = """{"element": "WAGES", "kind": "EXPENSE", "side": "DEBIT", "amount": "10.00", "accountId": "${fixture.wagesExpenseAccount.id.value}"}"""
+
+        client.postJournal(fixture, journalBody(fixture, "[$debit, ${good.replace("10.00", "9.00")}]")).let {
+            it.status shouldBe HttpStatusCode.BadRequest
+            it.body<ErrorResponseDto>().error shouldBe "unbalanced_journal"
+        }
+        val unmapped = """{"element": "BASIC_PAY", "kind": "EXPENSE", "side": "DEBIT", "amount": "10.00"}"""
+        client.postJournal(fixture, journalBody(fixture, "[$unmapped, $good]")).let {
+            it.status shouldBe HttpStatusCode.Conflict
+            it.body<ErrorResponseDto>().error shouldBe "suspense_account_not_configured"
+        }
+        client.postJournal(fixture, journalBody(fixture, """[{"element": "D", "kind": "SETTLEMENT", "side": "CREDIT", "amount": "10.00"}, ${good.replace("CREDIT", "DEBIT")}]"""))
+            .body<ErrorResponseDto>().error shouldBe "settlement_account_required"
+        for (bad in listOf(good.replace("LIABILITY", "BOGUS"), good.replace("CREDIT", "SIDEWAYS"), good.replace("10.00", "ten"), good.replace(netPay.id.value.toString(), "not-a-uuid"))) {
+            client.postJournal(fixture, journalBody(fixture, "[$debit, $bad]")).status shouldBe HttpStatusCode.BadRequest
+        }
+        client.postJournal(fixture, journalBody(fixture, "[$debit, $good]").replace(fixture.period.id.value.toString(), java.util.UUID.randomUUID().toString()))
+            .status shouldBe HttpStatusCode.NotFound
+        fixture.journalEntryRepository.saveCalls.size shouldBe 0
+    }
+
+    @Test
+    fun `given no sign-in or a claimed Tenant that does not own the Company, when posted, then it is 401 or 403`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val body = journalBody(fixture, "[]")
+
+        client.postJournal(fixture, body, email = null).status shouldBe HttpStatusCode.Unauthorized
+        client.post("/api/payroll/record-pay-run-journal") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", java.util.UUID.randomUUID().toString())
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.status shouldBe HttpStatusCode.Forbidden
+    }
+
+    @Test
+    fun `given the same Idempotency-Key and body twice, when posted, then it posts once and replays the answer`() = testApplication {
+        val fixture = Fixture()
+        val netPay = fixture.account("2210", AccountType.LIABILITY, "Net Pay Payable")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val body = journalBody(
+            fixture,
+            """[{"element": "WAGES", "kind": "EXPENSE", "side": "DEBIT", "amount": "100.00", "accountId": "${fixture.wagesExpenseAccount.id.value}"},
+               |{"element": "NET_PAY_PAYABLE", "kind": "LIABILITY", "side": "CREDIT", "amount": "100.00", "accountId": "${netPay.id.value}"}]""".trimMargin()
+        )
+
+        val first: RecordPayRunJournalResponseDto = client.postJournal(fixture, body, key = "run-1:approve").body()
+        val second: RecordPayRunJournalResponseDto = client.postJournal(fixture, body, key = "run-1:approve").body()
+
+        second.journalEntryId shouldBe first.journalEntryId
+        fixture.journalEntryRepository.saveCalls.size shouldBe 1
+    }
+
+    @Test
+    fun `given the account picker, when usableFor is a payroll or settlement kind, then it lists only what the route accepts`() = testApplication {
+        val fixture = Fixture()
+        fixture.account("2210", AccountType.LIABILITY, "Net Pay Payable")
+        fixture.account("2000", AccountType.LIABILITY, "Accounts Payable")
+        fixture.account("2300", AccountType.LIABILITY, "Trade Finance Facility Payable")
+        val bank = fixture.account("1010", AccountType.ASSET, "Current Account", com.theprodeogroup.fish.domain.ledger.CashBookKind.BANK)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        suspend fun codes(kind: String): List<String> =
+            client.get("/api/companies/${fixture.company.id.value}/accounts?usableFor=$kind") {
+                header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+                header("X-Tenant-Id", fixture.tenantId.value.toString())
+            }.body<List<AccountSummaryDto>>().map { it.code }
+
+        codes("payroll-liability-line") shouldBe listOf("2200", "2210")
+        codes("settlement-line") shouldBe listOf(bank.code)
     }
 }
