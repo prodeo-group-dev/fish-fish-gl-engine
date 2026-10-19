@@ -621,8 +621,6 @@ class TenantIsolationMatrixRouteTest {
         "GET /companies/{companyId}/cash-balance-series",
         "POST /companies/{companyId}/standard-accounts",
 
-        "GET /companies/{companyId}/cash-books/{accountId}/counter-accounts",
-
         "GET /companies/{companyId}/journal-entries", "GET /companies/{companyId}/customers",
         "GET /companies/{companyId}/fixed-assets", "GET /companies/{companyId}/money-velocity",
         "GET /companies/{companyId}/expense-velocity", "GET /companies/{companyId}/sales-to-expense-ratio",

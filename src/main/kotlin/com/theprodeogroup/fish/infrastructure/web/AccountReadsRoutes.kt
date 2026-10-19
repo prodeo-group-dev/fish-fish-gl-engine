@@ -79,7 +79,11 @@ fun Route.accountReadsRoutes(
             is ComputeAccountPostingsUseCase.Result.RangeTooLarge ->
                 call.respond(
                     HttpStatusCode.UnprocessableEntity,
-                    ErrorResponseDto("range_too_large", "This range has ${result.rowCount} postings; at most ${result.limit} are returned. Narrow the dates.")
+                    CashBookRangeTooLargeDto(
+                        "range_too_large",
+                        "This range has ${result.rowCount} postings; at most ${result.limit} are returned. Narrow the dates.",
+                        result.rowCount, result.limit
+                    )
                 )
         }
     }

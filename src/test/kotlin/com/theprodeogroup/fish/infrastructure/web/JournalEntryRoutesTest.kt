@@ -591,4 +591,20 @@ class JournalEntryRoutesTest {
         client.getRead(fixture, "${java.util.UUID.randomUUID()}/balance").status shouldBe HttpStatusCode.NotFound
         client.getRead(fixture, "$id/postings", signedIn = false).status shouldBe HttpStatusCode.Unauthorized
     }
+
+    @Test
+    fun `given more postings in the range than the read allows, when GET postings is called, then it is 422 range_too_large with rowCount and limit`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        repeat(5001) { fixture.postEntry(TODAY, "Entry $it") }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.getRead(fixture, "${fixture.debitAccount.id.value}/postings?from=$TODAY&to=$TODAY")
+
+        response.status shouldBe HttpStatusCode.UnprocessableEntity
+        val body: CashBookRangeTooLargeDto = response.body()
+        body.error shouldBe "range_too_large"
+        body.rowCount shouldBe 5001
+        body.limit shouldBe 5000
+    }
 }
