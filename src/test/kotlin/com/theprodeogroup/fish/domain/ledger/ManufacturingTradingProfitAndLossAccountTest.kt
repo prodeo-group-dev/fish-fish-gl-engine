@@ -183,6 +183,7 @@ class ManufacturingTradingProfitAndLossAccountTest {
         account.netProfit shouldBe Money(BigDecimal("50000.00"), GBP) - Money(BigDecimal("30500.00"), GBP)
         account.costOfSalesConfigured shouldBe true
         account.interestConfigured shouldBe true
+        account.taxConfigured shouldBe true
     }
 
     @Test
@@ -218,6 +219,7 @@ class ManufacturingTradingProfitAndLossAccountTest {
 
         account.costOfSalesConfigured shouldBe false
         account.interestConfigured shouldBe false
+        account.taxConfigured shouldBe false
         account.grossProfit shouldBe account.revenue
         account.operatingExpenses shouldBe Money(BigDecimal("700.00"), GBP)
         account.operatingProfit shouldBe Money(BigDecimal("300.00"), GBP)
