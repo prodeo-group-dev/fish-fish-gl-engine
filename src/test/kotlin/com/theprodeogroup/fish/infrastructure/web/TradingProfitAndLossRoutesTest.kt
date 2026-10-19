@@ -260,6 +260,7 @@ class TradingProfitAndLossRoutesTest {
         body.periodEnd shouldBe fixture.period!!.endDate.toString()
         body.costOfSalesConfigured shouldBe true
         body.interestConfigured shouldBe true
+        body.taxConfigured shouldBe true
         body.revenue shouldBe "50000.00"
         body.costOfSales shouldBe "20000.00"
         body.grossProfit shouldBe "30000.00"
@@ -288,6 +289,7 @@ class TradingProfitAndLossRoutesTest {
 
         body.costOfSalesConfigured shouldBe false
         body.interestConfigured shouldBe false
+        body.taxConfigured shouldBe false
         body.grossProfit shouldBe body.revenue
     }
 

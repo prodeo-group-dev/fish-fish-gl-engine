@@ -80,7 +80,9 @@ class ManufacturingTradingProfitAndLossAccount private constructor(
     /** `true` when the Company has at least one account tagged as cost of sales - the honest "gross profit is meaningful" signal. */
     val costOfSalesConfigured: Boolean,
     /** `true` when the Company has at least one account tagged [ExpenseClassification.INTEREST_EXPENSE]. */
-    val interestConfigured: Boolean
+    val interestConfigured: Boolean,
+    /** `true` when the Company has at least one account tagged [ExpenseClassification.INCOME_TAX_EXPENSE]: without one, income tax sits in operating expenses and operating profit is understated (added 2026-10-18, EA's Owner view). */
+    val taxConfigured: Boolean
 ) {
     companion object {
         private val COST_OF_SALES_CLASSIFICATIONS = setOf(
@@ -160,12 +162,16 @@ class ManufacturingTradingProfitAndLossAccount private constructor(
                 it.type == AccountType.EXPENSE && it.expenseClassification == ExpenseClassification.INTEREST_EXPENSE
             }
 
+            val taxConfigured = accounts.any {
+                it.type == AccountType.EXPENSE && it.expenseClassification == ExpenseClassification.INCOME_TAX_EXPENSE
+            }
+
             return ManufacturingTradingProfitAndLossAccount(
                 companyId, period.id, currency,
                 primeCost, totalManufacturingCost, openingWorkInProgress, closingWorkInProgress, costOfProduction,
                 revenue, costOfSales, grossProfit,
                 operatingExpenses, operatingProfit, interestExpense, profitBeforeTax, incomeTaxExpense, netProfit,
-                costOfSalesConfigured, interestConfigured
+                costOfSalesConfigured, interestConfigured, taxConfigured
             )
         }
     }

@@ -620,4 +620,29 @@ class RecordSupplierObligationAndPaymentRoutesTest {
         retried.status shouldBe HttpStatusCode.OK
         fixture.journalEntryRepository.saveCalls.size shouldBe 1
     }
+
+    @Test
+    fun `given a purchase with VAT, when record-obligation is posted, then the answer carries the gross credited to AP as total and the VAT in it`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/purchasing/record-obligation") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "expenseOrAssetAccountId": "${fixture.inventoryAccount.id.value}",
+                    |"apControlAccountId": "${fixture.apControlAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "1000.00", "vatCategory": "STANDARD"}, {"netAmount": "400.00", "vatCategory": "REDUCED"}],
+                    |"currency": "GBP", "supplierId": "${UUID.randomUUID()}"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: RecordSupplierObligationResponseDto = response.body()
+        body.total shouldBe MoneyAmountDto("1620.00", "GBP")
+        body.vat shouldBe MoneyAmountDto("220.00", "GBP")
+    }
 }

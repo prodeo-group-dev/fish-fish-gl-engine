@@ -99,7 +99,11 @@ fun Route.recordSupplierObligationAndPaymentRoutes(
                 is RecordSupplierObligationResult.Success ->
                     HttpStatusCode.OK to Json.encodeToString(
                         RecordSupplierObligationResponseDto.serializer(),
-                        RecordSupplierObligationResponseDto(result.journalEntry.id.value.toString(), result.journalEntry.status.name)
+                        RecordSupplierObligationResponseDto(
+                            result.journalEntry.id.value.toString(), result.journalEntry.status.name,
+                            total = MoneyAmountDto(result.grossTotal.amount.toPlainString(), result.grossTotal.currency.currencyCode),
+                            vat = MoneyAmountDto(result.vatTotal.amount.toPlainString(), result.vatTotal.currency.currencyCode)
+                        )
                     )
                 is RecordSupplierObligationResult.InvalidAmount -> HttpStatusCode.BadRequest to errorResponseJson("invalid_amount")
                 is RecordSupplierObligationResult.PeriodNotFound -> HttpStatusCode.NotFound to errorResponseJson("period_not_found")

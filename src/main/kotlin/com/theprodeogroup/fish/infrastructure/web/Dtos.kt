@@ -379,7 +379,11 @@ data class RecordSupplierObligationRequestDto(
 @Serializable
 data class RecordSupplierObligationResponseDto(
     val journalEntryId: String,
-    val status: String
+    val status: String,
+    /** The whole credit to Accounts Payable: net plus VAT, including lines that fell back to Suspense (added 2026-10-18, POP reconciliation). */
+    val total: MoneyAmountDto,
+    /** The input VAT inside [total] (zero when no line carries VAT). */
+    val vat: MoneyAmountDto
 )
 
 @Serializable
@@ -1056,6 +1060,8 @@ data class TradingProfitAndLossResponseDto(
     val periodEnd: String,
     val costOfSalesConfigured: Boolean,
     val interestConfigured: Boolean,
+    /** true when an expense account is tagged income-tax expense; false means income tax is inside operatingExpenses and operatingProfit is understated. Added 2026-10-18. */
+    val taxConfigured: Boolean,
     val revenue: String,
     val costOfSales: String,
     val grossProfit: String,

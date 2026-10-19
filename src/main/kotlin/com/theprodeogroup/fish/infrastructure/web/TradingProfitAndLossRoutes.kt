@@ -42,6 +42,7 @@ fun Route.tradingProfitAndLossRoutes(
                         periodEnd = result.period.endDate.toString(),
                         costOfSalesConfigured = r.costOfSalesConfigured,
                         interestConfigured = r.interestConfigured,
+                        taxConfigured = r.taxConfigured,
                         revenue = r.revenue.amount.toPlainString(),
                         costOfSales = r.costOfSales.amount.toPlainString(),
                         grossProfit = r.grossProfit.amount.toPlainString(),
