@@ -173,4 +173,48 @@ class RecordCollectionUseCaseTest {
 
         result.shouldBeInstanceOf<RecordCollectionResult.ArControlAccountNotFound>()
     }
+
+    // --- reference (2026-10-18, CM/Femi: the receipt number from SOP's register travels with the collection) ---
+
+    @Test
+    fun `given a receipt reference, when executed, then the entry description carries it so the ledger entry can be traced from the receipt`() {
+        val period = openPeriod()
+        val cash = account("1000", AccountType.ASSET)
+        val ar = account("1200", AccountType.ASSET)
+
+        val result = useCase.execute(
+            RecordCollectionUseCase.Request(
+                companyId, period.id, TODAY, cash.id, ar.id, Money(BigDecimal("50.00"), GBP), CustomerId.generate(),
+                description = "School fee", reference = "RCT-000123"
+            )
+        )
+
+        result.shouldBeInstanceOf<RecordCollectionResult.Success>().journalEntry.description shouldBe "School fee - receipt RCT-000123"
+    }
+
+    @Test
+    fun `given a receipt reference and no description, when executed, then the description is built from the reference`() {
+        val period = openPeriod()
+        val cash = account("1000", AccountType.ASSET)
+        val ar = account("1200", AccountType.ASSET)
+
+        val result = useCase.execute(
+            RecordCollectionUseCase.Request(
+                companyId, period.id, TODAY, cash.id, ar.id, Money(BigDecimal("50.00"), GBP), CustomerId.generate(), reference = "RCT-000123"
+            )
+        )
+
+        result.shouldBeInstanceOf<RecordCollectionResult.Success>().journalEntry.description shouldBe "Collection - receipt RCT-000123"
+    }
+
+    @Test
+    fun `given no reference, when executed, then the description is unchanged`() {
+        val period = openPeriod()
+        val cash = account("1000", AccountType.ASSET)
+        val ar = account("1200", AccountType.ASSET)
+
+        val result = useCase.execute(request(period.id, cash.id, ar.id))
+
+        result.shouldBeInstanceOf<RecordCollectionResult.Success>().journalEntry.description shouldBe "Bill for Collection settled - SOCIETE JALLOH ALPHAJOR SARLU"
+    }
 }

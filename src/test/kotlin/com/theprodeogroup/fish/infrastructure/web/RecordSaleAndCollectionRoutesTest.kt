@@ -778,4 +778,49 @@ class RecordSaleAndCollectionRoutesTest {
         wrongType.body<ErrorResponseDto>().detail shouldBe "${expense.id.value}: wrong_type"
         fixture.journalEntryRepository.saveCalls.size shouldBe 0
     }
+
+    @Test
+    fun `given a receipt reference on record-collection, when posted, then the entry carries it in its description`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/sales/record-collection") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "settlementAccountId": "${fixture.cashAccount.id.value}",
+                    |"arControlAccountId": "${fixture.arControlAccount.id.value}", "amount": "50.00", "currency": "GBP",
+                    |"customerId": "${UUID.randomUUID()}", "description": "School fee", "reference": "RCT-000123"}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        fixture.journalEntryRepository.findAllByCompany(fixture.company.id).single().description shouldBe "School fee - receipt RCT-000123"
+    }
+
+    @Test
+    fun `given a blank or over-long receipt reference, when record-collection is posted, then it returns 400 and posts nothing`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        for (reference in listOf("   ", "R".repeat(65))) {
+            val response = client.post("/api/sales/record-collection") {
+                header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+                header("X-Tenant-Id", fixture.tenantId.value.toString())
+                contentType(ContentType.Application.Json)
+                setBody(
+                    """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                        |"date": "$TODAY", "settlementAccountId": "${fixture.cashAccount.id.value}",
+                        |"arControlAccountId": "${fixture.arControlAccount.id.value}", "amount": "50.00", "currency": "GBP",
+                        |"customerId": "${UUID.randomUUID()}", "reference": "$reference"}""".trimMargin()
+                )
+            }
+            response.status shouldBe HttpStatusCode.BadRequest
+        }
+        fixture.journalEntryRepository.saveCalls.size shouldBe 0
+    }
 }

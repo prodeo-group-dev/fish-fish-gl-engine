@@ -13,6 +13,9 @@ import java.util.Currency
 /**
  * Outcome of [ComputeSalesPostingContextUseCase.execute].
  */
+/** One cash or bank book of the Company, as a settlement choice. */
+data class SettlementAccount(val accountId: AccountId, val code: String, val name: String, val kind: com.theprodeogroup.fish.domain.ledger.CashBookKind)
+
 sealed class SalesPostingContextResult {
     data class Success(
         val periodId: PeriodId,
@@ -21,7 +24,9 @@ sealed class SalesPostingContextResult {
         val vatControlAccountId: AccountId,
         /** The Company's cash account (ASSET, code "1000"), or `null` if not configured - deliberately NOT a failure state: only a caller that takes a cash sale needs it (2026-10-06, SOP's cash-sale move), and credit-only callers must keep working against a Chart of Accounts without one. Resolved exactly as [CreateSalesInvoiceUseCase] resolves it for `SaleMethod.CASH`. */
         val cashAccountId: AccountId?,
-        val currency: Currency
+        val currency: Currency,
+        /** The Company's active cash and bank books by code, with their kind: the choices a fee desk or sales screen maps a payment method (cash, bank transfer, mobile money) to (2026-10-18, CM/Femi). May be empty; never refuses the context. */
+        val settlementAccounts: List<SettlementAccount>
     ) : SalesPostingContextResult()
     data object CompanyNotFound : SalesPostingContextResult()
     data object NoOpenPeriod : SalesPostingContextResult()
@@ -67,6 +72,9 @@ class ComputeSalesPostingContextUseCase(
 
         val cashAccount = accounts.firstOrNull { it.type == AccountType.ASSET && it.code == "1000" }
 
-        return SalesPostingContextResult.Success(period.id, arAccount.id, revenueAccount.id, vatAccount.id, cashAccount?.id, company.baseCurrency)
+        val settlementAccounts = accounts.filter { it.active && it.cashBookKind != null }.sortedBy { it.code }
+            .map { SettlementAccount(it.id, it.code, it.name, it.cashBookKind!!) }
+
+        return SalesPostingContextResult.Success(period.id, arAccount.id, revenueAccount.id, vatAccount.id, cashAccount?.id, company.baseCurrency, settlementAccounts)
     }
 }

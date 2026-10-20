@@ -44,7 +44,8 @@ fun Route.salesPostingContextRoutes(
                     revenueAccountId = result.revenueAccountId.value.toString(),
                     vatControlAccountId = result.vatControlAccountId.value.toString(),
                     cashAccountId = result.cashAccountId?.value?.toString(),
-                    currency = result.currency.currencyCode
+                    currency = result.currency.currencyCode,
+                    settlementAccounts = result.settlementAccounts.map { SettlementAccountDto(it.accountId.value.toString(), it.code, it.name, it.kind.name) }
                 )
             )
             SalesPostingContextResult.CompanyNotFound ->

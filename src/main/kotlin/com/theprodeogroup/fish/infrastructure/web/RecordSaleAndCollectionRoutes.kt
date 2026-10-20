@@ -145,6 +145,11 @@ fun Route.recordSaleAndCollectionRoutes(
         val customerUuid = call.parseUuid(request.customerId) ?: return@post
         val amount = call.parseMoney(request.amount, request.currency) ?: return@post
         val date = call.parseLocalDate(request.date) ?: return@post
+        val reference = request.reference?.trim()
+        if (reference != null && (reference.isEmpty() || reference.length > 64)) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "reference must be 1 to 64 characters"))
+            return@post
+        }
 
         call.respondIdempotently(
             idempotencyKeyRepository, tenantId, "record-collection", Json.encodeToString(RecordCollectionRequestDto.serializer(), request)
@@ -153,7 +158,7 @@ fun Route.recordSaleAndCollectionRoutes(
                 RecordCollectionUseCase.Request(
                     CompanyId(companyUuid),
                     PeriodId(periodUuid), date, AccountId(settlementAccountUuid), AccountId(arControlAccountUuid),
-                    amount, CustomerId(customerUuid), request.description
+                    amount, CustomerId(customerUuid), request.description, reference
                 )
             )
 
