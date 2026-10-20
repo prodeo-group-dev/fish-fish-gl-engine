@@ -54,7 +54,33 @@ object ServiceEndpointAllowList {
             "POST /leave-accruals",
             "POST /leave-accruals/{leaveAccrualId}/remeasure",
             "POST /leave-accruals/{leaveAccrualId}/utilize",
-            "POST /payroll/record-pay-run"
+            "POST /payroll/record-pay-run",
+            "POST /payroll/record-pay-run-journal"
+        ),
+        // Cash and Bank Books (2026-10-19, Femi: its own service): reads the account list, the open period and the ledger postings and
+        // balance of an account, and records cash-book receipts, payments, transfers and undos through the existing validated routes.
+        "cbb" to setOf(
+            "GET /companies/{companyId}/accounts",
+            "GET /companies/{companyId}/accounts/{accountId}/postings",
+            "GET /companies/{companyId}/accounts/{accountId}/balance",
+            "GET /companies/{companyId}/open-period",
+            "GET /companies/{companyId}/cash-books/{accountId}/counter-accounts",
+            "POST /companies/{companyId}/cash-books/{accountId}/receipts",
+            "POST /companies/{companyId}/cash-books/{accountId}/payments",
+            "POST /companies/{companyId}/cash-books/{accountId}/transfers",
+            "POST /companies/{companyId}/cash-books/{accountId}/entries/{entryId}/undo"
+        ),
+        // The Payroll service (2026-10-19, Femi: Payroll is split out of HR): the payroll posting context, the account list and balances,
+        // the pay run routes and the leave accrual routes it takes over from HR.
+        "payroll" to setOf(
+            "GET /companies/{companyId}/payroll-posting-context",
+            "GET /companies/{companyId}/accounts",
+            "GET /companies/{companyId}/accounts/{accountId}/balance",
+            "POST /leave-accruals",
+            "POST /leave-accruals/{leaveAccrualId}/remeasure",
+            "POST /leave-accruals/{leaveAccrualId}/utilize",
+            "POST /payroll/record-pay-run",
+            "POST /payroll/record-pay-run-journal"
         )
     )
 

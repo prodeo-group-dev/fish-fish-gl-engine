@@ -529,4 +529,82 @@ class JournalEntryRoutesTest {
         client.getAccounts(fixture, "?usableFor=sale-line").body<List<AccountSummaryDto>>().map { it.code } shouldBe listOf("4010", "4020", "3910")
         client.getAccounts(fixture, "?usableFor=nonsense").status shouldBe HttpStatusCode.BadRequest
     }
+
+    // --- GET .../accounts/{accountId}/postings and /balance (2026-10-19: what Cash and Bank Books builds its books from) ---
+
+    private suspend fun io.ktor.client.HttpClient.getRead(fixture: Fixture, path: String, signedIn: Boolean = true) =
+        get("/api/companies/${fixture.company.id.value}/accounts/$path") {
+            if (signedIn) header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+    @Test
+    fun `given a posted entry, when GET postings is called, then it lists the entry with all its lines and the net before the range`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        fixture.postEntry(TODAY.minusDays(3), "Earlier")
+        fixture.postEntry(TODAY, "Inside the range")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.getRead(fixture, "${fixture.debitAccount.id.value}/postings?from=$TODAY&to=${TODAY.plusDays(5)}")
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: AccountPostingsResponseDto = response.body()
+        body.code shouldBe "5000"
+        body.type shouldBe "EXPENSE"
+        body.openingNet shouldBe "100.00"
+        body.currency shouldBe "GBP"
+        val posting = body.postings.single()
+        posting.description shouldBe "Inside the range"
+        posting.periodOpen shouldBe true
+        posting.lines.map { Triple(it.code, it.side, it.amount) }.toSet() shouldBe setOf(Triple("5000", "DEBIT", "100.00"), Triple("1000", "CREDIT", "100.00"))
+    }
+
+    @Test
+    fun `given entries, when GET balance is called, then it returns a positive balance and the side as at the date`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        fixture.postEntry(TODAY, "Spend")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val cash: AccountBalanceResponseDto = client.getRead(fixture, "${fixture.creditAccount.id.value}/balance?asOf=${TODAY.plusDays(1)}").body()
+        cash.balance shouldBe "100.00"
+        cash.side shouldBe "CREDIT"
+        cash.asOf shouldBe TODAY.plusDays(1).toString()
+
+        val before: AccountBalanceResponseDto = client.getRead(fixture, "${fixture.creditAccount.id.value}/balance?asOf=${TODAY.minusDays(1)}").body()
+        before.balance shouldBe "0.00"
+        before.side shouldBe "DEBIT" // an asset account's normal side
+    }
+
+    @Test
+    fun `given a bad date, an unknown account, or no sign-in, when the account reads are called, then 400, 404 or 401`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val id = fixture.debitAccount.id.value
+
+        client.getRead(fixture, "$id/postings?from=not-a-date").status shouldBe HttpStatusCode.BadRequest
+        client.getRead(fixture, "$id/postings?from=2026-10-31&to=2026-10-01").status shouldBe HttpStatusCode.BadRequest
+        client.getRead(fixture, "$id/balance?asOf=nope").status shouldBe HttpStatusCode.BadRequest
+        client.getRead(fixture, "${java.util.UUID.randomUUID()}/postings").status shouldBe HttpStatusCode.NotFound
+        client.getRead(fixture, "${java.util.UUID.randomUUID()}/balance").status shouldBe HttpStatusCode.NotFound
+        client.getRead(fixture, "$id/postings", signedIn = false).status shouldBe HttpStatusCode.Unauthorized
+    }
+
+    @Test
+    fun `given more postings in the range than the read allows, when GET postings is called, then it is 422 range_too_large with rowCount and limit`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        repeat(5001) { fixture.postEntry(TODAY, "Entry $it") }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.getRead(fixture, "${fixture.debitAccount.id.value}/postings?from=$TODAY&to=$TODAY")
+
+        response.status shouldBe HttpStatusCode.UnprocessableEntity
+        val body: CashBookRangeTooLargeDto = response.body()
+        body.error shouldBe "range_too_large"
+        body.rowCount shouldBe 5001
+        body.limit shouldBe 5000
+    }
 }

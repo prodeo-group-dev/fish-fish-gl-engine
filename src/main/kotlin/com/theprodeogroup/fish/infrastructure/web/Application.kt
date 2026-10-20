@@ -25,6 +25,8 @@ import com.theprodeogroup.fish.application.ComputeOpenPeriodUseCase
 import com.theprodeogroup.fish.application.ComputeReceivablesPayablesSummaryUseCase
 import com.theprodeogroup.fish.application.ComputeCustomerBalancesUseCase
 import com.theprodeogroup.fish.application.ComputeSupplierBalancesUseCase
+import com.theprodeogroup.fish.application.ComputeAccountBalanceUseCase
+import com.theprodeogroup.fish.application.ComputeAccountPostingsUseCase
 import com.theprodeogroup.fish.application.ComputeSalesPostingContextUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
@@ -46,6 +48,7 @@ import com.theprodeogroup.fish.application.RecordFixedAssetDepreciationUseCase
 import com.theprodeogroup.fish.application.RecordInventoryIssueUseCase
 import com.theprodeogroup.fish.application.RecordInventoryReceiptUseCase
 import com.theprodeogroup.fish.application.RecordPayRunUseCase
+import com.theprodeogroup.fish.application.RecordPayRunJournalUseCase
 import com.theprodeogroup.fish.application.RecordSaleUseCase
 import com.theprodeogroup.fish.application.RecordSalesReturnUseCase
 import com.theprodeogroup.fish.application.RecordSupplierObligationUseCase
@@ -292,6 +295,8 @@ fun Application.productionModule() {
         imServiceVerifier = serviceVerifierOrWarn("IM", "FISH_JWT_SERVICE_AUDIENCE_IM", buildJwksServiceVerifierForIm()),
         hrServiceVerifier = serviceVerifierOrWarn("HR", "FISH_JWT_SERVICE_AUDIENCE_HR", buildJwksServiceVerifierForHr()),
         popServiceVerifier = serviceVerifierOrWarn("POP", "FISH_JWT_SERVICE_AUDIENCE_POP", buildJwksServiceVerifierForPop()),
+        cbbServiceVerifier = serviceVerifierOrWarn("CBB", "FISH_JWT_SERVICE_AUDIENCE_CBB", buildJwksServiceVerifierForCbb()),
+        payrollServiceVerifier = serviceVerifierOrWarn("PAYROLL", "FISH_JWT_SERVICE_AUDIENCE_PAYROLL", buildJwksServiceVerifierForPayroll()),
         serviceAllowListMode = ServiceAllowListMode.fromEnvironment(System.getenv("FISH_SERVICE_ALLOWLIST_MODE")).also {
             if (it == ServiceAllowListMode.LOG) log.warn("FISH_SERVICE_ALLOWLIST_MODE=log: service calls off a credential's endpoint allow-list are ANSWERED and logged as WOULD BLOCK, not refused")
         },
@@ -383,6 +388,8 @@ fun Application.fishModule(
     imServiceVerifier: JWTVerifier? = null,
     hrServiceVerifier: JWTVerifier? = null,
     popServiceVerifier: JWTVerifier? = null,
+    cbbServiceVerifier: JWTVerifier? = null,
+    payrollServiceVerifier: JWTVerifier? = null,
     // T15 / G3: whether a service call off its credential's endpoint allow-list is refused (the default) or only
     // logged as WOULD BLOCK. Production reads FISH_SERVICE_ALLOWLIST_MODE; unset or anything but "log" enforces.
     serviceAllowListMode: ServiceAllowListMode = ServiceAllowListMode.ENFORCE,
@@ -575,7 +582,7 @@ fun Application.fishModule(
     }
     installFishJwtAuth(
         verifier, eaMembershipGateway,
-        serviceVerifier ?: DenyAllJwtVerifier, imServiceVerifier ?: DenyAllJwtVerifier, hrServiceVerifier ?: DenyAllJwtVerifier, popServiceVerifier ?: DenyAllJwtVerifier,
+        serviceVerifier ?: DenyAllJwtVerifier, imServiceVerifier ?: DenyAllJwtVerifier, hrServiceVerifier ?: DenyAllJwtVerifier, popServiceVerifier ?: DenyAllJwtVerifier, cbbServiceVerifier ?: DenyAllJwtVerifier, payrollServiceVerifier ?: DenyAllJwtVerifier,
         serviceAllowListMode
     )
 
@@ -608,6 +615,8 @@ fun Application.fishModule(
                 createSalesInvoiceRoutes(createSalesInvoiceUseCase, listSalesInvoicesUseCase, companyRepository, customerRepository, idempotencyKeyRepository)
                 recordSupplierObligationAndPaymentRoutes(recordSupplierObligationUseCase, recordSupplierPaymentUseCase, companyRepository, vatRateRepository, idempotencyKeyRepository, accountRepository, cashBookPolicies)
                 recordSupplierCreditNoteRoutes(RecordSupplierCreditNoteUseCase(periodRepository, accountRepository, journalEntryRepository), companyRepository, vatRateRepository, idempotencyKeyRepository)
+                recordPayRunJournalRoutes(RecordPayRunJournalUseCase(periodRepository, accountRepository, journalEntryRepository, companyRepository), companyRepository, idempotencyKeyRepository)
+                accountReadsRoutes(ComputeAccountPostingsUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository), ComputeAccountBalanceUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository)
                 vatCategoriesRoutes(ComputeVatCategoriesUseCase(companyRepository, vatRateRepository), companyRepository)
                 recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
                 meRoutes()

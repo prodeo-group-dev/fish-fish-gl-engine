@@ -128,6 +128,12 @@ enum class DimensionType {
     VAT_DIRECTION,
 
     /**
+     * The payroll element a posted line came from (BASIC_PAY, PAYE_PAYABLE, ...): an opaque audit tag written by the payroll journal
+     * route (2026-10-19). GL does not validate it against any list and never learns Payroll's catalogue.
+     */
+    PAYROLL_ELEMENT,
+
+    /**
      * Custom dimension 1 (client-defined)
      */
     CUSTOM_1,
