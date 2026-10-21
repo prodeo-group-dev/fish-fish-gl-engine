@@ -25,8 +25,10 @@ class PeriodOwnershipGuardTest {
      * - ClosePeriod: authorization already happens against the Period's own Company at the route.
      * - ReverseJournalEntry: the Period comes from the original entry, not the request.
      * - ComputeTax: compares `period.companyId` with the request's companyId itself (the pattern F9 copied).
+     * - CompanyCurrencyGuardedJournalEntryRepository: reads the Period of an entry a use case already built, to find that Period's Company
+     *   (the currency rule, ME-FX-3); no caller names the Period there.
      */
-    private val allowlist = setOf("ClosePeriodUseCase.kt", "ReverseJournalEntryUseCase.kt", "ComputeTaxUseCase.kt")
+    private val allowlist = setOf("ClosePeriodUseCase.kt", "ReverseJournalEntryUseCase.kt", "ComputeTaxUseCase.kt", "CompanyCurrencyGuardedJournalEntryRepository.kt")
 
     @Test
     fun `no application use case loads a caller-named Period without the owning Company check`() {

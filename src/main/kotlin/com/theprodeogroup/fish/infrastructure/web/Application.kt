@@ -13,6 +13,8 @@ import com.theprodeogroup.fish.application.ComputeProfitAndLossForDatesUseCase
 import com.theprodeogroup.fish.application.ComputeProfitAndLossUseCase
 import com.theprodeogroup.fish.application.CreateFixedAssetUseCase
 import com.theprodeogroup.fish.application.CreateSalesInvoiceUseCase
+import com.theprodeogroup.fish.application.CompanyCurrencyGuardedJournalEntryRepository
+import com.theprodeogroup.fish.application.CurrencyNotCompanyCurrencyException
 import com.theprodeogroup.fish.application.DisposeFixedAssetUseCase
 import com.theprodeogroup.fish.application.ListSalesInvoicesUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
@@ -175,8 +177,9 @@ fun main() {
 fun Application.productionModule() {
     val accountRepository = ExposedAccountRepository()
     val periodRepository = ExposedPeriodRepository()
-    val journalEntryRepository = ExposedJournalEntryRepository()
     val companyRepository = ExposedCompanyRepository()
+    // Every posting use case saves entries through this: no new line may be in a currency other than its Company's (ME-FX-3).
+    val journalEntryRepository = CompanyCurrencyGuardedJournalEntryRepository(ExposedJournalEntryRepository(), periodRepository, companyRepository)
     val supplierRepository = ExposedSupplierRepository()
     val leaveAccrualRepository = ExposedLeaveAccrualRepository()
     val customerRepository = ExposedCustomerRepository()
@@ -573,6 +576,10 @@ fun Application.fishModule(
         // caller able to trigger a 500. The real detail is logged
         // server-side (where an operator can see it) instead of
         // returned to the client, who only ever gets a generic message.
+        // ME-FX-3: a new line in a currency other than the Company's (see CompanyCurrencyGuardedJournalEntryRepository).
+        exception<CurrencyNotCompanyCurrencyException> { call, cause ->
+            call.respond(HttpStatusCode.Conflict, ErrorResponseDto("currency_not_company_currency", cause.message))
+        }
         exception<Throwable> { call, cause ->
             call.application.log.error(
                 "Unhandled exception handling ${call.request.httpMethod.value} ${call.request.path()}", cause

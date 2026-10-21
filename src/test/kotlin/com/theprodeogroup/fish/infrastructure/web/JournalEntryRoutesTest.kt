@@ -102,7 +102,10 @@ class JournalEntryRoutesTest {
         val periodRepository = FakePeriodRepository()
         val accountRepository = FakeAccountRepository()
         val journalEntryRepository = FakeJournalEntryRepository()
-        val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
+        val postJournalEntryUseCase = PostJournalEntryUseCase(
+            periodRepository, accountRepository,
+            com.theprodeogroup.fish.application.CompanyCurrencyGuardedJournalEntryRepository(journalEntryRepository, periodRepository, companyRepository)
+        )
         val createAccountUseCase = CreateAccountUseCase(companyRepository, accountRepository)
         val recordOpeningBalanceUseCase = RecordOpeningBalanceUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val leaveAccrualRepository = FakeLeaveAccrualRepository()
@@ -646,5 +649,29 @@ class JournalEntryRoutesTest {
         client.getCompany(fixture, signedIn = false).status shouldBe HttpStatusCode.Unauthorized
         client.getCompany(fixture, companyId = java.util.UUID.randomUUID().toString()).status shouldBe HttpStatusCode.NotFound
         client.getCompany(fixture, companyId = stranger.id.value.toString()).status shouldBe HttpStatusCode.Forbidden
+    }
+
+    @Test
+    fun `given a line in a currency other than the Company's, when posted, then it is 409 currency_not_company_currency naming the line and nothing is stored`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/journal-entries") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"periodId": "${fixture.period.id.value}", "date": "$TODAY", "source": "MANUAL", "lines": [
+                    |{"accountId": "${fixture.debitAccount.id.value}", "amount": "100.00", "currency": "USD", "side": "DEBIT"},
+                    |{"accountId": "${fixture.creditAccount.id.value}", "amount": "100.00", "currency": "USD", "side": "CREDIT"}]}""".trimMargin()
+            )
+        }
+
+        response.status shouldBe HttpStatusCode.Conflict
+        val body: ErrorResponseDto = response.body()
+        body.error shouldBe "currency_not_company_currency"
+        body.detail shouldBe "Line 1 is in USD but this Company's books are kept in GBP. Post it in GBP."
+        fixture.journalEntryRepository.findAllByCompany(fixture.company.id) shouldBe emptyList()
     }
 }
