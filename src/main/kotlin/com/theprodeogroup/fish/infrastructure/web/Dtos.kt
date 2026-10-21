@@ -1363,3 +1363,15 @@ data class AccountBalanceResponseDto(
     val balance: String,
     val side: String
 )
+
+/** `GET /companies/{companyId}` - see CompanyRoutes.kt. */
+@Serializable
+data class CompanyResponseDto(
+    val id: String,
+    val name: String,
+    val baseCurrency: String,
+    /** The jurisdiction code, as `GET /api/jurisdictions` offers it (UK, IE, SL ...). */
+    val jurisdiction: String,
+    val clientType: String,
+    val fiscalYearStartMonth: Int
+)

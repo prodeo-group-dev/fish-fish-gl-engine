@@ -74,6 +74,7 @@ object ServiceEndpointAllowList {
         // the pay run routes and the leave accrual routes it takes over from HR.
         "payroll" to setOf(
             "GET /companies/{companyId}/payroll-posting-context",
+            "GET /companies/{companyId}",
             "GET /companies/{companyId}/accounts",
             "GET /companies/{companyId}/accounts/{accountId}/balance",
             "POST /leave-accruals",

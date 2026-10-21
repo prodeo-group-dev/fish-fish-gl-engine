@@ -618,6 +618,7 @@ fun Application.fishModule(
                 recordPayRunJournalRoutes(RecordPayRunJournalUseCase(periodRepository, accountRepository, journalEntryRepository, companyRepository), companyRepository, idempotencyKeyRepository)
                 accountReadsRoutes(ComputeAccountPostingsUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository), ComputeAccountBalanceUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository)
                 vatCategoriesRoutes(ComputeVatCategoriesUseCase(companyRepository, vatRateRepository), companyRepository)
+                companyRoutes(companyRepository)
                 recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
                 meRoutes()
                 jurisdictionRoutes(jurisdictionRepository)
