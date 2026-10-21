@@ -300,6 +300,9 @@ fun Application.productionModule() {
         serviceAllowListMode = ServiceAllowListMode.fromEnvironment(System.getenv("FISH_SERVICE_ALLOWLIST_MODE")).also {
             if (it == ServiceAllowListMode.LOG) log.warn("FISH_SERVICE_ALLOWLIST_MODE=log: service calls off a credential's endpoint allow-list are ANSWERED and logged as WOULD BLOCK, not refused")
         },
+        idempotencyKeyPolicy = IdempotencyKeyPolicy.fromEnvironment(
+            System.getenv("FISH_IDEMPOTENCY_KEY_MODE"), System.getenv("FISH_IDEMPOTENCY_KEY_REQUIRED_SERVICES")
+        ),
         cashBookPolicies = CashBookPolicies(
             settlementAccount = PolicyMode.fromEnvironment(System.getenv("FISH_SETTLEMENT_ACCOUNT_MODE")),
             bankOnlyReconciliation = PolicyMode.fromEnvironment(System.getenv("FISH_BANK_RECONCILIATION_MODE"))
@@ -437,6 +440,8 @@ fun Application.fishModule(
     changeCashBookKindUseCase: ChangeCashBookKindUseCase? = null,
     addMissingStandardAccountsUseCase: AddMissingStandardAccountsUseCase? = null,
     cashBookPolicies: CashBookPolicies = CashBookPolicies(),
+    // The Idempotency-Key rule (GL-FR-IDM-4): null = no rule (every request without a key runs, as before).
+    idempotencyKeyPolicy: IdempotencyKeyPolicy? = null,
     recordCashBookEntryUseCase: RecordCashBookEntryUseCase? = null,
     listCounterAccountsUseCase: ListCounterAccountsUseCase? = null,
     recordCashBookTransferUseCase: RecordCashBookTransferUseCase? = null,
@@ -580,6 +585,7 @@ fun Application.fishModule(
             call.respond(HttpStatusCode.InternalServerError, ErrorResponseDto("internal_error"))
         }
     }
+    idempotencyKeyPolicy?.let { attributes.put(IdempotencyKeyPolicyKey, it) }
     installFishJwtAuth(
         verifier, eaMembershipGateway,
         serviceVerifier ?: DenyAllJwtVerifier, imServiceVerifier ?: DenyAllJwtVerifier, hrServiceVerifier ?: DenyAllJwtVerifier, popServiceVerifier ?: DenyAllJwtVerifier, cbbServiceVerifier ?: DenyAllJwtVerifier, payrollServiceVerifier ?: DenyAllJwtVerifier,
