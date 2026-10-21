@@ -422,7 +422,7 @@ class TenantIsolationMatrixRouteTest {
         "im" to listOf(RouteDeclaration("GET", "/companies/{companyId}/inventory-posting-context")),
         "hr" to listOf(RouteDeclaration("GET", "/companies/{companyId}/payroll-posting-context")),
         "payroll" to listOf(RouteDeclaration("GET", "/companies/{companyId}/payroll-posting-context"), RouteDeclaration("GET", "/companies/{companyId}")),
-        "cbb" to listOf(RouteDeclaration("GET", "/companies/{companyId}/accounts"), RouteDeclaration("GET", "/companies/{companyId}/open-period"))
+        "cbb" to listOf(RouteDeclaration("GET", "/companies/{companyId}/accounts"))
     )
 
     @Test
@@ -632,6 +632,7 @@ class TenantIsolationMatrixRouteTest {
         "GET /companies/{companyId}/reports/fixed-asset-register",
         "POST /companies/{companyId}/accounts-payable-aging", "POST /companies/{companyId}/accounts-receivable-aging",
         "GET /companies/{companyId}/receivables-payables-summary",
+        "GET /companies/{companyId}/open-period",
         "POST /companies/{companyId}/supplier-balances",
         "GET /companies/{companyId}/tax", "POST /companies/{companyId}/tax", "POST /companies/{companyId}/vat-return",
         "GET /companies/{companyId}/bank-reconciliations", "POST /companies/{companyId}/bank-reconciliations",
