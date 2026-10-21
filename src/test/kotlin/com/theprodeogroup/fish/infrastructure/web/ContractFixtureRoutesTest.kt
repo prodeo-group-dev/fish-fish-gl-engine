@@ -212,10 +212,16 @@ class ContractFixtureRoutesTest {
             Account.create(company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2150", "VAT Control Account").also { accountRepository.save(it) }
         } else null
 
+        // The registry as GET /jurisdictions serves it; one entry with no currency so the sample shows that field both ways.
+        val jurisdictionRepository = com.theprodeogroup.fish.application.FakeJurisdictionRepository().also {
+            it.save(com.theprodeogroup.fish.domain.common.JurisdictionEntry(Jurisdiction("GH"), "Ghana", true, null))
+        }
+
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
                 vatRateRepository = FakeVatRateRepository(),
+                jurisdictionRepository = jurisdictionRepository,
                 eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository),
                 companyRepository = companyRepository,
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
@@ -361,6 +367,21 @@ class ContractFixtureRoutesTest {
 
     @Test
     fun `contract fixture - GET sales-posting-context`() = contract("contracts/gl/sales-posting-context.json", "sales-posting-context")
+
+    @Test
+    fun `contract fixture - GET jurisdictions`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/jurisdictions") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/jurisdictions.json", response.bodyAsText())
+    }
 
     @Test
     fun `contract fixture - GET company`() = testApplication {
