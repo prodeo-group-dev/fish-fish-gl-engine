@@ -30,6 +30,8 @@ object ServiceEndpointAllowList {
 
     val allowed: Map<String, Set<String>> = mapOf(
         "sop" to setOf(
+            // The Company read (2026-10-22): SOP refuses a line currency other than the Company's (T-TJ-27) and reads the currency here.
+            "GET /companies/{companyId}",
             "GET /companies/{companyId}/sales-posting-context",
             "GET /companies/{companyId}/sales-invoices",
             "POST /companies/{companyId}/customer-balances",
