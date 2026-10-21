@@ -217,10 +217,14 @@ class ContractFixtureRoutesTest {
             it.save(com.theprodeogroup.fish.domain.common.JurisdictionEntry(Jurisdiction("GH"), "Ghana", true, null))
         }
 
+        /** The settlement-account policy for the one fixture that shows the enforced refusal (FR-CB52). */
+        var enforceSettlement = false
+
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
                 vatRateRepository = FakeVatRateRepository(),
+                cashBookPolicies = CashBookPolicies(settlementAccount = if (enforceSettlement) PolicyMode.ENFORCE else PolicyMode.LOG),
                 jurisdictionRepository = jurisdictionRepository,
                 eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository),
                 companyRepository = companyRepository,
@@ -367,6 +371,124 @@ class ContractFixtureRoutesTest {
 
     @Test
     fun `contract fixture - GET sales-posting-context`() = contract("contracts/gl/sales-posting-context.json", "sales-posting-context")
+
+
+    // --- SOP's posting interfaces (record-sale, record-collection): success and the refusals SOP relays (2026-10-22, GL-T-2) ---
+
+    private val pinnedEntryId = "00000000-0000-4000-8000-0000000000e3"
+
+    private fun pinEntryId(text: String) = text.replace(Regex("\"journalEntryId\":\"[0-9a-f-]{36}\""), "\"journalEntryId\":\"$pinnedEntryId\"")
+
+    private suspend fun io.ktor.client.HttpClient.postSale(fixture: Fixture, linesJson: String): io.ktor.client.statement.HttpResponse =
+        post("/api/sales/record-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${periodId.value}", "date": "2026-10-12",
+                    |"arControlAccountId": "${id(3).value}", "vatControlAccountId": "${id(6).value}",
+                    |"lines": $linesJson, "currency": "GBP", "customerId": "$customer"}""".trimMargin()
+            )
+        }
+
+    private suspend fun io.ktor.client.HttpClient.postCollection(fixture: Fixture, settlementAccountId: AccountId): io.ktor.client.statement.HttpResponse =
+        post("/api/sales/record-collection") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${periodId.value}", "date": "2026-10-13",
+                    |"settlementAccountId": "${settlementAccountId.value}", "arControlAccountId": "${id(3).value}",
+                    |"amount": "500.00", "currency": "GBP", "customerId": "$customer", "reference": "RCT-000001"}""".trimMargin()
+            )
+        }
+
+    @Test
+    fun `contract fixture - POST sales record-sale`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        Account.create(fixture.company.id, AccountType.REVENUE, null, "4100", "Service Income", id = id(19)).also { fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        // Two lines on two revenue accounts at two VAT categories: gross 1620.00, VAT 220.00.
+        val response = client.postSale(
+            fixture,
+            """[{"netAmount": "1000.00", "vatCategory": "STANDARD", "accountId": "${id(8).value}"},
+               |{"netAmount": "400.00", "vatCategory": "REDUCED", "accountId": "${id(19).value}"}]""".trimMargin()
+        )
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/record-sale.json", pinEntryId(response.bodyAsText()))
+    }
+
+    @Test
+    fun `contract fixture - POST sales record-sale refused, a line account of the wrong type`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        // id(10) is an expense account: not allowed on a sale line.
+        val response = client.postSale(fixture, """[{"netAmount": "1000.00", "vatCategory": "STANDARD", "accountId": "${id(10).value}"}]""")
+
+        response.status shouldBe HttpStatusCode.BadRequest
+        ContractFixtures.verifyOrUpdate("contracts/gl/record-sale-line-account-not-allowed.json", response.bodyAsText())
+    }
+
+    @Test
+    fun `contract fixture - POST sales record-sale refused, a line account that does not exist`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postSale(fixture, """[{"netAmount": "1000.00", "vatCategory": "STANDARD", "accountId": "${id(99).value}"}]""")
+
+        response.status shouldBe HttpStatusCode.NotFound
+        ContractFixtures.verifyOrUpdate("contracts/gl/record-sale-line-account-not-found.json", response.bodyAsText())
+    }
+
+    @Test
+    fun `contract fixture - POST sales record-sale refused, no account named and no Suspense account`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postSale(fixture, """[{"netAmount": "1000.00", "vatCategory": "STANDARD"}]""")
+
+        response.status shouldBe HttpStatusCode.Conflict
+        ContractFixtures.verifyOrUpdate("contracts/gl/record-sale-suspense-account-not-configured.json", response.bodyAsText())
+    }
+
+    @Test
+    fun `contract fixture - POST sales record-collection`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postCollection(fixture, id(2))
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/record-collection.json", pinEntryId(response.bodyAsText()))
+    }
+
+    @Test
+    fun `contract fixture - POST sales record-collection refused, the settlement account is not a cash or bank book`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        fixture.enforceSettlement = true
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        // id(8) is the revenue account: not a book.
+        val response = client.postCollection(fixture, id(8))
+
+        response.status shouldBe HttpStatusCode.Conflict
+        ContractFixtures.verifyOrUpdate("contracts/gl/record-collection-settlement-not-a-cash-book.json", response.bodyAsText())
+    }
 
     @Test
     fun `contract fixture - GET jurisdictions`() = testApplication {
