@@ -184,7 +184,7 @@ class ContractFixtureRoutesTest {
         val undoCashBookEntryUseCase = UndoCashBookEntryUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository)
 
         val tenant = TenantId.generate()
-        val company = Company.create(tenant, "Purse UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP)
+        val company = Company.create(tenant, "Purse UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP, id = CompanyId(UUID.fromString("00000000-0000-4000-8000-0000000000c0")))
         val adminUser = User.create(ADMIN_EMAIL, "Founding Admin").also { userRepository.save(it) }
         val adminSetup = run {
             companyRepository.save(company)
@@ -359,7 +359,25 @@ class ContractFixtureRoutesTest {
     @Test
     fun `contract fixture - GET receivables-payables-summary`() = contract("contracts/gl/receivables-payables-summary.json", "receivables-payables-summary")
 
-@Test    fun `contract fixture - GET sales-posting-context`() = contract("contracts/gl/sales-posting-context.json", "sales-posting-context")
+    @Test
+    fun `contract fixture - GET sales-posting-context`() = contract("contracts/gl/sales-posting-context.json", "sales-posting-context")
+
+    @Test
+    fun `contract fixture - GET company`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/company.json", response.bodyAsText())
+    }
+
     @Test
     fun `contract fixture - POST purchasing record-obligation`() = testApplication {
         val fixture = Fixture(configureAccounts = false, openPeriod = false)

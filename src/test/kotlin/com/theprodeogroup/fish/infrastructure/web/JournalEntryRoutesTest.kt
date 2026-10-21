@@ -607,4 +607,44 @@ class JournalEntryRoutesTest {
         body.rowCount shouldBe 5001
         body.limit shouldBe 5000
     }
+
+    // --- GET /companies/{companyId} (2026-10-21: the Company's own currency and jurisdiction, so no screen hard-codes a currency) ---
+
+    private suspend fun io.ktor.client.HttpClient.getCompany(fixture: Fixture, companyId: String = fixture.company.id.value.toString(), signedIn: Boolean = true) =
+        get("/api/companies/$companyId") {
+            if (signedIn) header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+    @Test
+    fun `given a member of the Company, when GET company is called, then it returns the id, name, base currency, jurisdiction, client type and fiscal year start`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT, accessLevel = AccessLevel.READ)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.getCompany(fixture)
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: CompanyResponseDto = response.body()
+        body shouldBe CompanyResponseDto(
+            id = fixture.company.id.value.toString(),
+            name = "Test Co",
+            baseCurrency = "GBP",
+            jurisdiction = "UK",
+            clientType = "NON_PROFIT",
+            fiscalYearStartMonth = 1
+        )
+    }
+
+    @Test
+    fun `given no sign-in, an unknown Company, or a Company the caller has no access to, when GET company is called, then 401, 404 or 403`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        val stranger = Company.create(TenantId.generate(), "Other Co", ClientType.NON_PROFIT, Jurisdiction.UK, GBP).also { fixture.companyRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.getCompany(fixture, signedIn = false).status shouldBe HttpStatusCode.Unauthorized
+        client.getCompany(fixture, companyId = java.util.UUID.randomUUID().toString()).status shouldBe HttpStatusCode.NotFound
+        client.getCompany(fixture, companyId = stranger.id.value.toString()).status shouldBe HttpStatusCode.Forbidden
+    }
 }
