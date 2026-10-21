@@ -62,7 +62,7 @@ class ChartOfAccountsTemplateTest {
         accounts.filter { it.type == AccountType.EQUITY }.map { it.name } shouldContainExactlyInAnyOrder
             listOf("Unrestricted Net Assets", "Restricted Net Assets", "Opening Balance Equity", "Suspense Account")
         accounts.filter { it.type == AccountType.REVENUE }.map { it.name } shouldContainExactlyInAnyOrder
-            listOf("Donations Income", "Grants Income", "Discounts Received")
+            listOf("Donations Income", "Grants Income", "Discounts Received", "Gain on Disposal of Fixed Assets")
     }
 
     @Test

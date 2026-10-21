@@ -111,11 +111,13 @@ fun Route.journalEntryRoutes(
             when (raw) {
                 "purchase-line" -> LineAccountResolver.Kind.PURCHASE
                 "sale-line" -> LineAccountResolver.Kind.SALE
+                "gain-on-disposal" -> LineAccountResolver.Kind.GAIN_ON_DISPOSAL
+                "loss-on-disposal" -> LineAccountResolver.Kind.LOSS_ON_DISPOSAL
                 "payroll-expense-line" -> LineAccountResolver.Kind.PAYROLL_EXPENSE
                 "payroll-liability-line" -> LineAccountResolver.Kind.PAYROLL_LIABILITY
                 "settlement-line" -> LineAccountResolver.Kind.SETTLEMENT
                 else -> {
-                    call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "usableFor must be purchase-line, sale-line, payroll-expense-line, payroll-liability-line or settlement-line"))
+                    call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "usableFor must be purchase-line, sale-line, gain-on-disposal, loss-on-disposal, payroll-expense-line, payroll-liability-line or settlement-line"))
                     return@get
                 }
             }

@@ -56,6 +56,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountClassification
 import com.theprodeogroup.fish.domain.ledger.AccountType
 import com.theprodeogroup.fish.domain.ledger.Period
 import com.theprodeogroup.fish.domain.tenancy.Company
+import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.application.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantId
@@ -90,7 +91,7 @@ private const val TEST_EMAIL = "fixed-asset-caller@example.com"
  */
 class FixedAssetRoutesTest {
 
-    private class Fixture(role: Role = Role.ACCOUNTANT) {
+    private class Fixture(role: Role = Role.ACCOUNTANT, withSuspense: Boolean = true) {
         val userRepository = FakeUserRepository()
         val membershipRepository = FakeMembershipRepository()
         val companyRepository = FakeCompanyRepository()
@@ -137,7 +138,7 @@ class FixedAssetRoutesTest {
         val accumulatedDepreciationAccount = Account.create(company.id, AccountType.ASSET, AccountClassification.NON_CURRENT, "1210", "Accumulated Depreciation").also { accountRepository.save(it) }
         val depreciationExpenseAccount = Account.create(company.id, AccountType.EXPENSE, null, "6100", "Depreciation Expense").also { accountRepository.save(it) }
         val saleOfFixedAssetAccount = Account.create(company.id, AccountType.REVENUE, null, "4900", "Sale of Fixed Asset").also { accountRepository.save(it) }
-        val suspenseAccount = Account.create(company.id, AccountType.EQUITY, null, "3910", "Suspense Account").also { accountRepository.save(it) }
+        val suspenseAccount = Account.create(company.id, AccountType.EQUITY, null, "3910", "Suspense Account").also { if (withSuspense) accountRepository.save(it) }
 
         val computeMoneyVelocityUseCase = ComputeMoneyVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
         val computeExpenseVelocityUseCase = ComputeExpenseVelocityUseCase(companyRepository, periodRepository, accountRepository, journalEntryRepository)
@@ -650,5 +651,139 @@ class FixedAssetRoutesTest {
             setBody(impairmentBody(fixture))
         }
         withClue("impairment answered ${impair.status.value}: ${impair.bodyAsText()}") { impair.status shouldBe HttpStatusCode.OK }
+    }
+
+    // --- gain or loss on disposal is posted to its own account, never left on a revenue account (tester finding 2026-10-18) ---
+
+    private suspend fun io.ktor.client.HttpClient.createAsset(fixture: Fixture): String {
+        val response = post("/api/fixed-assets") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "name": "UAT Laptop", "category": "EQUIPMENT",
+                    |"cost": "1200.00", "currency": "GBP", "acquisitionDate": "$TODAY", "usefulLifeYears": 3,
+                    |"periodId": "${fixture.period.id.value}", "fixedAssetAccountId": "${fixture.fixedAssetAccount.id.value}",
+                    |"fundingMethod": "CASH", "cashAccountId": "${fixture.cashAccount.id.value}"}""".trimMargin()
+            )
+        }
+        return response.body<FixedAssetPostingResponseDto>().fixedAsset.id
+    }
+
+    private suspend fun io.ktor.client.HttpClient.disposeAsset(fixture: Fixture, assetId: String, extra: String, proceeds: String = "0.00", currency: String = "GBP") =
+        post("/api/fixed-assets/$assetId/dispose") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"proceeds": "$proceeds", "currency": "$currency", "cashAccountId": "${fixture.cashAccount.id.value}",
+                    |"fixedAssetAccountId": "${fixture.fixedAssetAccount.id.value}",
+                    |"accumulatedDepreciationAccountId": "${fixture.accumulatedDepreciationAccount.id.value}",
+                    |"periodId": "${fixture.period.id.value}", "date": "$TODAY"$extra}""".trimMargin()
+            )
+        }
+
+    @Test
+    fun `given a disposal with a loss and a loss account, when disposed, then the loss is debited to it and the revenue account is untouched`() = testApplication {
+        val fixture = Fixture()
+        val loss = Account.create(fixture.company.id, AccountType.EXPENSE, null, "5510", "Loss on Disposal").also { fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val assetId = client.createAsset(fixture)
+
+        val response = client.disposeAsset(fixture, assetId, """, "lossOnDisposalAccountId": "${loss.id.value}", "saleOfFixedAssetAccountId": "${fixture.saleOfFixedAssetAccount.id.value}"""")
+
+        response.status shouldBe HttpStatusCode.OK
+        val disposal = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).single { it.description == "Disposal - UAT Laptop" }
+        disposal.lines.single { it.accountId == loss.id }.amount.amount.toPlainString() shouldBe "1200.00"
+        disposal.lines.none { it.accountId == fixture.saleOfFixedAssetAccount.id } shouldBe true
+    }
+
+    @Test
+    fun `given a disposal with a loss and no account named, when disposed, then the loss goes to Suspense and the legacy sale account gets nothing`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val assetId = client.createAsset(fixture)
+
+        client.disposeAsset(fixture, assetId, """, "saleOfFixedAssetAccountId": "${fixture.saleOfFixedAssetAccount.id.value}"""").status shouldBe HttpStatusCode.OK
+
+        val disposal = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).single { it.description == "Disposal - UAT Laptop" }
+        disposal.lines.single { it.accountId == fixture.suspenseAccount.id }.amount.amount.toPlainString() shouldBe "1200.00"
+        disposal.lines.none { it.accountId == fixture.saleOfFixedAssetAccount.id } shouldBe true
+    }
+
+    @Test
+    fun `given a revenue account named as the loss account, when disposed, then it is 400 gain_loss_account_not_allowed and the asset stays on the register`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val assetId = client.createAsset(fixture)
+
+        val response = client.disposeAsset(fixture, assetId, """, "lossOnDisposalAccountId": "${fixture.saleOfFixedAssetAccount.id.value}"""")
+
+        response.status shouldBe HttpStatusCode.BadRequest
+        response.body<ErrorResponseDto>().error shouldBe "gain_loss_account_not_allowed"
+    }
+
+    @Test
+    fun `given negative proceeds, when disposed, then it is 400 proceeds_negative and nothing is posted`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val assetId = client.createAsset(fixture)
+        val before = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).size
+
+        val response = client.disposeAsset(fixture, assetId, "", proceeds = "-50.00")
+
+        response.status shouldBe HttpStatusCode.BadRequest
+        response.body<ErrorResponseDto>().error shouldBe "proceeds_negative"
+        fixture.journalEntryRepository.findAllByCompany(fixture.company.id).size shouldBe before
+    }
+
+    @Test
+    fun `given proceeds in another currency, when disposed, then it is 400 proceeds_currency_mismatch and nothing is posted`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val assetId = client.createAsset(fixture)
+        val before = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).size
+
+        val response = client.disposeAsset(fixture, assetId, "", currency = "USD")
+
+        response.status shouldBe HttpStatusCode.BadRequest
+        response.body<ErrorResponseDto>().error shouldBe "proceeds_currency_mismatch"
+        fixture.journalEntryRepository.findAllByCompany(fixture.company.id).size shouldBe before
+    }
+
+    @Test
+    fun `given a legacy caller that sends only the sale account and a Company with no Suspense account, when a loss is disposed, then it is 409 suspense_account_not_configured`() = testApplication {
+        val fixture = Fixture(withSuspense = false)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val assetId = client.createAsset(fixture)
+        val before = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).size
+
+        val response = client.disposeAsset(fixture, assetId, """, "saleOfFixedAssetAccountId": "${fixture.saleOfFixedAssetAccount.id.value}"""")
+
+        response.status shouldBe HttpStatusCode.Conflict
+        response.body<ErrorResponseDto>().error shouldBe "suspense_account_not_configured"
+        fixture.journalEntryRepository.findAllByCompany(fixture.company.id).size shouldBe before
+    }
+
+    @Test
+    fun `given a gain or loss account of another Company, when disposed, then it is 404 gain_loss_account_not_found and nothing is posted`() = testApplication {
+        val fixture = Fixture()
+        val foreign = Account.create(CompanyId.generate(), AccountType.EXPENSE, null, "5510", "Loss on Disposal").also { fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val assetId = client.createAsset(fixture)
+        val before = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).size
+
+        val response = client.disposeAsset(fixture, assetId, """, "lossOnDisposalAccountId": "${foreign.id.value}"""")
+
+        response.status shouldBe HttpStatusCode.NotFound
+        response.body<ErrorResponseDto>().error shouldBe "gain_loss_account_not_found"
+        fixture.journalEntryRepository.findAllByCompany(fixture.company.id).size shouldBe before
     }
 }

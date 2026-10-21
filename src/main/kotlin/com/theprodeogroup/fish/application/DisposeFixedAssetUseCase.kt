@@ -13,6 +13,7 @@ import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.common.Money
+import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import java.time.LocalDate
 
 /** Outcome of [DisposeFixedAssetUseCase.execute]. */
@@ -24,6 +25,10 @@ sealed class DisposeFixedAssetResult {
     ) : DisposeFixedAssetResult()
     data object FixedAssetNotFound : DisposeFixedAssetResult()
     data object AlreadyDisposed : DisposeFixedAssetResult()
+    /** Proceeds cannot be negative: a disposal that costs money is a separate expense, not negative proceeds. */
+    data object ProceedsNegative : DisposeFixedAssetResult()
+    /** The proceeds are in a different currency from the asset's cost. */
+    data object ProceedsCurrencyMismatch : DisposeFixedAssetResult()
     /** [FixedAsset.dispose]'s own guard: a positive [FixedAsset.accumulatedImpairmentLoss] requires [Request.accumulatedImpairmentAccountId]. */
     data object AccumulatedImpairmentAccountRequired : DisposeFixedAssetResult()
     data object PeriodNotFound : DisposeFixedAssetResult()
@@ -31,36 +36,52 @@ sealed class DisposeFixedAssetResult {
     data class CashAccountNotFound(val accountId: AccountId) : DisposeFixedAssetResult()
     data class FixedAssetAccountNotFound(val accountId: AccountId) : DisposeFixedAssetResult()
     data class AccumulatedDepreciationAccountNotFound(val accountId: AccountId) : DisposeFixedAssetResult()
-    data class SaleOfFixedAssetAccountNotFound(val accountId: AccountId) : DisposeFixedAssetResult()
+    /** The gain or loss account named is not an account of this Company. */
+    data class GainLossAccountNotFound(val accountId: AccountId) : DisposeFixedAssetResult()
+    /** The gain account must be income and the loss account an expense (or Suspense); inactive and control accounts are refused (see [LineAccountResolver]). */
+    data class GainLossAccountNotAllowed(val accountId: AccountId, val reason: LineAccountResolver.Reason) : DisposeFixedAssetResult()
+    /** There is a gain or loss, no account was named, and the Company has no Suspense account to put it on. */
+    data object SuspenseAccountNotConfigured : DisposeFixedAssetResult()
     data class AccumulatedImpairmentAccountNotFound(val accountId: AccountId) : DisposeFixedAssetResult()
 }
 
 /**
- * Disposes of a single [FixedAsset] register entry via the Asset
- * Disposal Account method (docs/DDD_Design.md Section 2.8, confirmed
- * 2026-08-12) - a thin wrapper around [FixedAsset.dispose], same shape
- * as [RecordFixedAssetDepreciationUseCase]. Gain/loss is derived by the
- * ledger (whatever balance remains on [saleOfFixedAssetAccountId] after
- * all legs post), **not** computed directly into separate gain/loss
- * accounts - see [FixedAsset.dispose]'s own KDoc for why that's the
- * deliberate design (confirmed again, not changed, 2026-09-03).
+ * Disposes of a single [FixedAsset] register entry - a thin wrapper around
+ * [FixedAsset.dispose], same shape as [RecordFixedAssetDepreciationUseCase].
+ *
+ * **Gain and loss on disposal are separate transaction types with their own chart accounts (Femi, 2026-10-18).**
+ * The earlier "Asset Disposal Account" method (docs/DDD_Design.md Section 2.8) routed every leg through one
+ * Revenue-type clearing account and left the balance there, so a loss sat as a debit on whatever revenue account the
+ * caller picked (tester finding: an 800 loss booked as negative Sales Revenue). Now the difference between
+ * [Request.proceeds] and the asset's carrying amount is posted to [Request.gainOnDisposalAccountId] (income) when
+ * it is a gain, or [Request.lossOnDisposalAccountId] (expense) when it is a loss; naming none sends it to the
+ * Company's Suspense account, never to a default account. [Request.saleOfFixedAssetAccountId] is the legacy field:
+ * accepted so old callers still compile and post, but ignored.
  */
 class DisposeFixedAssetUseCase(
     private val fixedAssetRepository: FixedAssetRepository,
     private val periodRepository: PeriodRepository,
     private val accountRepository: AccountRepository,
-    private val journalEntryRepository: JournalEntryRepository
+    private val journalEntryRepository: JournalEntryRepository,
+    companyRepository: CompanyRepository? = null
 ) {
+    private val lineAccountResolver = LineAccountResolver(accountRepository, companyRepository)
+
     data class Request(
         val fixedAssetId: FixedAssetId,
         val proceeds: Money,
         val cashAccountId: AccountId,
         val fixedAssetAccountId: AccountId,
         val accumulatedDepreciationAccountId: AccountId,
-        val saleOfFixedAssetAccountId: AccountId,
+        /** Legacy and ignored since 2026-10-18 (see the class KDoc). */
+        val saleOfFixedAssetAccountId: AccountId?,
         val periodId: PeriodId,
         val date: LocalDate,
-        val accumulatedImpairmentAccountId: AccountId? = null
+        val accumulatedImpairmentAccountId: AccountId? = null,
+        /** The income account a gain is credited to; `null` means Suspense. */
+        val gainOnDisposalAccountId: AccountId? = null,
+        /** The expense account a loss is debited to; `null` means Suspense. */
+        val lossOnDisposalAccountId: AccountId? = null
     )
 
     fun execute(request: Request): DisposeFixedAssetResult {
@@ -69,6 +90,8 @@ class DisposeFixedAssetUseCase(
         if (fixedAsset.isDisposed) {
             return DisposeFixedAssetResult.AlreadyDisposed
         }
+        if (request.proceeds.currency != fixedAsset.cost.currency) return DisposeFixedAssetResult.ProceedsCurrencyMismatch
+        if (request.proceeds.amount.signum() < 0) return DisposeFixedAssetResult.ProceedsNegative
         if (fixedAsset.accumulatedImpairmentLoss.amount.signum() > 0 && request.accumulatedImpairmentAccountId == null) {
             return DisposeFixedAssetResult.AccumulatedImpairmentAccountRequired
         }
@@ -92,12 +115,27 @@ class DisposeFixedAssetUseCase(
         val accumulatedDepreciationAccount = accountRepository.findById(request.accumulatedDepreciationAccountId)
             ?.takeIf { it.companyId == fixedAsset.companyId }
             ?: return DisposeFixedAssetResult.AccumulatedDepreciationAccountNotFound(request.accumulatedDepreciationAccountId)
-        val saleOfFixedAssetAccount = accountRepository.findById(request.saleOfFixedAssetAccountId)
-            ?.takeIf { it.companyId == fixedAsset.companyId }
-            ?: return DisposeFixedAssetResult.SaleOfFixedAssetAccountNotFound(request.saleOfFixedAssetAccountId)
         val accumulatedImpairmentAccount = request.accumulatedImpairmentAccountId?.let { accountId ->
             accountRepository.findById(accountId)?.takeIf { it.companyId == fixedAsset.companyId }
                 ?: return DisposeFixedAssetResult.AccumulatedImpairmentAccountNotFound(accountId)
+        }
+
+        // The account for the difference between proceeds and carrying amount, by which side it falls on.
+        val gainOrLoss = request.proceeds - fixedAsset.carryingAmount
+        val gainLossAccount: Account? = when {
+            gainOrLoss.amount.signum() == 0 -> null
+            else -> {
+                val gain = gainOrLoss.amount.signum() > 0
+                val named = if (gain) request.gainOnDisposalAccountId else request.lossOnDisposalAccountId
+                val kind = if (gain) LineAccountResolver.Kind.GAIN_ON_DISPOSAL else LineAccountResolver.Kind.LOSS_ON_DISPOSAL
+                val resolved = if (named != null) lineAccountResolver.resolve(fixedAsset.companyId, kind, named) else lineAccountResolver.suspense(fixedAsset.companyId)
+                when (resolved) {
+                    is LineAccountResolver.Result.Resolved -> resolved.account
+                    is LineAccountResolver.Result.NotFound -> return DisposeFixedAssetResult.GainLossAccountNotFound(resolved.accountId)
+                    is LineAccountResolver.Result.NotAllowed -> return DisposeFixedAssetResult.GainLossAccountNotAllowed(resolved.accountId, resolved.reason)
+                    LineAccountResolver.Result.SuspenseNotConfigured -> return DisposeFixedAssetResult.SuspenseAccountNotConfigured
+                }
+            }
         }
 
         val entry = fixedAsset.dispose(
@@ -105,7 +143,7 @@ class DisposeFixedAssetUseCase(
             cashAccountId = cashAccount.id,
             fixedAssetAccountId = fixedAssetAccount.id,
             accumulatedDepreciationAccountId = accumulatedDepreciationAccount.id,
-            saleOfFixedAssetAccountId = saleOfFixedAssetAccount.id,
+            gainOrLossAccountId = gainLossAccount?.id,
             periodId = request.periodId,
             date = request.date,
             accumulatedImpairmentAccountId = accumulatedImpairmentAccount?.id
@@ -118,7 +156,7 @@ class DisposeFixedAssetUseCase(
         }
 
         val touchedAccounts: List<Account> = listOfNotNull(
-            cashAccount, fixedAssetAccount, accumulatedDepreciationAccount, saleOfFixedAssetAccount, accumulatedImpairmentAccount
+            cashAccount, fixedAssetAccount, accumulatedDepreciationAccount, accumulatedImpairmentAccount, gainLossAccount
         )
         for (account in touchedAccounts) {
             account.recordActivity()

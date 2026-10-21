@@ -92,6 +92,10 @@ object ChartOfAccountsTemplate {
     const val ACCUMULATED_DEPRECIATION_CODE = "1210"
     const val INVENTORY_CODE = "1300"
     const val DEPRECIATION_EXPENSE_CODE = "5500"
+
+    /** Loss on disposal of fixed assets (EXPENSE) and gain on disposal (REVENUE): separate transaction types, each its own chart account (Femi 2026-10-18); a disposal with neither set goes to Suspense. */
+    const val LOSS_ON_DISPOSAL_CODE = "5510"
+    const val GAIN_ON_DISPOSAL_CODE = "4930"
     const val COST_OF_SALES_CODE = "5010"
     const val INTEREST_EXPENSE_CODE = "5600"
     const val INCOME_TAX_EXPENSE_CODE = "5700"
@@ -268,6 +272,8 @@ object ChartOfAccountsTemplate {
         asset(companyId, ACCUMULATED_DEPRECIATION_CODE, "Accumulated Depreciation", AccountClassification.NON_CURRENT),
         asset(companyId, INVENTORY_CODE, "Inventory", AccountClassification.CURRENT),
         expense(companyId, DEPRECIATION_EXPENSE_CODE, "Depreciation Expense"),
+        expense(companyId, LOSS_ON_DISPOSAL_CODE, "Loss on Disposal of Fixed Assets"),
+        revenue(companyId, GAIN_ON_DISPOSAL_CODE, "Gain on Disposal of Fixed Assets"),
     )
 
     private fun facilityLiabilityAccounts(companyId: CompanyId): List<Account> = listOf(

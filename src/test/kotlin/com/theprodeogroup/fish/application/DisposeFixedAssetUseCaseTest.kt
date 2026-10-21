@@ -60,11 +60,13 @@ class DisposeFixedAssetUseCaseTest {
         val fixedAssetAccount = account("1200", AccountType.ASSET)
         val accumulatedDepreciationAccount = account("1210", AccountType.ASSET)
         val saleOfFixedAssetAccount = account("4900", AccountType.REVENUE)
+        val lossAccount = account("5510", AccountType.EXPENSE)
 
         val result = useCase.execute(
             DisposeFixedAssetUseCase.Request(
                 asset.id, Money(BigDecimal("6000.00"), GBP), cashAccount.id, fixedAssetAccount.id,
-                accumulatedDepreciationAccount.id, saleOfFixedAssetAccount.id, period.id, TODAY
+                accumulatedDepreciationAccount.id, saleOfFixedAssetAccount.id, period.id, TODAY,
+                lossOnDisposalAccountId = lossAccount.id
             )
         )
 
@@ -83,6 +85,7 @@ class DisposeFixedAssetUseCaseTest {
         val fixedAssetAccount = account("1200", AccountType.ASSET)
         val accumulatedDepreciationAccount = account("1210", AccountType.ASSET)
         val saleOfFixedAssetAccount = account("4900", AccountType.REVENUE)
+        account("3910", AccountType.EQUITY)
         val request = DisposeFixedAssetUseCase.Request(
             asset.id, Money(BigDecimal("6000.00"), GBP), cashAccount.id, fixedAssetAccount.id,
             accumulatedDepreciationAccount.id, saleOfFixedAssetAccount.id, period.id, TODAY
@@ -135,5 +138,170 @@ class DisposeFixedAssetUseCaseTest {
         )
 
         result.shouldBeInstanceOf<DisposeFixedAssetResult.CashAccountNotFound>()
+    }
+
+    // --- gain or loss on disposal is its own transaction type with its own chart account; none set means Suspense
+    // (Femi 2026-10-18; tester finding: an 800 loss had been booked as negative Sales Revenue) ---
+
+    private class Accounts(val cash: Account, val cost: Account, val accDep: Account)
+
+    private fun standardAccounts() = Accounts(account("1000", AccountType.ASSET), account("1200", AccountType.ASSET), account("1210", AccountType.ASSET))
+
+    private fun request(asset: FixedAsset, period: Period, a: Accounts, proceeds: String, gain: Account? = null, loss: Account? = null, legacySale: Account? = null) =
+        DisposeFixedAssetUseCase.Request(
+            asset.id, Money(BigDecimal(proceeds), GBP), a.cash.id, a.cost.id, a.accDep.id, legacySale?.id, period.id, TODAY,
+            gainOnDisposalAccountId = gain?.id, lossOnDisposalAccountId = loss?.id
+        )
+
+    @Test
+    fun `given a loss and a loss account, when executed, then the loss is debited to it and the legacy sale account is never touched`() {
+        val period = openPeriod()
+        val asset = asset()
+        val a = standardAccounts()
+        val loss = account("5510", AccountType.EXPENSE)
+        val revenue = account("4000", AccountType.REVENUE)
+
+        val success = useCase.execute(request(asset, period, a, "6000.00", loss = loss, legacySale = revenue))
+            .shouldBeInstanceOf<DisposeFixedAssetResult.Success>()
+
+        success.journalEntry.lines.single { it.accountId == loss.id }.let {
+            it.side shouldBe com.theprodeogroup.fish.domain.common.TransactionSide.DEBIT
+            it.amount shouldBe Money(BigDecimal("4000.00"), GBP)
+        }
+        success.journalEntry.lines.none { it.accountId == revenue.id } shouldBe true
+    }
+
+    @Test
+    fun `given a gain and a gain account, when executed, then the gain is credited to it`() {
+        val period = openPeriod()
+        val asset = asset()
+        val a = standardAccounts()
+        val gain = account("4930", AccountType.REVENUE)
+
+        val success = useCase.execute(request(asset, period, a, "12000.00", gain = gain)).shouldBeInstanceOf<DisposeFixedAssetResult.Success>()
+
+        success.journalEntry.lines.single { it.accountId == gain.id }.let {
+            it.side shouldBe com.theprodeogroup.fish.domain.common.TransactionSide.CREDIT
+            it.amount shouldBe Money(BigDecimal("2000.00"), GBP)
+        }
+    }
+
+    @Test
+    fun `given a loss and no account anywhere, when executed, then the loss goes to Suspense`() {
+        val period = openPeriod()
+        val asset = asset()
+        val a = standardAccounts()
+        val suspense = account("3910", AccountType.EQUITY)
+
+        val success = useCase.execute(request(asset, period, a, "6000.00")).shouldBeInstanceOf<DisposeFixedAssetResult.Success>()
+
+        success.journalEntry.lines.single { it.accountId == suspense.id }.amount shouldBe Money(BigDecimal("4000.00"), GBP)
+    }
+
+    @Test
+    fun `given a loss, no account and no Suspense account, when executed, then it is refused and the asset is not disposed`() {
+        val period = openPeriod()
+        val asset = asset()
+        val a = standardAccounts()
+
+        useCase.execute(request(asset, period, a, "6000.00")).shouldBeInstanceOf<DisposeFixedAssetResult.SuspenseAccountNotConfigured>()
+
+        fixedAssetRepository.findById(asset.id)!!.isDisposed shouldBe false
+        journalEntryRepository.saveCalls shouldBe emptyList()
+    }
+
+    @Test
+    fun `given proceeds equal to the carrying amount, when executed, then no gain, loss or Suspense account is needed`() {
+        val period = openPeriod()
+        val asset = asset()
+        val a = standardAccounts()
+
+        useCase.execute(request(asset, period, a, "10000.00")).shouldBeInstanceOf<DisposeFixedAssetResult.Success>()
+    }
+
+    @Test
+    fun `given a revenue account named as the loss account, or an expense account as the gain account, when executed, then it is refused`() {
+        val period = openPeriod()
+        val asset = asset()
+        val a = standardAccounts()
+        val revenue = account("4000", AccountType.REVENUE)
+        val expense = account("5000", AccountType.EXPENSE)
+
+        useCase.execute(request(asset, period, a, "6000.00", loss = revenue))
+            .shouldBeInstanceOf<DisposeFixedAssetResult.GainLossAccountNotAllowed>().accountId shouldBe revenue.id
+        useCase.execute(request(asset, period, a, "12000.00", gain = expense))
+            .shouldBeInstanceOf<DisposeFixedAssetResult.GainLossAccountNotAllowed>().accountId shouldBe expense.id
+        fixedAssetRepository.findById(asset.id)!!.isDisposed shouldBe false
+    }
+
+    @Test
+    fun `given a loss account of another Company, when executed, then it is not found`() {
+        val period = openPeriod()
+        val asset = asset()
+        val a = standardAccounts()
+        val foreign = Account.create(CompanyId.generate(), AccountType.EXPENSE, null, "5510", "Loss on Disposal").also { accountRepository.save(it) }
+
+        useCase.execute(request(asset, period, a, "6000.00", loss = foreign))
+            .shouldBeInstanceOf<DisposeFixedAssetResult.GainLossAccountNotFound>().accountId shouldBe foreign.id
+    }
+
+    @Test
+    fun `given an impaired asset sold above its carrying amount, when executed, then the gain is measured against the carrying amount, not the net book value`() {
+        val period = openPeriod()
+        val asset = asset()
+        val a = standardAccounts()
+        val impairmentExpense = account("5800", AccountType.EXPENSE)
+        val accImpairment = account("1220", AccountType.ASSET)
+        asset.assessImpairment(Money(BigDecimal("7000.00"), GBP), impairmentExpense.id, accImpairment.id, period.id, TODAY)
+        val gain = account("4930", AccountType.REVENUE)
+
+        val success = useCase.execute(request(asset, period, a, "8000.00", gain = gain).copy(accumulatedImpairmentAccountId = accImpairment.id))
+            .shouldBeInstanceOf<DisposeFixedAssetResult.Success>()
+
+        success.journalEntry.lines.single { it.accountId == gain.id }.amount shouldBe Money(BigDecimal("1000.00"), GBP)
+    }
+
+    @Test
+    fun `given an impaired asset sold below its carrying amount, when executed, then the loss is measured against the carrying amount`() {
+        val period = openPeriod()
+        val asset = asset()
+        val a = standardAccounts()
+        val impairmentExpense = account("5800", AccountType.EXPENSE)
+        val accImpairment = account("1220", AccountType.ASSET)
+        asset.assessImpairment(Money(BigDecimal("7000.00"), GBP), impairmentExpense.id, accImpairment.id, period.id, TODAY)
+        val loss = account("5510", AccountType.EXPENSE)
+
+        val success = useCase.execute(request(asset, period, a, "6000.00", loss = loss).copy(accumulatedImpairmentAccountId = accImpairment.id))
+            .shouldBeInstanceOf<DisposeFixedAssetResult.Success>()
+
+        success.journalEntry.lines.single { it.accountId == loss.id }.amount shouldBe Money(BigDecimal("1000.00"), GBP)
+    }
+
+    @Test
+    fun `given negative proceeds, when executed, then it is refused and nothing is posted`() {
+        val period = openPeriod()
+        val asset = asset()
+        val a = standardAccounts()
+        account("3910", AccountType.EQUITY)
+
+        useCase.execute(request(asset, period, a, "-1.00")).shouldBeInstanceOf<DisposeFixedAssetResult.ProceedsNegative>()
+
+        fixedAssetRepository.findById(asset.id)!!.isDisposed shouldBe false
+        journalEntryRepository.saveCalls shouldBe emptyList()
+    }
+
+    @Test
+    fun `given proceeds in a currency other than the asset one, when executed, then it is refused and nothing is posted`() {
+        val period = openPeriod()
+        val asset = asset()
+        val a = standardAccounts()
+        val usd = DisposeFixedAssetUseCase.Request(
+            asset.id, Money(BigDecimal("6000.00"), Currency.getInstance("USD")), a.cash.id, a.cost.id, a.accDep.id, null, period.id, TODAY
+        )
+
+        useCase.execute(usd).shouldBeInstanceOf<DisposeFixedAssetResult.ProceedsCurrencyMismatch>()
+
+        fixedAssetRepository.findById(asset.id)!!.isDisposed shouldBe false
+        journalEntryRepository.saveCalls shouldBe emptyList()
     }
 }
