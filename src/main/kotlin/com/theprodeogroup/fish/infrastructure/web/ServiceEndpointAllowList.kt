@@ -77,8 +77,9 @@ object ServiceEndpointAllowList {
         "payroll" to setOf(
             "GET /companies/{companyId}/payroll-posting-context",
             "GET /companies/{companyId}",
-            "GET /companies/{companyId}/accounts",
-            "GET /companies/{companyId}/accounts/{accountId}/balance",
+            // Advance approval, claim approval and advance recovery in a pay run post through the generic journal (PAYROLL ktor_gl_engine_gateway.kt:178);
+            // without this entry they fail 403 forbidden_endpoint and the run ends COMPLETE_WITH_ISSUES. The account list and balance were never used by Payroll.
+            "POST /journal-entries",
             "POST /leave-accruals",
             "POST /leave-accruals/{leaveAccrualId}/remeasure",
             "POST /leave-accruals/{leaveAccrualId}/utilize",
