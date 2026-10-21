@@ -65,7 +65,6 @@ object ServiceEndpointAllowList {
             "GET /companies/{companyId}/accounts",
             "GET /companies/{companyId}/accounts/{accountId}/postings",
             "GET /companies/{companyId}/accounts/{accountId}/balance",
-            "GET /companies/{companyId}/open-period",
             "GET /companies/{companyId}/cash-books/{accountId}/counter-accounts",
             "POST /companies/{companyId}/cash-books/{accountId}/receipts",
             "POST /companies/{companyId}/cash-books/{accountId}/payments",
