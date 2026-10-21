@@ -7,6 +7,11 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.application
+import io.ktor.server.application.log
+import io.ktor.server.auth.principal
+import io.ktor.server.request.httpMethod
+import io.ktor.server.request.path
 import io.ktor.server.request.header
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
@@ -79,6 +84,18 @@ suspend fun ApplicationCall.respondIdempotently(
 ) {
     val idempotencyKey = request.header("Idempotency-Key")
     if (idempotencyKey == null) {
+        // GL-FR-IDM-4: a money-posting request with no key is refused for the callers the policy names, and logged for the rest.
+        val policy = application.attributes.getOrNull(IdempotencyKeyPolicyKey)
+        if (policy != null) {
+            val service = principal<AuthenticatedCaller>()?.service
+            if (policy.requires(service)) {
+                respond(HttpStatusCode.BadRequest, ErrorResponseDto("idempotency_key_required", "This request changes the ledger and needs an Idempotency-Key header, so a retry cannot post twice"))
+                return
+            }
+            val line = "WOULD REFUSE idempotency_key_required service=${service ?: "person"} ${request.httpMethod.value} ${request.path()}"
+            application.log.warn(line)
+            policy.onViolation?.invoke(line)
+        }
         val (status, body) = produceResponse()
         respondText(body, ContentType.Application.Json, status)
         return
