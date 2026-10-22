@@ -109,6 +109,8 @@ tasks.test {
     useJUnitPlatform()
     // The pinned fish-contracts submodule (golden cross-service fixtures); no default, a missing setting must fail loudly.
     systemProperty("contracts.dir", "$projectDir/contracts")
+    // docs/GL_Error_Tokens.md is read by ErrorTokenTableTest at run time: declare it so a change to the table re-runs the test.
+    inputs.file("$projectDir/docs/GL_Error_Tokens.md").withPropertyName("errorTokenTable").withPathSensitivity(PathSensitivity.RELATIVE)
     // The fixtures are read by the tests at run time, not through the classpath, so Gradle must be told they are inputs:
     // otherwise a pin bump (or any fixture change) leaves the task UP-TO-DATE and the new fixtures are never read.
     inputs.files(fileTree("$projectDir/contracts") { exclude(".git") })
