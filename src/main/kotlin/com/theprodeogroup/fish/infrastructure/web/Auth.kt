@@ -32,6 +32,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.Routing
 import io.ktor.util.AttributeKey
+import com.theprodeogroup.fish.infrastructure.audit.AuditContexts
 import java.net.URI
 import java.security.interfaces.RSAPrivateKey
 import java.security.interfaces.RSAPublicKey
@@ -383,7 +384,7 @@ val ServiceAllowListModeKey = AttributeKey<ServiceAllowListMode>("ServiceAllowLi
  * (Option B) - `name` falls back to the JWT's own `email` claim, the
  * only identity a service token carries.
  */
-data class AuthorizedCaller(val email: String, val name: String)
+data class AuthorizedCaller(val email: String, val name: String, val userId: String? = null)
 
 /** Strips the `Bearer ` prefix off this request's `Authorization` header, or `null` if missing/malformed. */
 private fun ApplicationCall.rawBearerToken(): String? =
@@ -427,6 +428,7 @@ private suspend fun ApplicationCall.authorizeTenant(
         return null
     }
     if (caller.isServiceAccount) {
+        if (!recordServiceActor(caller)) return null
         return AuthorizedCaller(caller.email, caller.email)
     }
     val token = rawBearerToken()
@@ -459,9 +461,40 @@ private suspend fun ApplicationCall.authorizeTenant(
                 respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "This Membership is not granted access to the $module module at the requested Company"))
                 return null
             }
-            AuthorizedCaller(result.email, result.name)
+            recordPersonActor(result.userId)
+            AuthorizedCaller(result.email, result.name, result.userId)
         }
     }
+}
+
+/** The header a service sends to say which person it posts for: the person's EA user id (a UUID), taken from the token the service authenticated, never from a body (GL-T-38). */
+const val ACTING_USER_HEADER = "X-Acting-User-Id"
+
+/**
+ * Records, for the entries this request stores, who posted: `USER:<EA user id>` for a person (S4). Nothing is recorded when EA gave no id.
+ * A person's own call ignores [ACTING_USER_HEADER]: GL already knows who they are.
+ */
+private fun recordPersonActor(userId: String?) {
+    if (userId == null) return
+    AuditContexts.current()?.recordedBy = "USER:$userId"
+}
+
+/**
+ * Records, for a SERVICE credential's call, `SERVICE:<name>` as who posted and the person it posted for (the EA user id in
+ * [ACTING_USER_HEADER]) as acting user. The header is optional; present but not a UUID of at most 64 characters is a 400 (rather than storing
+ * a wrong id). It changes what is recorded, never what is allowed. GL trusts a service credential, so the acting user is as reliable as the
+ * sending service. Responds and returns false on a malformed header.
+ */
+private suspend fun ApplicationCall.recordServiceActor(caller: AuthenticatedCaller): Boolean {
+    val raw = request.header(ACTING_USER_HEADER)?.trim()?.takeIf { it.isNotEmpty() }
+    if (raw != null && (raw.length > 64 || runCatching { java.util.UUID.fromString(raw) }.isFailure)) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "$ACTING_USER_HEADER must be the person's EA user id, a UUID"))
+        return false
+    }
+    val context = AuditContexts.current() ?: return true
+    context.recordedBy = "SERVICE:${caller.service ?: caller.email}"
+    context.actingUser = raw
+    return true
 }
 
 /**

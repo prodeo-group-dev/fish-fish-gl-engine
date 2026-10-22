@@ -48,7 +48,9 @@ class JournalEntry private constructor(
      * GL-FR-LED-9). Null for an entry that has not been stored. For an entry recorded before V35 it is the moment V35 ran, not the
      * time it was really recorded (the migration says so); it is shown as stored, never guessed. Never set by a caller.
      */
-    val recordedAt: Instant? = null
+    val recordedAt: Instant? = null,
+    /** Who, why and what document, recorded once at insert (V36, GL-T-38/T-31); null for an entry stored before V36 or outside a request. Never set by a caller of the domain. */
+    val provenance: EntryProvenance? = null
 ) {
     var status: PostingStatus = initialStatus
         private set
@@ -186,7 +188,8 @@ class JournalEntry private constructor(
             status: PostingStatus,
             reversalOfEntryId: JournalEntryId?,
             recordedSeq: Long? = null,
-            recordedAt: Instant? = null
-        ): JournalEntry = JournalEntry(id, periodId, date, lines, source, description, status, reversalOfEntryId, recordedSeq, recordedAt)
+            recordedAt: Instant? = null,
+            provenance: EntryProvenance? = null
+        ): JournalEntry = JournalEntry(id, periodId, date, lines, source, description, status, reversalOfEntryId, recordedSeq, recordedAt, provenance)
     }
 }

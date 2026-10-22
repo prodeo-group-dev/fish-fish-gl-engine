@@ -30,9 +30,59 @@ fun Route.accountReadsRoutes(
         val to = call.optionalDate("to")
         if (call.request.queryParameters["from"] != null && from == null) return@get
         if (call.request.queryParameters["to"] != null && to == null) return@get
+        // Opt-in extras (GL-T-38/T-31): only "audit" exists. Without it the answer is byte-identical to before.
+        val include = call.request.queryParameters["include"]
+        if (include != null && include != "audit") {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "include, if sent, must be audit"))
+            return@get
+        }
 
         when (val result = computeAccountPostingsUseCase.execute(companyId, accountId, from, to)) {
-            is ComputeAccountPostingsUseCase.Result.Success -> call.respond(
+            is ComputeAccountPostingsUseCase.Result.Success -> if (include == "audit") call.respond(
+                AccountPostingsAuditResponseDto(
+                    accountId = result.account.id.value.toString(),
+                    code = result.account.code,
+                    name = result.account.name,
+                    type = result.account.type.name,
+                    cashBookKind = result.account.cashBookKind?.name,
+                    currency = result.currency.currencyCode,
+                    from = result.from.toString(),
+                    to = result.to.toString(),
+                    openingNet = result.openingNet.amount.toPlainString(),
+                    postings = result.postings.map { posting ->
+                        val entry = posting.entry
+                        val provenance = entry.provenance
+                        AccountPostingAuditDto(
+                            entryId = entry.id.value.toString(),
+                            periodId = entry.periodId.value.toString(),
+                            periodOpen = posting.periodOpen,
+                            status = entry.status.name,
+                            date = entry.date.toString(),
+                            description = entry.description,
+                            source = entry.source.name,
+                            reversalOfEntryId = entry.reversalOfEntryId?.value?.toString(),
+                            reversedByEntryId = posting.reversedByEntryId?.value?.toString(),
+                            recordedSeq = entry.recordedSeq,
+                            lines = entry.lines.map { line ->
+                                val account = result.accountsById[line.accountId]
+                                AccountPostingLineDto(
+                                    accountId = line.accountId.value.toString(),
+                                    code = account?.code ?: "",
+                                    name = account?.name ?: "",
+                                    side = line.side.name,
+                                    amount = line.amount.amount.toPlainString()
+                                )
+                            },
+                            recordedAt = entry.recordedAt?.toString(),
+                            recordedBy = provenance?.recordedBy,
+                            actingUser = provenance?.actingUser,
+                            reason = provenance?.reason,
+                            sourceReference = provenance?.sourceReference?.let { SourceReferenceReadDto(it.type.name, it.id, it.number) },
+                            vatBasis = provenance?.vatBasis?.let { VatBasisReadDto(it.ratePercent, it.rulebookVersion, it.effectiveFrom?.toString()) }
+                        )
+                    }
+                )
+            ) else call.respond(
                 AccountPostingsResponseDto(
                     accountId = result.account.id.value.toString(),
                     code = result.account.code,

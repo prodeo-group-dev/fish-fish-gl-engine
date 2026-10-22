@@ -42,10 +42,24 @@ class FakePeriodRepository : PeriodRepository {
 class FakeJournalEntryRepository : JournalEntryRepository {
     val saveCalls = mutableListOf<JournalEntryId>()
     private val store = mutableMapOf<JournalEntryId, JournalEntry>()
+
+    /**
+     * What the real repository does on INSERT (V36, GL-T-38): stamp who, why and what document from the request's audit context onto a
+     * NEW entry, never onto an existing one. Outside a request (or when nothing was recorded) the entry is stored exactly as given.
+     */
+    private fun stampedIfNew(entry: JournalEntry): JournalEntry {
+        if (store.containsKey(entry.id) || entry.provenance != null) return entry
+        val provenance = com.theprodeogroup.fish.infrastructure.audit.AuditContexts.current()?.snapshot() ?: return entry
+        return JournalEntry.reconstitute(
+            entry.id, entry.periodId, entry.date, entry.lines, entry.source, entry.description, entry.status, entry.reversalOfEntryId,
+            recordedSeq = entry.recordedSeq, recordedAt = entry.recordedAt, provenance = provenance
+        )
+    }
+
     @Synchronized
     override fun save(entry: JournalEntry) {
         saveCalls.add(entry.id)
-        store[entry.id] = entry
+        store[entry.id] = stampedIfNew(entry)
     }
     @Synchronized
     override fun findById(id: JournalEntryId): JournalEntry? = store[id]
@@ -55,14 +69,14 @@ class FakeJournalEntryRepository : JournalEntryRepository {
     override fun insertIfAbsent(entry: JournalEntry): Boolean {
         if (store.containsKey(entry.id)) return false
         saveCalls.add(entry.id)
-        store[entry.id] = entry
+        store[entry.id] = stampedIfNew(entry)
         return true
     }
     @Synchronized
     override fun recordReversal(original: JournalEntry, reversal: JournalEntry): Boolean {
         if (store.containsKey(reversal.id)) return false
         saveCalls.add(reversal.id)
-        store[reversal.id] = reversal
+        store[reversal.id] = stampedIfNew(reversal)
         store[original.id] = original
         return true
     }

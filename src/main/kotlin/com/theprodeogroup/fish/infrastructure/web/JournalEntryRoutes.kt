@@ -277,6 +277,12 @@ fun Route.journalEntryRoutes(
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@get
         if (!call.verifyClaimedTenant(tenantId)) return@get
         call.authorizeTenantForRead(tenantId, companyId) ?: return@get
+        // Opt-in extras (GL-T-38/T-31): only "audit" exists. Without it the list is byte-identical to before.
+        val include = call.request.queryParameters["include"]
+        if (include != null && include != "audit") {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "include, if sent, must be audit"))
+            return@get
+        }
 
         val all = journalEntryRepository.findAllByCompany(companyId)
         val byId = all.associateBy { it.id }
@@ -308,12 +314,31 @@ fun Route.journalEntryRoutes(
                     }
                 )
             }
-        call.respond(entries)
+        if (include == "audit") {
+            val byEntryId = all.associateBy { it.id.value.toString() }
+            call.respond(
+                entries.map { record ->
+                    val provenance = byEntryId.getValue(record.id).provenance
+                    JournalEntryRecordAuditDto(
+                        id = record.id, date = record.date, description = record.description, status = record.status, source = record.source,
+                        lines = record.lines, reversalOfEntryId = record.reversalOfEntryId, reversedByEntryId = record.reversedByEntryId,
+                        recordedAt = record.recordedAt, recordedSeq = record.recordedSeq,
+                        recordedBy = provenance?.recordedBy,
+                        actingUser = provenance?.actingUser,
+                        reason = provenance?.reason,
+                        sourceReference = provenance?.sourceReference?.let { SourceReferenceReadDto(it.type.name, it.id, it.number) },
+                        vatBasis = provenance?.vatBasis?.let { VatBasisReadDto(it.ratePercent, it.rulebookVersion, it.effectiveFrom?.toString()) }
+                    )
+                }
+            )
+        } else {
+            call.respond(entries)
+        }
     }
 
     post("/journal-entries") {
         val request = call.receive<PostJournalEntryRequestDto>()
-
+        if (!call.recordProvenance(request.sourceReference, request.vatBasis)) return@post
         val periodId = call.parseUuid(request.periodId) ?: return@post
         val period = periodRepository.findById(PeriodId(periodId))
         if (period == null) {

@@ -73,6 +73,7 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import io.ktor.client.call.body
+import io.ktor.client.statement.bodyAsText
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -794,6 +795,102 @@ class CashBookRoutesTest {
 
         response.status shouldBe HttpStatusCode.Conflict
         response.body<CounterAccountNotAllowedDto>().useInstead shouldBe "VAT"
+    }
+
+    // ---- who, why and what document (V36; GL-T-38, GL-T-31, GL-T-39; standards S4 and S6) ----
+
+    private fun sourceRefExtra(type: String = "CASH_BOOK_ENTRY", id: String = "cb-123", number: String = "RCT-0007") =
+        ""","sourceReference":{"type":"$type","id":"$id","number":"$number"},"vatBasis":{"ratePercent":"20","rulebookVersion":41,"effectiveFrom":"2026-04-06"}"""
+
+    @Test
+    fun `given a receipt by a person, with a source reference and VAT basis, then the entry records who, and the document and rate row`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!, "125.00", extra = vatExtra("STANDARD", "25.00") + sourceRefExtra()), "prov-1")
+
+        response.status shouldBe HttpStatusCode.Created
+        val provenance = fixture.journalEntryRepository.findAllByAccount(cash.id).single().provenance!!
+        provenance.recordedBy shouldBe "USER:${fixture.adminUser.id.value}"
+        provenance.actingUser shouldBe null
+        provenance.sourceReference shouldBe com.theprodeogroup.fish.domain.ledger.SourceReference(com.theprodeogroup.fish.domain.ledger.SourceReferenceType.CASH_BOOK_ENTRY, "cb-123", "RCT-0007")
+        provenance.vatBasis shouldBe com.theprodeogroup.fish.domain.ledger.VatBasis("20", 41, java.time.LocalDate.of(2026, 4, 6))
+    }
+
+    @Test
+    fun `given a source reference with an unknown type, an over-long id or a VAT basis that is not a percent, then it is 400 and nothing is posted`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val sales = fixture.revenueAccount!!
+
+        client.recordEntry(fixture, cash, "receipts", entryBody(sales, extra = sourceRefExtra(type = "PURCHASE_ORDER")), "p1").status shouldBe HttpStatusCode.BadRequest
+        client.recordEntry(fixture, cash, "receipts", entryBody(sales, extra = sourceRefExtra(id = "x".repeat(101))), "p2").status shouldBe HttpStatusCode.BadRequest
+        client.recordEntry(fixture, cash, "receipts", entryBody(sales, extra = ""","vatBasis":{"ratePercent":"twenty"}"""), "p3").status shouldBe HttpStatusCode.BadRequest
+        client.recordEntry(fixture, cash, "receipts", entryBody(sales, extra = ""","vatBasis":{"ratePercent":"20","effectiveFrom":"06/04/2026"}"""), "p4").status shouldBe HttpStatusCode.BadRequest
+        fixture.journalEntryRepository.findAllByAccount(cash.id) shouldBe emptyList()
+    }
+
+    @Test
+    fun `given an Undo with a reason, then the reversal records who undid it and why, and the original keeps its own record`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val recorded: CashBookEntryResponseDto = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!), "to-undo-1").body()
+
+        val undo = client.post("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/${recorded.entryId}/undo") {
+            signedIn(fixture)
+            contentType(ContentType.Application.Json)
+            setBody("""{"reason":"  Posted to the wrong book  "}""")
+        }
+
+        undo.status shouldBe HttpStatusCode.Created
+        val reversal = fixture.journalEntryRepository.findById(com.theprodeogroup.fish.domain.ledger.JournalEntryId(java.util.UUID.fromString(undo.body<CashBookUndoResponseDto>().reversalEntryId)))!!
+        reversal.provenance!!.reason shouldBe "Posted to the wrong book"
+        reversal.provenance!!.recordedBy shouldBe "USER:${fixture.adminUser.id.value}"
+        fixture.journalEntryRepository.findById(com.theprodeogroup.fish.domain.ledger.JournalEntryId(java.util.UUID.fromString(recorded.entryId)))!!.provenance!!.reason shouldBe null
+    }
+
+    @Test
+    fun `given an Undo with no body, a blank reason, too long a reason or a malformed body, then no body and blank work, and the others are 400`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val first: CashBookEntryResponseDto = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!), "u1").body()
+        val second: CashBookEntryResponseDto = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!, "20.00"), "u2").body()
+        fun path(id: String) = "/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/$id/undo"
+
+        client.post(path(first.entryId)) { signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"reason":"x"""" + "x".repeat(500) + """"}""") }.status shouldBe HttpStatusCode.BadRequest
+        client.post(path(first.entryId)) { signedIn(fixture); contentType(ContentType.Application.Json); setBody("not json") }.status shouldBe HttpStatusCode.BadRequest
+        client.post(path(first.entryId)) { signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"reason":"   "}""") }.status shouldBe HttpStatusCode.Created
+        client.post(path(second.entryId)) { signedIn(fixture) }.status shouldBe HttpStatusCode.Created
+        fixture.journalEntryRepository.findAllByAccount(cash.id).count { it.provenance?.reason != null } shouldBe 0
+    }
+
+    @Test
+    fun `given the postings read, then the audit fields come only with include=audit and the default answer does not carry them`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!, "125.00", extra = vatExtra("STANDARD", "25.00") + sourceRefExtra()), "audit-1")
+        val base = "/api/companies/${fixture.company.id.value}/accounts/${cash.id.value}/postings?from=${TODAY.minusDays(1)}&to=$TODAY"
+
+        val plain = client.get(base) { signedIn(fixture) }.bodyAsText()
+        val audit: AccountPostingsAuditResponseDto = client.get("$base&include=audit") { signedIn(fixture) }.body()
+        val bogus = client.get("$base&include=everything") { signedIn(fixture) }
+
+        listOf("recordedBy", "actingUser", "sourceReference", "vatBasis", "reason").forEach { plain.contains("\"$it\"") shouldBe false }
+        audit.postings.single().recordedBy shouldBe "USER:${fixture.adminUser.id.value}"
+        audit.postings.single().sourceReference shouldBe SourceReferenceReadDto("CASH_BOOK_ENTRY", "cb-123", "RCT-0007")
+        audit.postings.single().vatBasis shouldBe VatBasisReadDto("20", 41, "2026-04-06")
+        audit.postings.single().reason shouldBe null
+        bogus.status shouldBe HttpStatusCode.BadRequest
     }
 
     @Test

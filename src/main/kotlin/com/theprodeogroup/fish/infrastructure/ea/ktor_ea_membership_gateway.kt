@@ -47,7 +47,8 @@ class KtorEaMembershipGateway(
                 EaCallerLookupResult.Success(
                     email = body.email,
                     name = body.name,
-                    memberships = body.tenants.map { it.toCallerMembership() }
+                    memberships = body.tenants.map { it.toCallerMembership() },
+                    userId = body.userId
                 )
             }
             else -> EaCallerLookupResult.Failure(response.status.value)

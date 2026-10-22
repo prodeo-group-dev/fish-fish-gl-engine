@@ -90,6 +90,7 @@ fun Route.payrollRoutes(
         call.authorizeTenantForWrite(tenantId, leaveAccrual.companyId) ?: return@post
 
         val request = call.receive<RemeasureLeaveAccrualRequestDto>()
+        if (!call.recordProvenance(request.sourceReference, request.vatBasis)) return@post
         val targetAmount = call.parseMoney(request.targetAmount, request.currency) ?: return@post
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
         val leaveExpenseAccountUuid = call.parseUuid(request.leaveExpenseAccountId) ?: return@post
@@ -134,6 +135,7 @@ fun Route.payrollRoutes(
         call.authorizeTenantForWrite(tenantId, leaveAccrual.companyId) ?: return@post
 
         val request = call.receive<UtilizeLeaveAccrualRequestDto>()
+        if (!call.recordProvenance(request.sourceReference, request.vatBasis)) return@post
         val amount = call.parseMoney(request.amount, request.currency) ?: return@post
         val periodUuid = call.parseUuid(request.periodId) ?: return@post
         val cashAccountUuid = call.parseUuid(request.cashAccountId) ?: return@post
@@ -172,6 +174,7 @@ fun Route.payrollRoutes(
 
     post("/payroll/record-pay-run") {
         val request = call.receive<RecordPayRunRequestDto>()
+        if (!call.recordProvenance(request.sourceReference, request.vatBasis)) return@post
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
         val companyId = CompanyId(companyUuid)
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
