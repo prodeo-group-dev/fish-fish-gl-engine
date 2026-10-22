@@ -864,6 +864,44 @@ class ContractFixtureRoutesTest {
         ContractFixtures.verifyOrUpdate("contracts/gl/cash-book-entry-counter-account-not-allowed-vat.json", response.bodyAsText())
     }
 
+    // --- record-sale with the VAT worked out by the caller (2026-10-22, GL-T-26, GL-FR-TAX-7, GL-FR-CTR-2) ---
+
+    @Test
+    fun `contract fixture - POST sales record-sale with the VAT amount on every line`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        Account.create(fixture.company.id, AccountType.REVENUE, null, "4100", "Service Income", id = id(19)).also { fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        // The caller (SOP) worked the VAT out: 200.00 on 1000.00 and 20.00 on 400.00. GL posts what it is sent and reads no rate.
+        val response = client.postSale(
+            fixture,
+            """[{"netAmount": "1000.00", "vatCategory": "STANDARD", "accountId": "${id(8).value}", "vatAmount": "200.00"},
+               |{"netAmount": "400.00", "vatCategory": "REDUCED", "accountId": "${id(19).value}", "vatAmount": "20.00"}]""".trimMargin()
+        )
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/record-sale-finished-lines.json", pinEntryId(response.bodyAsText()))
+    }
+
+    @Test
+    fun `contract fixture - POST sales record-sale refused, the VAT amount on some lines and not others`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postSale(
+            fixture,
+            """[{"netAmount": "1000.00", "vatCategory": "STANDARD", "accountId": "${id(8).value}", "vatAmount": "200.00"},
+               |{"netAmount": "400.00", "vatCategory": "REDUCED", "accountId": "${id(8).value}"}]""".trimMargin()
+        )
+
+        response.status shouldBe HttpStatusCode.BadRequest
+        ContractFixtures.verifyOrUpdate("contracts/gl/record-sale-vat-amount-on-every-line.json", response.bodyAsText())
+    }
+
     @Test
     fun `contract fixture - GET jurisdictions`() = testApplication {
         val fixture = Fixture(configureAccounts = false, openPeriod = false)

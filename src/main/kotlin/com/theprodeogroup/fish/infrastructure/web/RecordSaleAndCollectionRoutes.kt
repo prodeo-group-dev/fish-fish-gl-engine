@@ -69,8 +69,10 @@ fun Route.recordSaleAndCollectionRoutes(
         if (!call.verifyClaimedTenant(company.tenantId)) return@post
         call.authorizeTenantForWrite(company.tenantId, company.id) ?: return@post
 
-        val vatRateSchedule = vatRateRepository.findVerifiedScheduleFor(company.jurisdiction)
-        if (vatRateSchedule == null) {
+        // The rate schedule is read only when GL computes the VAT: a request whose every line carries a finished vatAmount reads no rate.
+        val callerComputesVat = request.lines.isNotEmpty() && request.lines.all { it.vatAmount != null }
+        val vatRateSchedule = if (callerComputesVat) null else vatRateRepository.findVerifiedScheduleFor(company.jurisdiction)
+        if (!callerComputesVat && vatRateSchedule == null) {
             call.respond(
                 HttpStatusCode.Conflict,
                 ErrorResponseDto("no_vat_rate_schedule", "No VAT rate schedule is configured for jurisdiction '${company.jurisdiction}'")
@@ -114,6 +116,8 @@ fun Route.recordSaleAndCollectionRoutes(
                     HttpStatusCode.BadRequest to errorResponseJson("vat_category_not_supported", result.category.name)
                 is RecordSaleResult.VatRateNotInForce ->
                     HttpStatusCode.BadRequest to errorResponseJson("vat_rate_not_in_force", "${result.category.name} on ${result.asOf}")
+                RecordSaleResult.VatAmountOnEveryLineRequired ->
+                    HttpStatusCode.BadRequest to errorResponseJson("vat_amount_on_every_line")
                 is RecordSaleResult.LineAccountNotFound ->
                     HttpStatusCode.NotFound to errorResponseJson("line_account_not_found", result.accountId.value.toString())
                 is RecordSaleResult.LineAccountNotAllowed ->
@@ -241,7 +245,16 @@ private suspend fun ApplicationCall.parseSaleLines(lines: List<SaleLineDto>, cur
             return null
         }
         val accountId = line.accountId?.let { parseUuid(it) ?: return null }
-        parsed.add(RecordSaleUseCase.SaleLine(Money(netAmountValue, currency), category, accountId?.let { AccountId(it) }))
+        // A finished VAT amount is posted as sent, so it is never silently rounded: more decimals than the currency allows is refused.
+        val vatAmount = line.vatAmount?.let { raw ->
+            val value = raw.toBigDecimalOrNull()
+            if (value == null || value.signum() < 0 || value.stripTrailingZeros().scale() > currency.defaultFractionDigits) {
+                respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_amount", "line vatAmount must be a plain decimal of zero or more, with no more decimal places than the currency"))
+                return null
+            }
+            Money(value, currency)
+        }
+        parsed.add(RecordSaleUseCase.SaleLine(Money(netAmountValue, currency), category, accountId?.let { AccountId(it) }, vatAmount))
     }
     return parsed
 }

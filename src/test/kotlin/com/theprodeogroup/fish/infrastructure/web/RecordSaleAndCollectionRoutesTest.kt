@@ -499,6 +499,106 @@ class RecordSaleAndCollectionRoutesTest {
         response.status shouldBe HttpStatusCode.NotFound
     }
 
+    // ---- finished VAT amounts (GL-T-26, GL-FR-TAX-7; Femi 2026-10-22, F22-18) ----
+
+    private suspend fun io.ktor.client.HttpClient.recordSaleWithLines(fixture: Fixture, linesJson: String, key: String? = null) =
+        post("/api/sales/record-sale") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            if (key != null) header("Idempotency-Key", key)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
+                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": $linesJson, "currency": "GBP", "customerId": "00000000-0000-4000-8000-0000000000c1"}""".trimMargin()
+            )
+        }
+
+    @Test
+    fun `given every line carries its VAT amount, when record-sale is posted, then the VAT is posted as sent and the answer shows it`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.recordSaleWithLines(fixture, """[{"netAmount": "1000.00", "vatCategory": "STANDARD", "vatAmount": "150.00"}]""")
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: RecordSaleResponseDto = response.body()
+        body.grossAmount shouldBe "1150.00"
+        body.vatAmount shouldBe "150.00"
+        val entry = fixture.journalEntryRepository.findById(com.theprodeogroup.fish.domain.ledger.JournalEntryId(UUID.fromString(body.journalEntryId)))!!
+        entry.lines.first { it.accountId == fixture.vatControlAccount.id }.amount.amount shouldBe java.math.BigDecimal("150.00")
+    }
+
+    @Test
+    fun `given a company with no VAT rate schedule, when every line carries its VAT amount, then the sale posts, because no rate is read`() = testApplication {
+        val fixture = Fixture(jurisdiction = Jurisdiction.NG)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.recordSaleWithLines(fixture, """[{"netAmount": "45000.00", "vatCategory": "STANDARD", "vatAmount": "3375.00"}]""")
+
+        response.status shouldBe HttpStatusCode.OK
+        response.body<RecordSaleResponseDto>().vatAmount shouldBe "3375.00"
+    }
+
+    @Test
+    fun `given some lines with a VAT amount and some without, when record-sale is posted, then it is 400 vat_amount_on_every_line and nothing is posted`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.recordSaleWithLines(
+            fixture,
+            """[{"netAmount": "1000.00", "vatCategory": "STANDARD", "vatAmount": "200.00"}, {"netAmount": "400.00", "vatCategory": "REDUCED"}]"""
+        )
+
+        response.status shouldBe HttpStatusCode.BadRequest
+        response.body<ErrorResponseDto>().error shouldBe "vat_amount_on_every_line"
+        fixture.journalEntryRepository.saveCalls.size shouldBe 0
+    }
+
+    @Test
+    fun `given a VAT amount that is negative, not a number or has more decimals than the currency, then it is 400 invalid_amount and nothing is posted`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        for (bad in listOf("-1.00", "abc", "20.005")) {
+            val response = client.recordSaleWithLines(fixture, """[{"netAmount": "100.00", "vatCategory": "STANDARD", "vatAmount": "$bad"}]""")
+            response.status shouldBe HttpStatusCode.BadRequest
+            response.body<ErrorResponseDto>().error shouldBe "invalid_amount"
+        }
+        fixture.journalEntryRepository.saveCalls.size shouldBe 0
+    }
+
+    @Test
+    fun `given the same Idempotency-Key with a different VAT amount, when record-sale is posted, then it returns 422`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val key = UUID.randomUUID().toString()
+
+        client.recordSaleWithLines(fixture, """[{"netAmount": "100.00", "vatCategory": "STANDARD", "vatAmount": "20.00"}]""", key).status shouldBe HttpStatusCode.OK
+        val again = client.recordSaleWithLines(fixture, """[{"netAmount": "100.00", "vatCategory": "STANDARD", "vatAmount": "19.00"}]""", key)
+
+        again.status shouldBe HttpStatusCode.UnprocessableEntity
+        again.body<ErrorResponseDto>().error shouldBe "idempotency_key_reused"
+    }
+
+    @Test
+    fun `given lines with no VAT amount, when record-sale is posted, then GL still computes the VAT as before`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.recordSaleWithLines(fixture, """[{"netAmount": "1000.00", "vatCategory": "STANDARD"}]""")
+
+        response.status shouldBe HttpStatusCode.OK
+        response.body<RecordSaleResponseDto>().vatAmount shouldBe "200.00"
+    }
+
     // -- Idempotency-Key (docs/GL_Production_Readiness_Plan.md) --
 
     @Test

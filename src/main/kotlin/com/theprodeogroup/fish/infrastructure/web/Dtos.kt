@@ -139,7 +139,9 @@ data class SaleLineDto(
     val netAmount: String,
     val vatCategory: String,
     /** The revenue account from the Company's own chart this line credits (optional): goods, services, fees, interest each their own; absent means the request-level account, else Suspense. */
-    val accountId: String? = null
+    val accountId: String? = null,
+    /** The VAT on this line, worked out by the caller (GL-T-26, 2026-10-22): an exact decimal string in the sale's currency. All lines carry it or none do; absent, GL computes it from the rate schedule. */
+    val vatAmount: String? = null
 )
 
 @Serializable
