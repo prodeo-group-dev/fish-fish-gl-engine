@@ -16,10 +16,15 @@ import java.util.Currency
  * tag (2026-10-15). It exists for adjustments, which sit on the opposite debit/credit side to the figure they adjust:
  * a debit tagged [OUTPUT] reduces output VAT (a sales credit note), a credit tagged [INPUT] reduces input VAT (a
  * discount received from a supplier).
+ *
+ * [SETTLEMENT] (2026-10-22, GL-T-30, GL-FR-TAX-9) marks the payment of VAT to the authority, or a refund from it: the cash
+ * moving the balance of the VAT control account, which is not VAT charged or suffered. A return **excludes** such lines, or
+ * the quarter a remittance is paid in would read it as input VAT and understate its own net due.
  */
 enum class VatLineDirection {
     OUTPUT,
-    INPUT;
+    INPUT,
+    SETTLEMENT;
 
     companion object {
         /** The direction a line's tag names, or null if untagged or tagged with anything else. */
@@ -83,6 +88,14 @@ class VatReturn private constructor(
          * posted entries; made explicit here since a VAT return's window
          * can span multiple Periods with different closing states.
          *
+         * **What the return is, and when it equals the account (GL-T-30, Femi 2026-10-22).** The return is the **movement** on
+         * [vatControlAccountId] over the filing dates (credits less debits), not the account's balance. Paying the net due clears
+         * the account only if (a) the balance at the start of the period was zero (each earlier period fully paid), (b) no untagged
+         * movement other than settlements was posted (a manual journal or an opening figure on the account is counted by its
+         * side), and (c) the payments themselves are excluded, which is what the `SETTLEMENT` tag does. Until a sales return posts a
+         * VAT reversal (GL-T-10) output VAT is overstated by the VAT on returns. A difference between the return and the account
+         * is a reconciling item to list, never to hide (`GL_SubLedger_TieOut_Design.md`).
+         *
          * A line on [vatControlAccountId] with no `DimensionType.VAT_CATEGORY`
          * tag still counts toward [outputVat]/[inputVat]/[netVatDue] (the
          * account's total balance movement is the return figure
@@ -109,6 +122,7 @@ class VatReturn private constructor(
             val vatLines = postedEntries
                 .filter { it.status.affectsBalance() && it.date in filingPeriod }
                 .flatMap { entry -> entry.lines.filter { it.accountId == vatControlAccountId } }
+                .filter { VatLineDirection.of(it.dimensions[DimensionType.VAT_DIRECTION]) != VatLineDirection.SETTLEMENT }
 
             // A line's return side: its VAT_DIRECTION tag if it has a valid one, else its debit/credit side (credit =
             // output, debit = input), exactly as before the tag existed. An adjustment (a debit tagged OUTPUT, a credit

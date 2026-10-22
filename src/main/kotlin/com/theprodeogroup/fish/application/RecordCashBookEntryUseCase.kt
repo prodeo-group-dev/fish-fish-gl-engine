@@ -73,7 +73,9 @@ class RecordCashBookEntryUseCase(
         val description: String?,
         val cashFlowActivity: CashFlowActivity,
         val entryId: JournalEntryId,
-        val vat: Vat? = null
+        val vat: Vat? = null,
+        /** True only from [RecordVatSettlementUseCase]: the counter account must be the VAT control account, which the ordinary doors refuse (GL-T-30). */
+        val settlesVat: Boolean = false
     ) {
         /** The VAT inside the gross amount: the category it is tagged with for the VAT return, and how much. */
         data class Vat(val category: VatCategory, val amount: BigDecimal)
@@ -122,7 +124,14 @@ class RecordCashBookEntryUseCase(
         val counter = accountRepository.findById(request.counterAccountId)?.takeIf { it.companyId == request.companyId }
             ?: return Result.CounterAccountNotFound
         if (!counter.active) return Result.CounterAccountInactive
-        ModuleOwnedAccounts.useInstead(counter, company.clientType)?.let { return Result.CounterAccountNotAllowed(it) }
+        if (request.settlesVat) {
+            // The one door that may post to the VAT control account from a book: the line is a payment of VAT, not VAT.
+            if (counter.type != AccountType.LIABILITY || counter.code != ChartOfAccountsTemplate.VAT_CONTROL_ACCOUNT_CODE) {
+                return Result.CounterAccountNotAllowed(UseInstead.VAT)
+            }
+        } else {
+            ModuleOwnedAccounts.useInstead(counter, company.clientType)?.let { return Result.CounterAccountNotAllowed(it) }
+        }
 
         if (request.amount.signum() <= 0 || request.amount.stripTrailingZeros().scale() > currency.defaultFractionDigits) {
             return Result.InvalidAmount
@@ -154,7 +163,8 @@ class RecordCashBookEntryUseCase(
         val draft = CashBookEntry(
             accountId = book.id, direction = request.direction, amount = amount, counterAccountId = counter.id,
             date = request.date, cashFlowActivity = request.cashFlowActivity, description = request.description,
-            vatLine = vatLine
+            vatLine = vatLine,
+            counterDimensions = if (request.settlesVat) mapOf(DimensionType.VAT_DIRECTION to VatLineDirection.SETTLEMENT.name) else emptyMap()
         ).toJournalEntry(period.id, request.entryId)
 
         return when (

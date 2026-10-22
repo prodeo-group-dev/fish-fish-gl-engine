@@ -46,7 +46,9 @@ class CashBookEntry(
     val date: LocalDate,
     val cashFlowActivity: CashFlowActivity = CashFlowActivity.OPERATING,
     val description: String? = null,
-    val vatLine: VatLine? = null
+    val vatLine: VatLine? = null,
+    /** Tags on the counter line (GL-T-30: the VAT settlement line is tagged `VAT_DIRECTION = SETTLEMENT`). Empty for an ordinary entry. */
+    val counterDimensions: Map<DimensionType, String> = emptyMap()
 ) {
     /** The VAT carried inside [amount]: the account it goes to, how much, and the tags the VAT return reads. */
     class VatLine(val accountId: AccountId, val amount: Money, val dimensions: Map<DimensionType, String>)
@@ -72,11 +74,11 @@ class CashBookEntry(
         }
         val cashLine = JournalLine(accountId, amount, cashSide, mapOf(DimensionType.CASH_FLOW_ACTIVITY to cashFlowActivity.name))
         val lines = if (vatLine == null) {
-            listOf(cashLine, JournalLine(counterAccountId, amount, cashSide.opposite()))
+            listOf(cashLine, JournalLine(counterAccountId, amount, cashSide.opposite(), counterDimensions))
         } else {
             listOf(
                 cashLine,
-                JournalLine(counterAccountId, amount - vatLine.amount, cashSide.opposite()),
+                JournalLine(counterAccountId, amount - vatLine.amount, cashSide.opposite(), counterDimensions),
                 JournalLine(vatLine.accountId, vatLine.amount, cashSide.opposite(), vatLine.dimensions)
             )
         }
