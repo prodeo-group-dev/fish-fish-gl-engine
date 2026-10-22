@@ -17,6 +17,8 @@ class ServiceEndpointAllowListCbbTest {
             "GET /companies/{companyId}/accounts",
             "GET /companies/{companyId}/accounts/{accountId}/postings",
             "GET /companies/{companyId}/accounts/{accountId}/balance",
+            // The rate CBB reads to work out the VAT it sends on a receipt or payment (GL-T-28, GL-FR-TAX-8; CBB-FR-EN-8).
+            "GET /companies/{companyId}/vat-categories",
             "GET /companies/{companyId}/cash-books/{accountId}/counter-accounts",
             "POST /companies/{companyId}/cash-books/{accountId}/receipts",
             "POST /companies/{companyId}/cash-books/{accountId}/payments",

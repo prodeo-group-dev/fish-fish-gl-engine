@@ -65,6 +65,8 @@ object ServiceEndpointAllowList {
             "GET /companies/{companyId}/accounts",
             "GET /companies/{companyId}/accounts/{accountId}/postings",
             "GET /companies/{companyId}/accounts/{accountId}/balance",
+            // GL-T-28: the VAT rate CBB reads (with the entry date) to work out the VAT it sends; CBB-FR-EN-8.
+            "GET /companies/{companyId}/vat-categories",
             "GET /companies/{companyId}/cash-books/{accountId}/counter-accounts",
             "POST /companies/{companyId}/cash-books/{accountId}/receipts",
             "POST /companies/{companyId}/cash-books/{accountId}/payments",
