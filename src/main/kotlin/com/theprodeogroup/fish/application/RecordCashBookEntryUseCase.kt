@@ -1,15 +1,18 @@
 package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.common.Money
+import com.theprodeogroup.fish.domain.common.DimensionType
 import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.Account
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
+import com.theprodeogroup.fish.domain.ledger.AccountType
 import com.theprodeogroup.fish.domain.ledger.CashBookEntry
 import com.theprodeogroup.fish.domain.ledger.CashBookKind
 import com.theprodeogroup.fish.domain.ledger.CashDirection
 import com.theprodeogroup.fish.domain.ledger.CashFlowActivity
+import com.theprodeogroup.fish.domain.ledger.ChartOfAccountsTemplate
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
@@ -17,6 +20,8 @@ import com.theprodeogroup.fish.domain.ledger.ModuleOwnedAccounts
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.fish.domain.ledger.UseInstead
 import com.theprodeogroup.fish.domain.ledger.hasHistoricalEffect
+import com.theprodeogroup.fish.domain.tax.VatCategory
+import com.theprodeogroup.fish.domain.tax.VatLineDirection
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import java.math.BigDecimal
@@ -43,6 +48,11 @@ import java.util.Currency
  * payroll posting contexts choose it); the entry [Request.date] is not checked against the Period's dates, as for
  * every other posting route today (see docs/GL_Period_Management_Scoping.md).
  *
+ * **VAT (GL-FR-TAX-8, Femi 2026-10-22, option A).** A request may carry [Request.vat], a category tag and an amount that is
+ * already inside [Request.amount]. GL does not look up or check a rate (the caller worked it out from the rate it read); it posts
+ * the net to the counter account, the VAT to the Company's VAT control account and the gross to the book. A receipt must name an
+ * income account and a payment an expense account. A VAT of zero posts no VAT line: it is the plain two-line entry.
+ *
  * A payment that takes the book below zero still posts, with a [Warning]: a cash book below zero means more
  * spending was recorded than cash was, a bank book below zero is an overdraft. Nothing is ever silently overdrawn.
  */
@@ -62,8 +72,12 @@ class RecordCashBookEntryUseCase(
         val counterAccountId: AccountId,
         val description: String?,
         val cashFlowActivity: CashFlowActivity,
-        val entryId: JournalEntryId
-    )
+        val entryId: JournalEntryId,
+        val vat: Vat? = null
+    ) {
+        /** The VAT inside the gross amount: the category it is tagged with for the VAT return, and how much. */
+        data class Vat(val category: VatCategory, val amount: BigDecimal)
+    }
 
     data class Warning(val code: String, val accountId: AccountId, val balanceAfter: Money)
 
@@ -83,6 +97,15 @@ class RecordCashBookEntryUseCase(
         data class CounterAccountNotAllowed(val useInstead: UseInstead) : Result()
         data object InvalidAmount : Result()
         data object NoOpenPeriod : Result()
+
+        /** VAT is not less than the amount, so the net would be nothing. */
+        data object VatExceedsAmount : Result()
+
+        /** VAT was sent for a counter account that is not income (receipt) or expense (payment). */
+        data object VatNotApplicable : Result()
+
+        /** VAT was sent and the Company has no VAT control account. */
+        data object VatControlAccountNotConfigured : Result()
     }
 
     fun execute(request: Request): Result {
@@ -106,12 +129,32 @@ class RecordCashBookEntryUseCase(
         }
         val amount = Money(request.amount.setScale(currency.defaultFractionDigits), currency)
 
+        var vatLine: CashBookEntry.VatLine? = null
+        request.vat?.let { vat ->
+            if (vat.amount.signum() < 0 || vat.amount.stripTrailingZeros().scale() > currency.defaultFractionDigits) return Result.InvalidAmount
+            val vatMoney = Money(vat.amount.setScale(currency.defaultFractionDigits), currency)
+            if (vatMoney >= amount) return Result.VatExceedsAmount
+            val expectedType = if (request.direction == CashDirection.RECEIVED) AccountType.REVENUE else AccountType.EXPENSE
+            if (counter.type != expectedType) return Result.VatNotApplicable
+            if (vatMoney.amount.signum() > 0) {
+                val control = accountRepository.findAllByCompany(request.companyId)
+                    .firstOrNull { it.type == AccountType.LIABILITY && it.code == ChartOfAccountsTemplate.VAT_CONTROL_ACCOUNT_CODE }
+                    ?: return Result.VatControlAccountNotConfigured
+                val direction = if (request.direction == CashDirection.RECEIVED) VatLineDirection.OUTPUT else VatLineDirection.INPUT
+                vatLine = CashBookEntry.VatLine(
+                    control.id, vatMoney,
+                    mapOf(DimensionType.VAT_CATEGORY to vat.category.name, DimensionType.VAT_DIRECTION to direction.name)
+                )
+            }
+        }
+
         val period = periodRepository.findAllByCompany(request.companyId).firstOrNull { it.allowsPosting() }
             ?: return Result.NoOpenPeriod
 
         val draft = CashBookEntry(
             accountId = book.id, direction = request.direction, amount = amount, counterAccountId = counter.id,
-            date = request.date, cashFlowActivity = request.cashFlowActivity, description = request.description
+            date = request.date, cashFlowActivity = request.cashFlowActivity, description = request.description,
+            vatLine = vatLine
         ).toJournalEntry(period.id, request.entryId)
 
         return when (
@@ -145,9 +188,17 @@ class RecordCashBookEntryUseCase(
         val bookSide = if (request.direction == CashDirection.RECEIVED) TransactionSide.DEBIT else TransactionSide.CREDIT
         val bookLine = lines.singleOrNull { it.accountId == request.bookAccountId } ?: return false
         val counterLine = lines.singleOrNull { it.accountId == request.counterAccountId } ?: return false
-        return lines.size == 2 &&
+        // A VAT of zero posts no VAT line, so it is the same entry as no VAT at all.
+        val vatAmount = request.vat?.amount?.takeIf { it.signum() > 0 }
+        val vatLineMatches = if (vatAmount == null) lines.size == 2 else {
+            val vatLine = lines.firstOrNull { it.accountId != request.bookAccountId && it.accountId != request.counterAccountId }
+            lines.size == 3 && vatLine != null && vatLine.side == bookSide.opposite() && vatLine.amount.amount.compareTo(vatAmount) == 0 &&
+                vatLine.dimensions[DimensionType.VAT_CATEGORY] == request.vat!!.category.name
+        }
+        val counterAmount = if (vatAmount == null) request.amount else request.amount - vatAmount
+        return vatLineMatches &&
             bookLine.side == bookSide && bookLine.amount.amount.compareTo(request.amount) == 0 && bookLine.amount.currency == currency &&
-            counterLine.side == bookSide.opposite() && counterLine.amount.amount.compareTo(request.amount) == 0 &&
+            counterLine.side == bookSide.opposite() && counterLine.amount.amount.compareTo(counterAmount) == 0 &&
             date == request.date &&
             (description?.takeIf { it.isNotBlank() }) == (request.description?.takeIf { it.isNotBlank() })
     }

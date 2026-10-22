@@ -157,4 +157,39 @@ class CashBookEntryTest {
         date = TODAY,
         description = "Sale of goods"
     )
+
+    @Test
+    fun `given VAT inside the gross, when converted, then the cash line is the gross, the counter line the net and the VAT line goes to the VAT account on the counter side with its tags`() {
+        val cashAccountId = AccountId.generate()
+        val counterAccountId = AccountId.generate()
+        val vatAccountId = AccountId.generate()
+        val tags = mapOf(DimensionType.VAT_CATEGORY to "STANDARD", DimensionType.VAT_DIRECTION to "OUTPUT")
+        val entry = CashBookEntry(
+            accountId = cashAccountId, direction = CashDirection.RECEIVED, amount = Money(BigDecimal("125.00"), GBP),
+            counterAccountId = counterAccountId, date = TODAY,
+            vatLine = CashBookEntry.VatLine(vatAccountId, Money(BigDecimal("25.00"), GBP), tags)
+        )
+
+        val lines = entry.toJournalEntry(PeriodId.generate()).lines
+
+        lines.map { Triple(it.accountId, it.side, it.amount.amount.toPlainString()) } shouldBe listOf(
+            Triple(cashAccountId, TransactionSide.DEBIT, "125.00"),
+            Triple(counterAccountId, TransactionSide.CREDIT, "100.00"),
+            Triple(vatAccountId, TransactionSide.CREDIT, "25.00")
+        )
+        lines.last().dimensions shouldBe tags
+    }
+
+    @Test
+    fun `given VAT that is zero or not less than the gross, then the entry cannot be built`() {
+        fun build(vat: String) = CashBookEntry(
+            accountId = AccountId.generate(), direction = CashDirection.PAID, amount = Money(BigDecimal("50.00"), GBP),
+            counterAccountId = AccountId.generate(), date = TODAY,
+            vatLine = CashBookEntry.VatLine(AccountId.generate(), Money(BigDecimal(vat), GBP), emptyMap())
+        )
+
+        shouldThrow<IllegalArgumentException> { build("0.00") }
+        shouldThrow<IllegalArgumentException> { build("50.00") }
+        shouldThrow<IllegalArgumentException> { build("60.00") }
+    }
 }

@@ -548,6 +548,131 @@ class CashBookRoutesTest {
         book.rows.single().moneyIn shouldBe "100.00"
     }
 
+    // ---- VAT on money in or out (GL-T-27, GL-FR-TAX-8, GL-UC-19; Femi 2026-10-22, option A) ----
+
+    private fun vatExtra(category: String?, amount: String?) =
+        listOfNotNull(category?.let { ""","vatCategory":"$it"""" }, amount?.let { ""","vatAmount":"$it"""" }).joinToString("")
+
+    @Test
+    fun `given a receipt with VAT, when it is recorded, then it is 201, the book moves by the gross and the entry splits net and VAT tagged for the return`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!, "125.00", extra = vatExtra("STANDARD", "25.00")), "vat-1")
+
+        response.status shouldBe HttpStatusCode.Created
+        val body: CashBookEntryResponseDto = response.body()
+        body.balanceAfter shouldBe "125.00"
+        val entry = fixture.journalEntryRepository.findById(com.theprodeogroup.fish.domain.ledger.JournalEntryId(java.util.UUID.fromString(body.entryId)))!!
+        entry.lines.map { Triple(it.accountId, it.side, it.amount.amount.toPlainString()) } shouldBe listOf(
+            Triple(cash.id, TransactionSide.DEBIT, "125.00"),
+            Triple(fixture.revenueAccount!!.id, TransactionSide.CREDIT, "100.00"),
+            Triple(fixture.vatAccount!!.id, TransactionSide.CREDIT, "25.00")
+        )
+        entry.lines.last().dimensions shouldBe mapOf(
+            com.theprodeogroup.fish.domain.common.DimensionType.VAT_CATEGORY to "STANDARD",
+            com.theprodeogroup.fish.domain.common.DimensionType.VAT_DIRECTION to "OUTPUT"
+        )
+    }
+
+    @Test
+    fun `given a payment with VAT, when it is recorded, then the expense takes the net and the VAT control account the VAT as input`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        val rent = Account.create(fixture.company.id, AccountType.EXPENSE, null, "5000", "Rent").also { fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!, "300.00"), "fund")
+
+        val response = client.recordEntry(fixture, cash, "payments", entryBody(rent, "125.00", extra = vatExtra("REDUCED", "25.00")), "vat-2")
+
+        response.status shouldBe HttpStatusCode.Created
+        response.body<CashBookEntryResponseDto>().balanceAfter shouldBe "175.00"
+        val entry = fixture.journalEntryRepository.findAllByAccount(rent.id).single()
+        entry.lines.map { Triple(it.accountId, it.side, it.amount.amount.toPlainString()) } shouldBe listOf(
+            Triple(cash.id, TransactionSide.CREDIT, "125.00"),
+            Triple(rent.id, TransactionSide.DEBIT, "100.00"),
+            Triple(fixture.vatAccount!!.id, TransactionSide.DEBIT, "25.00")
+        )
+        entry.lines.last().dimensions[com.theprodeogroup.fish.domain.common.DimensionType.VAT_DIRECTION] shouldBe "INPUT"
+    }
+
+    @Test
+    fun `given VAT that is incomplete, unknown, malformed or too large or on the wrong account, then each is refused with its own token and nothing is posted`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        val rent = Account.create(fixture.company.id, AccountType.EXPENSE, null, "5000", "Rent").also { fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val sales = fixture.revenueAccount!!
+        suspend fun refusal(segment: String, counter: Account, extra: String, key: String): Pair<HttpStatusCode, String> {
+            val response = client.recordEntry(fixture, cash, segment, entryBody(counter, "125.00", extra = extra), key)
+            return response.status to response.body<ErrorResponseDto>().error
+        }
+
+        refusal("receipts", sales, vatExtra("STANDARD", null), "v1") shouldBe (HttpStatusCode.BadRequest to "vat_incomplete")
+        refusal("receipts", sales, vatExtra(null, "25.00"), "v2") shouldBe (HttpStatusCode.BadRequest to "vat_incomplete")
+        refusal("receipts", sales, vatExtra("PREMIUM", "25.00"), "v3") shouldBe (HttpStatusCode.BadRequest to "vat_category_not_supported")
+        refusal("receipts", sales, vatExtra("STANDARD", "abc"), "v4") shouldBe (HttpStatusCode.BadRequest to "invalid_amount")
+        refusal("receipts", sales, vatExtra("STANDARD", "125.00"), "v5") shouldBe (HttpStatusCode.BadRequest to "vat_exceeds_amount")
+        refusal("receipts", rent, vatExtra("STANDARD", "25.00"), "v6") shouldBe (HttpStatusCode.BadRequest to "vat_not_applicable")
+        refusal("payments", sales, vatExtra("STANDARD", "25.00"), "v7") shouldBe (HttpStatusCode.BadRequest to "vat_not_applicable")
+        fixture.journalEntryRepository.findAllByAccount(cash.id) shouldBe emptyList()
+    }
+
+    @Test
+    fun `given VAT but the Company has no VAT control account, then it is a 409 vat_control_account_not_configured and nothing is posted`() = testApplication {
+        val fixture = Fixture(configureAccounts = false)
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        val sales = Account.create(fixture.company.id, AccountType.REVENUE, null, "4000", "Revenue").also { fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.recordEntry(fixture, cash, "receipts", entryBody(sales, "125.00", extra = vatExtra("STANDARD", "25.00")), "nv")
+
+        response.status shouldBe HttpStatusCode.Conflict
+        response.body<ErrorResponseDto>().error shouldBe "vat_control_account_not_configured"
+        fixture.journalEntryRepository.findAllByAccount(cash.id) shouldBe emptyList()
+    }
+
+    @Test
+    fun `given the same VAT request twice, then the second is a replay, and the same key with a different VAT is 422 idempotency_key_reused`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val body = entryBody(fixture.revenueAccount!!, "125.00", extra = vatExtra("STANDARD", "25.00"))
+        val first: CashBookEntryResponseDto = client.recordEntry(fixture, cash, "receipts", body, "same").body()
+
+        val second: CashBookEntryResponseDto = client.recordEntry(fixture, cash, "receipts", body, "same").body()
+        val different = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!, "125.00", extra = vatExtra("STANDARD", "20.00")), "same")
+        val plain = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!, "125.00"), "same")
+
+        second.replayed shouldBe true
+        second.entryId shouldBe first.entryId
+        different.status shouldBe HttpStatusCode.UnprocessableEntity
+        plain.status shouldBe HttpStatusCode.UnprocessableEntity
+        fixture.journalEntryRepository.findAllByAccount(cash.id).size shouldBe 1
+    }
+
+    @Test
+    fun `given a receipt with VAT, when it is undone, then all three lines are reversed and the book returns to zero`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val recorded: CashBookEntryResponseDto =
+            client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!, "125.00", extra = vatExtra("STANDARD", "25.00")), "undo-vat").body()
+
+        val undo = client.post("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/${recorded.entryId}/undo") { signedIn(fixture) }
+
+        undo.status shouldBe HttpStatusCode.Created
+        undo.body<CashBookUndoResponseDto>().balanceAfter shouldBe "0.00"
+        fixture.journalEntryRepository.findAllByAccount(fixture.vatAccount!!.id).map { it.lines.size } shouldBe listOf(3, 3)
+    }
+
     @Test
     fun `given no Idempotency-Key, when an entry is recorded, then it is a 400 and nothing is posted`() = testApplication {
         val fixture = Fixture()
