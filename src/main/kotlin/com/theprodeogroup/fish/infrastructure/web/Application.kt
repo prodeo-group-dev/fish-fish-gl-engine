@@ -90,6 +90,7 @@ import com.theprodeogroup.fish.application.ComputeCashBookUseCase
 import com.theprodeogroup.fish.application.ListCashBooksUseCase
 import com.theprodeogroup.fish.application.ComputeCashBalanceSeriesUseCase
 import com.theprodeogroup.fish.application.ListCounterAccountsUseCase
+import com.theprodeogroup.fish.application.RecordVatSettlementUseCase
 import com.theprodeogroup.fish.application.RecordCashBookEntryUseCase
 import com.theprodeogroup.fish.application.RecordCashBookTransferUseCase
 import com.theprodeogroup.fish.application.UndoCashBookEntryUseCase
@@ -692,7 +693,8 @@ fun Application.fishModule(
                 ) {
                     cashBookRoutes(
                         listCashBooksUseCase, computeCashBookUseCase, changeCashBookKindUseCase, recordCashBookEntryUseCase,
-                        listCounterAccountsUseCase, recordCashBookTransferUseCase, undoCashBookEntryUseCase, companyRepository
+                        listCounterAccountsUseCase, recordCashBookTransferUseCase, undoCashBookEntryUseCase,
+                        RecordVatSettlementUseCase(accountRepository, recordCashBookEntryUseCase), companyRepository
                     )
                 }
                 if (computeCashBalanceSeriesUseCase != null) {

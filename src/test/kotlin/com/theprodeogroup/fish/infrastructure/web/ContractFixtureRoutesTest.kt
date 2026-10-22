@@ -828,6 +828,42 @@ class ContractFixtureRoutesTest {
         ContractFixtures.verifyOrUpdate("contracts/gl/cash-book-entry-vat-control-account-not-configured.json", response.bodyAsText())
     }
 
+
+    // --- Paying VAT to the authority (2026-10-22, GL-T-30, GL-FR-TAX-9, GL-FR-CTR-2) ---
+
+    @Test
+    fun `contract fixture - POST cash-books vat-settlement`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        // 150.00 paid to the authority from the cash book: Dr VAT Control, Cr Cash, the VAT line tagged SETTLEMENT.
+        val response = client.post("/api/companies/${fixture.company.id.value}/cash-books/${id(1).value}/vat-settlement") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+            header("Idempotency-Key", "fx-vat-settlement")
+            contentType(ContentType.Application.Json)
+            setBody("""{"date": "2026-10-12", "amount": "150.00", "direction": "PAID", "description": "Q3 VAT"}""")
+        }
+
+        response.status shouldBe HttpStatusCode.Created
+        ContractFixtures.verifyOrUpdate("contracts/gl/vat-settlement.json", pinCashEntryId(response.bodyAsText()))
+    }
+
+    @Test
+    fun `contract fixture - POST cash-books payments refused, the VAT control account is paid through vat-settlement`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.recordCashBookEntry(fixture, "payments", id(6), "150.00", "", "fx-vat-account-refused")
+
+        response.status shouldBe HttpStatusCode.Conflict
+        ContractFixtures.verifyOrUpdate("contracts/gl/cash-book-entry-counter-account-not-allowed-vat.json", response.bodyAsText())
+    }
+
     @Test
     fun `contract fixture - GET jurisdictions`() = testApplication {
         val fixture = Fixture(configureAccounts = false, openPeriod = false)

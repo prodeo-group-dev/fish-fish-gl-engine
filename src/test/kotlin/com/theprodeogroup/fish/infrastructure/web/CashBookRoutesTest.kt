@@ -673,6 +673,129 @@ class CashBookRoutesTest {
         fixture.journalEntryRepository.findAllByAccount(fixture.vatAccount!!.id).map { it.lines.size } shouldBe listOf(3, 3)
     }
 
+    // ---- paying VAT to the authority (GL-T-30, GL-FR-TAX-9, GL-UC-20; Femi 2026-10-22) ----
+
+    private fun settlementBody(amount: String = "150.00", direction: String? = "PAID", date: LocalDate = TODAY) =
+        """{"date":"$date","amount":"$amount"${direction?.let { ""","direction":"$it"""" } ?: ""},"description":"Q3 VAT"}"""
+
+    private suspend fun io.ktor.client.HttpClient.settleVat(fixture: Fixture, book: Account, body: String, key: String?, email: String = ADMIN_EMAIL) =
+        post("/api/companies/${fixture.company.id.value}/cash-books/${book.id.value}/vat-settlement") {
+            signedIn(fixture, email)
+            if (key != null) header("Idempotency-Key", key)
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+
+    @Test
+    fun `given VAT paid to the authority, when it is recorded, then it is 201, debits the VAT control account, credits the bank and tags the VAT line SETTLEMENT`() = testApplication {
+        val fixture = Fixture()
+        val bank = fixture.cashBook("1010", CashBookKind.BANK)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.settleVat(fixture, bank, settlementBody("150.00", "PAID"), "vs-1")
+
+        response.status shouldBe HttpStatusCode.Created
+        val body: CashBookEntryResponseDto = response.body()
+        body.balanceAfter shouldBe "-150.00"
+        val entry = fixture.journalEntryRepository.findAllByAccount(fixture.vatAccount!!.id).single()
+        entry.lines.map { Triple(it.accountId, it.side, it.amount.amount.toPlainString()) } shouldBe listOf(
+            Triple(bank.id, TransactionSide.CREDIT, "150.00"),
+            Triple(fixture.vatAccount!!.id, TransactionSide.DEBIT, "150.00")
+        )
+        entry.lines.last().dimensions shouldBe mapOf(com.theprodeogroup.fish.domain.common.DimensionType.VAT_DIRECTION to "SETTLEMENT")
+    }
+
+    @Test
+    fun `given a VAT refund received, when it is recorded, then the bank is debited and the VAT control account credited`() = testApplication {
+        val fixture = Fixture()
+        val bank = fixture.cashBook("1010", CashBookKind.BANK)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.settleVat(fixture, bank, settlementBody("75.00", "RECEIVED"), "vs-2")
+
+        response.status shouldBe HttpStatusCode.Created
+        response.body<CashBookEntryResponseDto>().balanceAfter shouldBe "75.00"
+        fixture.journalEntryRepository.findAllByAccount(fixture.vatAccount!!.id).single().lines.last().side shouldBe TransactionSide.CREDIT
+    }
+
+    @Test
+    fun `given no Idempotency-Key, a missing or unknown direction, a bad amount or a book that is not a cash book, then each is refused and nothing is posted`() = testApplication {
+        val fixture = Fixture()
+        val bank = fixture.cashBook("1010", CashBookKind.BANK)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        suspend fun refusal(book: Account, body: String, key: String?): Pair<HttpStatusCode, String> {
+            val response = client.settleVat(fixture, book, body, key)
+            return response.status to response.body<ErrorResponseDto>().error
+        }
+
+        refusal(bank, settlementBody(), null) shouldBe (HttpStatusCode.BadRequest to "idempotency_key_required")
+        refusal(bank, settlementBody(direction = null), "r1") shouldBe (HttpStatusCode.BadRequest to "bad_request")
+        refusal(bank, settlementBody(direction = "SIDEWAYS"), "r2") shouldBe (HttpStatusCode.BadRequest to "bad_request")
+        refusal(bank, settlementBody(amount = "abc"), "r3") shouldBe (HttpStatusCode.BadRequest to "invalid_amount")
+        refusal(bank, settlementBody(amount = "0.00"), "r4") shouldBe (HttpStatusCode.BadRequest to "invalid_amount")
+        refusal(fixture.revenueAccount!!, settlementBody(), "r5") shouldBe (HttpStatusCode.Conflict to "not_a_cash_or_bank_account")
+        fixture.journalEntryRepository.findAllByAccount(fixture.vatAccount!!.id) shouldBe emptyList()
+    }
+
+    @Test
+    fun `given the Company has no VAT control account, then a settlement is a 409 vat_control_account_not_configured`() = testApplication {
+        val fixture = Fixture(configureAccounts = false)
+        val bank = fixture.cashBook("1010", CashBookKind.BANK)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.settleVat(fixture, bank, settlementBody(), "nc")
+
+        response.status shouldBe HttpStatusCode.Conflict
+        response.body<ErrorResponseDto>().error shouldBe "vat_control_account_not_configured"
+    }
+
+    @Test
+    fun `given the same settlement twice, then the second is a replay, and the same key with another amount is 422 idempotency_key_reused`() = testApplication {
+        val fixture = Fixture()
+        val bank = fixture.cashBook("1010", CashBookKind.BANK)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val first: CashBookEntryResponseDto = client.settleVat(fixture, bank, settlementBody(), "same").body()
+
+        val second: CashBookEntryResponseDto = client.settleVat(fixture, bank, settlementBody(), "same").body()
+        val different = client.settleVat(fixture, bank, settlementBody("151.00"), "same")
+
+        second.replayed shouldBe true
+        second.entryId shouldBe first.entryId
+        different.status shouldBe HttpStatusCode.UnprocessableEntity
+        fixture.journalEntryRepository.findAllByAccount(fixture.vatAccount!!.id).size shouldBe 1
+    }
+
+    @Test
+    fun `given a read-only member, when they try to settle VAT, then it is refused and nothing is posted`() = testApplication {
+        val fixture = Fixture()
+        val bank = fixture.cashBook("1010", CashBookKind.BANK)
+        val reader = User.create("vat-reader@example.com", "Reader").also { fixture.userRepository.save(it) }
+        fixture.membershipRepository.save(Membership.grant(reader.id, fixture.tenant, Role.ACCOUNTANT, fixture.company.id, accessLevel = AccessLevel.READ))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.settleVat(fixture, bank, settlementBody(), "ro", "vat-reader@example.com").status shouldBe HttpStatusCode.Forbidden
+        fixture.journalEntryRepository.findAllByAccount(fixture.vatAccount!!.id) shouldBe emptyList()
+    }
+
+    @Test
+    fun `given the ordinary payment door, when the VAT control account is named as the other side, then it is still refused and points to the VAT return`() = testApplication {
+        val fixture = Fixture()
+        val bank = fixture.cashBook("1010", CashBookKind.BANK)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.recordEntry(fixture, bank, "payments", entryBody(fixture.vatAccount!!, "10.00"), "general")
+
+        response.status shouldBe HttpStatusCode.Conflict
+        response.body<CounterAccountNotAllowedDto>().useInstead shouldBe "VAT"
+    }
+
     @Test
     fun `given no Idempotency-Key, when an entry is recorded, then it is a 400 and nothing is posted`() = testApplication {
         val fixture = Fixture()

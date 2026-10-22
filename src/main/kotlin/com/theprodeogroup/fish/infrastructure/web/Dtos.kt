@@ -1232,6 +1232,18 @@ data class CashBookEntryRequestDto(
     val vatAmount: String? = null
 )
 
+/**
+ * `POST /companies/{c}/cash-books/{accountId}/vat-settlement` (GL-T-30, 2026-10-22): VAT paid to the authority ([direction] `PAID`,
+ * Dr VAT control, Cr the book) or a refund from it (`RECEIVED`). The VAT control account is GL's own; the caller names no account.
+ */
+@Serializable
+data class VatSettlementRequestDto(
+    val date: String,
+    val amount: String,
+    val direction: String? = null,
+    val description: String? = null
+)
+
 /** A warning that did not stop the entry: [code] is `cash_below_zero` or `bank_overdrawn`, [balanceAfter] the book's balance after it. */
 @Serializable
 data class CashBookWarningDto(val code: String, val accountId: String, val balanceAfter: String)

@@ -7,6 +7,7 @@ import com.theprodeogroup.fish.application.ListCashBooksUseCase
 import com.theprodeogroup.fish.application.ListCounterAccountsUseCase
 import com.theprodeogroup.fish.application.RecordCashBookEntryUseCase
 import com.theprodeogroup.fish.application.RecordCashBookTransferUseCase
+import com.theprodeogroup.fish.application.RecordVatSettlementUseCase
 import com.theprodeogroup.fish.application.UndoCashBookEntryUseCase
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.CashBookKind
@@ -51,6 +52,7 @@ fun Route.cashBookRoutes(
     listCounterAccountsUseCase: ListCounterAccountsUseCase,
     recordCashBookTransferUseCase: RecordCashBookTransferUseCase,
     undoCashBookEntryUseCase: UndoCashBookEntryUseCase,
+    recordVatSettlementUseCase: RecordVatSettlementUseCase,
     companyRepository: CompanyRepository
 ) {
     get("/companies/{companyId}/cash-books") {
@@ -182,6 +184,10 @@ fun Route.cashBookRoutes(
 
     post("/companies/{companyId}/cash-books/{accountId}/payments") {
         call.handleCashBookEntry(CashDirection.PAID, recordCashBookEntryUseCase, companyRepository)
+    }
+
+    post("/companies/{companyId}/cash-books/{accountId}/vat-settlement") {
+        call.handleVatSettlement(recordVatSettlementUseCase, companyRepository)
     }
 
     post("/companies/{companyId}/cash-books/{accountId}/transfers") {
@@ -453,6 +459,63 @@ private suspend fun ApplicationCall.handleCashBookEntry(
             body.description, activity, entryId, vat
         )
     )
+    respondCashBookEntryResult(result, accountUuid)
+}
+
+
+/**
+ * `POST /companies/{companyId}/cash-books/{accountId}/vat-settlement` (GL-T-30, GL-FR-TAX-9, GL-UC-20; Femi 2026-10-22): VAT
+ * paid to the authority (`PAID`: Dr the VAT control account, Cr the book) or a refund from it (`RECEIVED`). The standard Company
+ * sequence and a mandatory Idempotency-Key, as for receipts and payments; see [RecordVatSettlementUseCase].
+ */
+private suspend fun ApplicationCall.handleVatSettlement(
+    recordVatSettlementUseCase: RecordVatSettlementUseCase,
+    companyRepository: CompanyRepository
+) {
+    val companyId = parseCashBookCompanyId() ?: return
+    val accountUuid = parseUuid(parameters["accountId"] ?: "") ?: return
+    val tenantId = resolveTenantForCompany(companyId, companyRepository) ?: return
+    if (!verifyClaimedTenant(tenantId)) return
+    authorizeTenantForWrite(tenantId, companyId) ?: return
+
+    val idempotencyKey = request.header("Idempotency-Key")?.trim()
+    if (idempotencyKey.isNullOrEmpty() || idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("idempotency_key_required", "An Idempotency-Key header of 1 to $MAX_IDEMPOTENCY_KEY_LENGTH characters is required"))
+        return
+    }
+
+    val body = receive<VatSettlementRequestDto>()
+    val date = try {
+        LocalDate.parse(body.date)
+    } catch (e: DateTimeParseException) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "date must be a date, YYYY-MM-DD"))
+        return
+    }
+    val amount = body.amount.toBigDecimalOrNull() ?: run {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_amount", "amount must be a plain decimal number"))
+        return
+    }
+    val direction = when (body.direction) {
+        "PAID" -> CashDirection.PAID
+        "RECEIVED" -> CashDirection.RECEIVED
+        else -> {
+            respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "direction must be PAID (VAT paid to the authority) or RECEIVED (a refund)"))
+            return
+        }
+    }
+
+    // A settlement has its own namespace in the entry id, so the same key on a receipt never collides with it.
+    val entryId = JournalEntryId(
+        UUID.nameUUIDFromBytes("vat-settlement|${tenantId.value}|${companyId.value}|$accountUuid|$direction|$idempotencyKey".toByteArray(Charsets.UTF_8))
+    )
+    val result = recordVatSettlementUseCase.execute(
+        RecordVatSettlementUseCase.Request(companyId, AccountId(accountUuid), direction, amount, date, body.description, entryId)
+    )
+    respondCashBookEntryResult(result, accountUuid)
+}
+
+/** The answer to a recorded cash or bank book entry, shared by receipts, payments and VAT settlements. */
+private suspend fun ApplicationCall.respondCashBookEntryResult(result: RecordCashBookEntryUseCase.Result, accountUuid: UUID) {
     when (result) {
         is RecordCashBookEntryUseCase.Result.Posted -> respond(
             HttpStatusCode.Created,
@@ -505,7 +568,6 @@ private suspend fun ApplicationCall.handleCashBookEntry(
             respond(HttpStatusCode.Conflict, ErrorResponseDto("vat_control_account_not_configured", "This Company has no VAT control account"))
     }
 }
-
 
 private suspend fun ApplicationCall.parseCashBookCompanyId(): CompanyId? {
     val raw = parameters["companyId"]

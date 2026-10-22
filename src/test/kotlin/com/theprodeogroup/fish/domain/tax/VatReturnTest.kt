@@ -295,6 +295,67 @@ class VatReturnTest {
         vatReturn.inputVat shouldBe money("3.00")
     }
 
+    // ---- the remittance is not VAT (GL-T-30, GL-FR-TAX-9; Femi 2026-10-22) ----
+
+    @Test
+    fun `given a quarter's VAT paid to the authority in the next quarter, when the next return is computed, then the payment is not counted as input VAT`() {
+        val companyId = CompanyId.generate()
+        val vatAccountId = AccountId.generate()
+        val q1 = VatFilingPeriod(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 3, 31))
+        val q2 = VatFilingPeriod(LocalDate.of(2026, 4, 1), LocalDate.of(2026, 6, 30))
+        val entries = listOf(
+            saleEntry(vatAccountId, Money(BigDecimal("1000.00"), EUR), VatCategory.STANDARD, LocalDate.of(2026, 2, 10)),
+            saleEntry(vatAccountId, Money(BigDecimal("600.00"), EUR), VatCategory.STANDARD, LocalDate.of(2026, 5, 10)),
+            // Q1's 1000.00 remitted on 20 April: Dr VAT control, Cr Bank, tagged SETTLEMENT.
+            postedEntry(
+                LocalDate.of(2026, 4, 20),
+                JournalLine(vatAccountId, Money(BigDecimal("1000.00"), EUR), TransactionSide.DEBIT, mapOf(DimensionType.VAT_DIRECTION to "SETTLEMENT")),
+                JournalLine(AccountId.generate(), Money(BigDecimal("1000.00"), EUR), TransactionSide.CREDIT)
+            )
+        )
+
+        val first = VatReturn.of(companyId, q1, vatAccountId, entries, EUR)
+        val second = VatReturn.of(companyId, q2, vatAccountId, entries, EUR)
+
+        first.netVatDue shouldBe Money(BigDecimal("1000.00"), EUR)
+        second.outputVat shouldBe Money(BigDecimal("600.00"), EUR)
+        second.inputVat shouldBe Money(BigDecimal.ZERO, EUR)
+        second.netVatDue shouldBe Money(BigDecimal("600.00"), EUR)
+        second.direction shouldBe VatReturnDirection.PAYABLE
+    }
+
+    @Test
+    fun `given a refund received from the authority, when the return is computed, then the refund is not counted as output VAT`() {
+        val vatAccountId = AccountId.generate()
+        val entries = listOf(
+            purchaseEntry(vatAccountId, Money(BigDecimal("500.00"), EUR), VatCategory.STANDARD, LocalDate.of(2026, 1, 10)),
+            postedEntry(
+                LocalDate.of(2026, 2, 20),
+                JournalLine(AccountId.generate(), Money(BigDecimal("500.00"), EUR), TransactionSide.DEBIT),
+                JournalLine(vatAccountId, Money(BigDecimal("500.00"), EUR), TransactionSide.CREDIT, mapOf(DimensionType.VAT_DIRECTION to "SETTLEMENT"))
+            )
+        )
+
+        val vatReturn = VatReturn.of(CompanyId.generate(), JAN_FEB_2026, vatAccountId, entries, EUR)
+
+        vatReturn.outputVat shouldBe Money(BigDecimal.ZERO, EUR)
+        vatReturn.netVatDue shouldBe Money(BigDecimal("-500.00"), EUR)
+    }
+
+    @Test
+    fun `given an untagged debit on the VAT control account, when the return is computed, then it is still read by its side as before`() {
+        val vatAccountId = AccountId.generate()
+        val entries = listOf(
+            postedEntry(
+                LocalDate.of(2026, 1, 20),
+                JournalLine(vatAccountId, Money(BigDecimal("40.00"), EUR), TransactionSide.DEBIT),
+                JournalLine(AccountId.generate(), Money(BigDecimal("40.00"), EUR), TransactionSide.CREDIT)
+            )
+        )
+
+        VatReturn.of(CompanyId.generate(), JAN_FEB_2026, vatAccountId, entries, EUR).inputVat shouldBe Money(BigDecimal("40.00"), EUR)
+    }
+
     private fun saleEntry(vatAccountId: AccountId, vatAmount: Money, category: VatCategory, date: LocalDate): JournalEntry =
         postedEntry(
             date,
