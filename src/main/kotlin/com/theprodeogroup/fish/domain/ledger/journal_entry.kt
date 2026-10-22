@@ -42,7 +42,13 @@ class JournalEntry private constructor(
      * been stored. It is what puts two entries of the same day in a fixed order in the books; it is not part of
      * the accounting fact and is never set by a caller.
      */
-    val recordedSeq: Long? = null
+    val recordedSeq: Long? = null,
+    /**
+     * When the system stored this entry (V35, `journal_entries.recorded_at`), kept apart from the accounting [date] (standard S4,
+     * GL-FR-LED-9). Null for an entry that has not been stored. For an entry recorded before V35 it is the moment V35 ran, not the
+     * time it was really recorded (the migration says so); it is shown as stored, never guessed. Never set by a caller.
+     */
+    val recordedAt: Instant? = null
 ) {
     var status: PostingStatus = initialStatus
         private set
@@ -179,7 +185,8 @@ class JournalEntry private constructor(
             description: String?,
             status: PostingStatus,
             reversalOfEntryId: JournalEntryId?,
-            recordedSeq: Long? = null
-        ): JournalEntry = JournalEntry(id, periodId, date, lines, source, description, status, reversalOfEntryId, recordedSeq)
+            recordedSeq: Long? = null,
+            recordedAt: Instant? = null
+        ): JournalEntry = JournalEntry(id, periodId, date, lines, source, description, status, reversalOfEntryId, recordedSeq, recordedAt)
     }
 }

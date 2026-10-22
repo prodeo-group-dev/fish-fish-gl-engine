@@ -132,4 +132,23 @@ class JournalEntryRecordedOrderIntegrationTest {
             book.rows.map { it.balance.amount.toPlainString() } shouldBe listOf("100.00", "70.00", "75.00")
         }
     }
+
+    @Test
+    fun `given an entry is stored, then it reads back with the time the database recorded it, apart from its accounting date`() {
+        val w = world()
+        val before = java.time.Instant.now().minusSeconds(5)
+        val entry = receipt(w, LocalDate.now().minusDays(1), "10.00", "Stored now")
+
+        journalEntryRepository.save(entry)
+        val read = journalEntryRepository.findById(entry.id)!!
+
+        val recordedAt = read.recordedAt!!
+        (recordedAt.isAfter(before)) shouldBe true
+        (recordedAt.isBefore(java.time.Instant.now().plusSeconds(60))) shouldBe true
+        read.date shouldBe LocalDate.now().minusDays(1)
+        (read.recordedSeq != null) shouldBe true
+        // The time is the database's, written once: saving the same entry again does not move it.
+        journalEntryRepository.save(entry)
+        journalEntryRepository.findById(entry.id)!!.recordedAt shouldBe recordedAt
+    }
 }
