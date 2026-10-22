@@ -50,6 +50,8 @@ sealed class RecordSaleResult {
     /** No account was named anywhere and the Company has no Suspense account to fall back to. */
     data object SuspenseAccountNotConfigured : RecordSaleResult()
     data class VatCategoryNotSupported(val category: VatCategory) : RecordSaleResult()
+    /** Some lines carry a finished `vatAmount` and some do not: all or none (GL-T-26). */
+    data object VatAmountOnEveryLineRequired : RecordSaleResult()
     /** The category is configured, but no rate of it is in force on the transaction date: refused, never defaulted. */
     data class VatRateNotInForce(val category: VatCategory, val asOf: LocalDate) : RecordSaleResult()
 }
@@ -114,9 +116,13 @@ class RecordSaleUseCase(
      * own chart it credits: goods, services, fees, interest each their own. [accountId] is optional: a line that names none
      * uses [Request.revenueAccountId] when the caller still sends one, otherwise the Company's Suspense account.
      */
-    data class SaleLine(val netAmount: Money, val vatCategory: VatCategory, val accountId: AccountId? = null) {
+    data class SaleLine(val netAmount: Money, val vatCategory: VatCategory, val accountId: AccountId? = null, val vatAmount: Money? = null) {
         init {
             require(netAmount.amount.signum() > 0) { "SaleLine netAmount must be positive" }
+            if (vatAmount != null) {
+                require(vatAmount.amount.signum() >= 0) { "SaleLine vatAmount cannot be negative" }
+                require(vatAmount.currency == netAmount.currency) { "SaleLine vatAmount must be in the line's currency" }
+            }
         }
     }
 
@@ -131,7 +137,8 @@ class RecordSaleUseCase(
         val vatControlAccountId: AccountId,
         val lines: List<SaleLine>,
         val customerId: CustomerId,
-        val vatRateSchedule: VatRateSchedule,
+        /** The rate schedule GL computes VAT from; needed only when no line carries a finished [SaleLine.vatAmount] (GL-T-26). */
+        val vatRateSchedule: VatRateSchedule?,
         val description: String? = null
     )
 
@@ -162,13 +169,22 @@ class RecordSaleUseCase(
             ?.takeIf { it.companyId == period.companyId }
             ?: return RecordSaleResult.VatControlAccountNotFound(request.vatControlAccountId)
 
-        val unsupportedCategory = request.lines.map { it.vatCategory }.firstOrNull { !request.vatRateSchedule.supports(it) }
-        if (unsupportedCategory != null) {
-            return RecordSaleResult.VatCategoryNotSupported(unsupportedCategory)
+        // Finished amounts (GL-T-26, Femi 2026-10-22: the caller works the VAT out and GL posts what it is sent): all lines or none.
+        val finished = request.lines.all { it.vatAmount != null }
+        if (!finished && request.lines.any { it.vatAmount != null }) {
+            return RecordSaleResult.VatAmountOnEveryLineRequired
         }
-        val ratesInForce = request.vatRateSchedule.categoriesAsOf(request.date).map { it.category }.toSet()
-        request.lines.map { it.vatCategory }.firstOrNull { it !in ratesInForce }?.let {
-            return RecordSaleResult.VatRateNotInForce(it, request.date)
+        val schedule = request.vatRateSchedule
+        if (!finished) {
+            requireNotNull(schedule) { "A rate schedule is required when a line carries no vatAmount" }
+            val unsupportedCategory = request.lines.map { it.vatCategory }.firstOrNull { !schedule.supports(it) }
+            if (unsupportedCategory != null) {
+                return RecordSaleResult.VatCategoryNotSupported(unsupportedCategory)
+            }
+            val ratesInForce = schedule.categoriesAsOf(request.date).map { it.category }.toSet()
+            request.lines.map { it.vatCategory }.firstOrNull { it !in ratesInForce }?.let {
+                return RecordSaleResult.VatRateNotInForce(it, request.date)
+            }
         }
 
         // Each line's account: its own, else the request-level one, else Suspense - all resolved before anything is built.
@@ -194,7 +210,9 @@ class RecordSaleUseCase(
         val vatByCategory = request.lines
             .groupBy { it.vatCategory }
             .mapValues { (category, lines) ->
-                lines.fold(zero) { sum, line -> sum + request.vatRateSchedule.vatAmountFor(category, line.netAmount, request.date) }
+                lines.fold(zero) { sum, line ->
+                    sum + (line.vatAmount ?: schedule!!.vatAmountFor(category, line.netAmount, request.date))
+                }
             }
             .filterValues { it.amount.signum() > 0 }
 
