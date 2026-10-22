@@ -362,6 +362,14 @@ class ContractFixtureRoutesTest {
     @Test
     fun `contract fixture - GET reports profit-and-loss`() = contract("contracts/gl/profit-and-loss.json", "reports/profit-and-loss")
 
+    // The RANGE form (?from&to, inclusive) that Tax reads for the corporate-tax computation. The seed gives a profit over October
+    // 2026 and, over 3 to 8 October, expenses with no revenue: a LOSS (negative netIncome), the string shape Tax floors at zero.
+    @Test
+    fun `contract fixture - GET reports profit-and-loss for a date range, a profit`() = contract("contracts/gl/profit-and-loss-range.json", "reports/profit-and-loss?from=2026-10-01&to=2026-10-31")
+
+    @Test
+    fun `contract fixture - GET reports profit-and-loss for a date range, a loss`() = contract("contracts/gl/profit-and-loss-range-loss.json", "reports/profit-and-loss?from=2026-10-03&to=2026-10-08")
+
     @Test
     fun `contract fixture - GET reports balance-sheet`() = contract("contracts/gl/balance-sheet.json", "reports/balance-sheet")
 
