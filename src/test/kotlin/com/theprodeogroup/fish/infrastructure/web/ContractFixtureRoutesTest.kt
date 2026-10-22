@@ -717,6 +717,117 @@ class ContractFixtureRoutesTest {
         ContractFixtures.verifyOrUpdate("contracts/gl/leave-accrual-remeasure-no-change.json", pinAccrual(unchanged.bodyAsText()))
     }
 
+    // --- Cash and bank book receipts and payments, with and without VAT (2026-10-22, GL-T-27, GL-FR-TAX-8, GL-FR-CTR-2) ---
+
+    private val pinnedCashEntryId = "00000000-0000-4000-8000-0000000000e4"
+
+    private fun pinCashEntryId(text: String) = text.replace(Regex("\"entryId\":\"[0-9a-f-]{36}\""), "\"entryId\":\"$pinnedCashEntryId\"")
+
+    private suspend fun io.ktor.client.HttpClient.recordCashBookEntry(fixture: Fixture, segment: String, counter: AccountId, amount: String, extra: String, key: String) =
+        post("/api/companies/${fixture.company.id.value}/cash-books/${id(1).value}/$segment") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+            header("Idempotency-Key", key)
+            contentType(ContentType.Application.Json)
+            setBody("""{"date": "2026-10-12", "amount": "$amount", "counterAccountId": "${counter.value}", "description": "Takings"$extra}""")
+        }
+
+    @Test
+    fun `contract fixture - POST cash-books receipts`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.recordCashBookEntry(fixture, "receipts", id(8), "100.00", "", "fx-receipt")
+
+        response.status shouldBe HttpStatusCode.Created
+        ContractFixtures.verifyOrUpdate("contracts/gl/cash-book-entry.json", pinCashEntryId(response.bodyAsText()))
+    }
+
+    @Test
+    fun `contract fixture - POST cash-books receipts with VAT`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        // 125.00 gross: 100.00 net to Sales Revenue and 25.00 VAT to the VAT control account; the book moves by the gross.
+        val response = client.recordCashBookEntry(fixture, "receipts", id(8), "125.00", ""","vatCategory": "STANDARD", "vatAmount": "25.00"""", "fx-receipt-vat")
+
+        response.status shouldBe HttpStatusCode.Created
+        ContractFixtures.verifyOrUpdate("contracts/gl/cash-book-entry-with-vat.json", pinCashEntryId(response.bodyAsText()))
+    }
+
+    @Test
+    fun `contract fixture - POST cash-books payments with VAT`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        // 60.00 gross: 50.00 net to Operating Expenses and 10.00 input VAT.
+        val response = client.recordCashBookEntry(fixture, "payments", id(10), "60.00", ""","vatCategory": "STANDARD", "vatAmount": "10.00"""", "fx-payment-vat")
+
+        response.status shouldBe HttpStatusCode.Created
+        ContractFixtures.verifyOrUpdate("contracts/gl/cash-book-payment-with-vat.json", pinCashEntryId(response.bodyAsText()))
+    }
+
+    @Test
+    fun `contract fixture - POST cash-books receipts refused, VAT category without an amount`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.recordCashBookEntry(fixture, "receipts", id(8), "125.00", ""","vatCategory": "STANDARD"""", "fx-vat-incomplete")
+
+        response.status shouldBe HttpStatusCode.BadRequest
+        ContractFixtures.verifyOrUpdate("contracts/gl/cash-book-entry-vat-incomplete.json", response.bodyAsText())
+    }
+
+    @Test
+    fun `contract fixture - POST cash-books receipts refused, VAT not less than the amount`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.recordCashBookEntry(fixture, "receipts", id(8), "25.00", ""","vatCategory": "STANDARD", "vatAmount": "25.00"""", "fx-vat-exceeds")
+
+        response.status shouldBe HttpStatusCode.BadRequest
+        ContractFixtures.verifyOrUpdate("contracts/gl/cash-book-entry-vat-exceeds-amount.json", response.bodyAsText())
+    }
+
+    @Test
+    fun `contract fixture - POST cash-books receipts refused, VAT on an account that is not income`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        // id(10) is an expense account: a receipt's VAT needs an income account.
+        val response = client.recordCashBookEntry(fixture, "receipts", id(10), "125.00", ""","vatCategory": "STANDARD", "vatAmount": "25.00"""", "fx-vat-not-applicable")
+
+        response.status shouldBe HttpStatusCode.BadRequest
+        ContractFixtures.verifyOrUpdate("contracts/gl/cash-book-entry-vat-not-applicable.json", response.bodyAsText())
+    }
+
+    @Test
+    fun `contract fixture - POST cash-books receipts refused, the Company has no VAT control account`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        Period.create(fixture.company.id, PeriodType.MONTH, LocalDate.parse("2026-10-01"), LocalDate.parse("2026-10-31"), periodId).also { it.open(); fixture.periodRepository.save(it) }
+        Account.create(fixture.company.id, AccountType.ASSET, AccountClassification.CURRENT, "1000", "Cash", id = id(1), cashBookKind = CashBookKind.CASH).also { fixture.accountRepository.save(it) }
+        Account.create(fixture.company.id, AccountType.REVENUE, null, "4000", "Sales Revenue", id = id(8)).also { fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.recordCashBookEntry(fixture, "receipts", id(8), "125.00", ""","vatCategory": "STANDARD", "vatAmount": "25.00"""", "fx-vat-no-control")
+
+        response.status shouldBe HttpStatusCode.Conflict
+        ContractFixtures.verifyOrUpdate("contracts/gl/cash-book-entry-vat-control-account-not-configured.json", response.bodyAsText())
+    }
+
     @Test
     fun `contract fixture - GET jurisdictions`() = testApplication {
         val fixture = Fixture(configureAccounts = false, openPeriod = false)

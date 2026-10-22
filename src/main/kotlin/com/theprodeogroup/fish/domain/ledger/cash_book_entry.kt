@@ -26,6 +26,10 @@ import java.time.LocalDate
  * is CREDIT, per `TransactionSide`'s own rule). This is not a generic
  * conversion for any Account type.
  *
+ * [vatLine] (GL-FR-TAX-8, Femi 2026-10-22, option A) splits VAT out of the gross [amount]: the cash line stays the
+ * gross, the counter line becomes the net (gross less VAT), and the VAT line goes to the VAT account on the counter
+ * side, carrying the caller's tags. Without it the entry is the plain two-line entry, unchanged.
+ *
  * [cashFlowActivity] tags the cash line for IAS 7 categorization
  * (`StatementOfCashFlows`), confirmed 2026-08-12. Defaults to
  * `CashFlowActivity.OPERATING` rather than being required - matches
@@ -41,11 +45,20 @@ class CashBookEntry(
     val counterAccountId: AccountId,
     val date: LocalDate,
     val cashFlowActivity: CashFlowActivity = CashFlowActivity.OPERATING,
-    val description: String? = null
+    val description: String? = null,
+    val vatLine: VatLine? = null
 ) {
+    /** The VAT carried inside [amount]: the account it goes to, how much, and the tags the VAT return reads. */
+    class VatLine(val accountId: AccountId, val amount: Money, val dimensions: Map<DimensionType, String>)
+
     init {
         require(amount.amount.signum() > 0) {
             "CashBookEntry amount must be positive - use direction to indicate received vs. paid, not a negative amount"
+        }
+        if (vatLine != null) {
+            require(vatLine.amount.amount.signum() > 0 && vatLine.amount < amount) {
+                "CashBookEntry VAT must be positive and less than the gross amount"
+            }
         }
     }
 
@@ -57,13 +70,16 @@ class CashBookEntry(
             CashDirection.RECEIVED -> TransactionSide.DEBIT
             CashDirection.PAID -> TransactionSide.CREDIT
         }
-        val lines = listOf(
-            JournalLine(
-                accountId, amount, cashSide,
-                mapOf(DimensionType.CASH_FLOW_ACTIVITY to cashFlowActivity.name)
-            ),
-            JournalLine(counterAccountId, amount, cashSide.opposite())
-        )
+        val cashLine = JournalLine(accountId, amount, cashSide, mapOf(DimensionType.CASH_FLOW_ACTIVITY to cashFlowActivity.name))
+        val lines = if (vatLine == null) {
+            listOf(cashLine, JournalLine(counterAccountId, amount, cashSide.opposite()))
+        } else {
+            listOf(
+                cashLine,
+                JournalLine(counterAccountId, amount - vatLine.amount, cashSide.opposite()),
+                JournalLine(vatLine.accountId, vatLine.amount, cashSide.opposite(), vatLine.dimensions)
+            )
+        }
         return JournalEntry.create(periodId, date, lines, JournalSource.CASH_BOOK, description, id)
     }
 }

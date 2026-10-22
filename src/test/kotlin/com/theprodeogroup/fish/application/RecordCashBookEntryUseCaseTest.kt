@@ -21,6 +21,8 @@ import com.theprodeogroup.fish.domain.ledger.UseInstead
 import com.theprodeogroup.fish.domain.tenancy.Company
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.TenantId
+import com.theprodeogroup.fish.domain.tax.VatCategory
+import com.theprodeogroup.fish.domain.tax.VatFilingPeriod
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.junit.jupiter.api.Test
@@ -175,6 +177,130 @@ class RecordCashBookEntryUseCaseTest {
         results.count { it is RecordCashBookEntryUseCase.Result.Posted } shouldBe 1
         results.count { it is RecordCashBookEntryUseCase.Result.Replay } shouldBe 7
         entries.findAllByAccount(cash.id).size shouldBe 1
+    }
+
+    // ---- VAT on money in or out (GL-T-27, GL-FR-TAX-8, GL-UC-19; Femi 2026-10-22, option A) ----
+
+    private fun vatControl() =
+        Account.create(company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2150", "VAT Control Account").also { accounts.save(it) }
+
+    private fun vat(amount: String, category: VatCategory = VatCategory.STANDARD) = RecordCashBookEntryUseCase.Request.Vat(category, BigDecimal(amount))
+
+    private fun vatDims(category: String, direction: String) =
+        mapOf(DimensionType.VAT_CATEGORY to category, DimensionType.VAT_DIRECTION to direction)
+
+    @Test
+    fun `given a receipt with VAT, then the book takes the gross, the income account the net and the VAT control account the VAT, tagged OUTPUT`() {
+        val control = vatControl()
+
+        val result = posted(useCase.execute(request(amount = "125.00").copy(vat = vat("25.00"))))
+
+        result.entry.lines.map { Triple(it.accountId, it.side, it.amount.amount.toPlainString()) } shouldBe listOf(
+            Triple(cash.id, TransactionSide.DEBIT, "125.00"),
+            Triple(sales.id, TransactionSide.CREDIT, "100.00"),
+            Triple(control.id, TransactionSide.CREDIT, "25.00")
+        )
+        result.entry.lines.first { it.accountId == control.id }.dimensions shouldBe vatDims("STANDARD", "OUTPUT")
+        result.entry.lines.first { it.accountId == cash.id }.dimensions[DimensionType.CASH_FLOW_ACTIVITY] shouldBe "OPERATING"
+        result.balanceAfter shouldBe money("125.00")
+    }
+
+    @Test
+    fun `given a payment with VAT, then the expense takes the net, the VAT control account the VAT tagged INPUT, and the book pays the gross`() {
+        val control = vatControl()
+        useCase.execute(request(amount = "300.00"))
+
+        val result = posted(useCase.execute(request(direction = CashDirection.PAID, amount = "125.00", counter = rent).copy(vat = vat("25.00", VatCategory.REDUCED))))
+
+        result.entry.lines.map { Triple(it.accountId, it.side, it.amount.amount.toPlainString()) } shouldBe listOf(
+            Triple(cash.id, TransactionSide.CREDIT, "125.00"),
+            Triple(rent.id, TransactionSide.DEBIT, "100.00"),
+            Triple(control.id, TransactionSide.DEBIT, "25.00")
+        )
+        result.entry.lines.first { it.accountId == control.id }.dimensions shouldBe vatDims("REDUCED", "INPUT")
+        result.balanceAfter shouldBe money("175.00")
+    }
+
+    @Test
+    fun `given VAT of zero, then no VAT line is posted and the entry is the plain two-line entry, even with no VAT control account`() {
+        val result = posted(useCase.execute(request(amount = "100.00").copy(vat = vat("0.00", VatCategory.ZERO_RATED))))
+
+        result.entry.lines.map { it.accountId to it.amount.amount.toPlainString() } shouldBe listOf(cash.id to "100.00", sales.id to "100.00")
+    }
+
+    @Test
+    fun `given VAT equal to or above the amount, then it is refused because the net would be nothing, and nothing posts`() {
+        vatControl()
+
+        useCase.execute(request(amount = "25.00").copy(vat = vat("25.00"))) shouldBe RecordCashBookEntryUseCase.Result.VatExceedsAmount
+        useCase.execute(request(amount = "25.00").copy(vat = vat("30.00"))) shouldBe RecordCashBookEntryUseCase.Result.VatExceedsAmount
+        entries.findAllByAccount(cash.id).size shouldBe 0
+    }
+
+    @Test
+    fun `given VAT on a counter-account that is not income for a receipt or expense for a payment, then it is refused and nothing posts`() {
+        vatControl()
+        val capital = Account.create(company.id, AccountType.EQUITY, null, "3000", "Capital").also { accounts.save(it) }
+        val loan = Account.create(company.id, AccountType.LIABILITY, AccountClassification.NON_CURRENT, "2500", "Loan").also { accounts.save(it) }
+
+        useCase.execute(request(amount = "125.00", counter = rent).copy(vat = vat("25.00"))) shouldBe RecordCashBookEntryUseCase.Result.VatNotApplicable
+        useCase.execute(request(direction = CashDirection.PAID, amount = "125.00", counter = sales).copy(vat = vat("25.00"))) shouldBe RecordCashBookEntryUseCase.Result.VatNotApplicable
+        useCase.execute(request(amount = "125.00", counter = capital).copy(vat = vat("25.00"))) shouldBe RecordCashBookEntryUseCase.Result.VatNotApplicable
+        useCase.execute(request(direction = CashDirection.PAID, amount = "125.00", counter = loan).copy(vat = vat("25.00"))) shouldBe RecordCashBookEntryUseCase.Result.VatNotApplicable
+        entries.findAllByAccount(cash.id).size shouldBe 0
+    }
+
+    @Test
+    fun `given VAT but the Company has no VAT control account, then it is refused and nothing posts`() {
+        useCase.execute(request(amount = "125.00").copy(vat = vat("25.00"))) shouldBe RecordCashBookEntryUseCase.Result.VatControlAccountNotConfigured
+        entries.findAllByAccount(cash.id).size shouldBe 0
+    }
+
+    @Test
+    fun `given VAT that is negative or has more decimals than the currency, then it is an invalid amount`() {
+        vatControl()
+
+        useCase.execute(request(amount = "125.00").copy(vat = vat("-1.00"))) shouldBe RecordCashBookEntryUseCase.Result.InvalidAmount
+        useCase.execute(request(amount = "125.00").copy(vat = vat("25.005"))) shouldBe RecordCashBookEntryUseCase.Result.InvalidAmount
+        entries.findAllByAccount(cash.id).size shouldBe 0
+    }
+
+    @Test
+    fun `given the same VAT request again, then it is a replay, and a different VAT or no VAT under the same key is key reuse`() {
+        vatControl()
+        val id = JournalEntryId.generate()
+        posted(useCase.execute(request(entryId = id, amount = "125.00").copy(vat = vat("25.00"))))
+
+        useCase.execute(request(entryId = id, amount = "125.00").copy(vat = vat("25.00"))).shouldBeInstanceOf<RecordCashBookEntryUseCase.Result.Replay>()
+        useCase.execute(request(entryId = id, amount = "125.00").copy(vat = vat("20.00"))) shouldBe RecordCashBookEntryUseCase.Result.KeyReused
+        useCase.execute(request(entryId = id, amount = "125.00").copy(vat = vat("25.00", VatCategory.REDUCED))) shouldBe RecordCashBookEntryUseCase.Result.KeyReused
+        useCase.execute(request(entryId = id, amount = "125.00")) shouldBe RecordCashBookEntryUseCase.Result.KeyReused
+        entries.findAllByAccount(cash.id).size shouldBe 1
+    }
+
+    @Test
+    fun `given a plain entry, then the same key with VAT is key reuse`() {
+        vatControl()
+        val id = JournalEntryId.generate()
+        posted(useCase.execute(request(entryId = id, amount = "125.00")))
+
+        useCase.execute(request(entryId = id, amount = "125.00").copy(vat = vat("25.00"))) shouldBe RecordCashBookEntryUseCase.Result.KeyReused
+    }
+
+    @Test
+    fun `given receipts and payments with VAT, then the VAT return reads output and input VAT from them`() {
+        val control = vatControl()
+        useCase.execute(request(amount = "125.00").copy(vat = vat("25.00")))
+        useCase.execute(request(direction = CashDirection.PAID, amount = "60.00", counter = rent).copy(vat = vat("10.00")))
+        val returns = FakeVatReturnRepository()
+
+        val result = ComputeVatReturnUseCase(accounts, entries, returns)
+            .execute(ComputeVatReturnUseCase.Request(company.id, VatFilingPeriod(today.minusDays(5), today.plusDays(5)), control.id, gbp))
+
+        val computed = result.shouldBeInstanceOf<ComputeVatReturnResult.Success>().vatReturn
+        computed.outputVat shouldBe money("25.00")
+        computed.inputVat shouldBe money("10.00")
+        computed.netVatDue shouldBe money("15.00")
     }
 
     // ---- refusals ----

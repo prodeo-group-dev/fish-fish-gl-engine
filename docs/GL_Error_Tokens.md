@@ -147,6 +147,9 @@ Status codes are what the code answers today; a token that appears with two stat
 | `no_vat_rate_schedule` | 409 | The Company's country has no verified VAT rates; GL refuses rather than guess. |
 | `vat_category_not_supported` | 400 | The VAT category does not exist in that country. `GET /companies/{id}/vat-categories` lists what is allowed. |
 | `vat_rate_not_in_force` | 400 | The rate table has no row for that category on the transaction date. |
+| `vat_incomplete` | 400 | A cash or bank book receipt or payment sent only one of `vatCategory` and `vatAmount`; send both or neither. |
+| `vat_exceeds_amount` | 400 | The VAT is not less than the amount, which includes it, so the net would be nothing. |
+| `vat_not_applicable` | 400 | VAT was sent for an account that is not income (money in) or expense (money out). |
 
 ## Company creation, imports
 

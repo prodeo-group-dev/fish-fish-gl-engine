@@ -14,6 +14,7 @@ import com.theprodeogroup.fish.domain.ledger.CashDirection
 import com.theprodeogroup.fish.domain.ledger.CashFlowActivity
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
+import com.theprodeogroup.fish.domain.tax.VatCategory
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import io.ktor.http.HttpStatusCode
@@ -425,6 +426,23 @@ private suspend fun ApplicationCall.handleCashBookEntry(
         }
     } ?: CashFlowActivity.OPERATING
 
+    // VAT inside the gross amount: both fields or neither. No rate is looked up; the caller worked the amount out.
+    if ((body.vatCategory == null) != (body.vatAmount == null)) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("vat_incomplete", "vatCategory and vatAmount must be sent together, or neither"))
+        return
+    }
+    val vat = if (body.vatCategory != null && body.vatAmount != null) {
+        val category = VatCategory.entries.firstOrNull { it.name == body.vatCategory } ?: run {
+            respond(HttpStatusCode.BadRequest, ErrorResponseDto("vat_category_not_supported", "vatCategory must be one of ${VatCategory.entries.joinToString { it.name }}"))
+            return
+        }
+        val vatAmount = body.vatAmount.toBigDecimalOrNull() ?: run {
+            respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_amount", "vatAmount must be a plain decimal number"))
+            return
+        }
+        RecordCashBookEntryUseCase.Request.Vat(category, vatAmount)
+    } else null
+
     // Same Tenant, Company, book, direction and key always give the same entry id; anything different gives another.
     val entryId = JournalEntryId(
         UUID.nameUUIDFromBytes("cash-book-entry|${tenantId.value}|${companyId.value}|$accountUuid|$direction|$idempotencyKey".toByteArray(Charsets.UTF_8))
@@ -432,7 +450,7 @@ private suspend fun ApplicationCall.handleCashBookEntry(
     val result = recordCashBookEntryUseCase.execute(
         RecordCashBookEntryUseCase.Request(
             companyId, AccountId(accountUuid), direction, amount, date, AccountId(counterUuid),
-            body.description, activity, entryId
+            body.description, activity, entryId, vat
         )
     )
     when (result) {
@@ -479,6 +497,12 @@ private suspend fun ApplicationCall.handleCashBookEntry(
             respond(HttpStatusCode.BadRequest, ErrorResponseDto("invalid_amount", "amount must be greater than zero, with no more decimal places than the currency"))
         RecordCashBookEntryUseCase.Result.NoOpenPeriod ->
             respond(HttpStatusCode.Conflict, ErrorResponseDto("no_open_period", "This Company has no open Period"))
+        RecordCashBookEntryUseCase.Result.VatExceedsAmount ->
+            respond(HttpStatusCode.BadRequest, ErrorResponseDto("vat_exceeds_amount", "vatAmount must be less than the amount, which includes it"))
+        RecordCashBookEntryUseCase.Result.VatNotApplicable ->
+            respond(HttpStatusCode.BadRequest, ErrorResponseDto("vat_not_applicable", "VAT can be recorded only against an income account (money in) or an expense account (money out)"))
+        RecordCashBookEntryUseCase.Result.VatControlAccountNotConfigured ->
+            respond(HttpStatusCode.Conflict, ErrorResponseDto("vat_control_account_not_configured", "This Company has no VAT control account"))
     }
 }
 

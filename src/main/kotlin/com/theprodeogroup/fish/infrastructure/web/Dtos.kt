@@ -1226,7 +1226,10 @@ data class CashBookEntryRequestDto(
     val amount: String,
     val counterAccountId: String,
     val description: String? = null,
-    val cashFlowActivity: String? = null
+    val cashFlowActivity: String? = null,
+    /** VAT inside the gross [amount] (GL-FR-TAX-8, 2026-10-22): both [vatCategory] and [vatAmount] or neither. GL looks up no rate; the caller worked the amount out. */
+    val vatCategory: String? = null,
+    val vatAmount: String? = null
 )
 
 /** A warning that did not stop the entry: [code] is `cash_below_zero` or `bank_overdrawn`, [balanceAfter] the book's balance after it. */
