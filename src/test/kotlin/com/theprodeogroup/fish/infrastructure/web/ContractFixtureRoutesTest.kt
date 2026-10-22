@@ -125,7 +125,7 @@ private val FIXED_CLOCK: Clock = Clock.fixed(Instant.parse("2026-10-12T09:00:00Z
  */
 class ContractFixtureRoutesTest {
 
-    private class Fixture(configureAccounts: Boolean = true, openPeriod: Boolean = true) {
+    private class Fixture(configureAccounts: Boolean = true, openPeriod: Boolean = true, jurisdiction: Jurisdiction = Jurisdiction.UK) {
         val userRepository = FakeUserRepository()
         val membershipRepository = FakeMembershipRepository()
         val companyRepository = FakeCompanyRepository()
@@ -184,7 +184,7 @@ class ContractFixtureRoutesTest {
         val undoCashBookEntryUseCase = UndoCashBookEntryUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository)
 
         val tenant = TenantId.generate()
-        val company = Company.create(tenant, "Purse UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP, id = CompanyId(UUID.fromString("00000000-0000-4000-8000-0000000000c0")))
+        val company = Company.create(tenant, "Purse UK", ClientType.NON_PROFIT, jurisdiction, GBP, id = CompanyId(UUID.fromString("00000000-0000-4000-8000-0000000000c0")))
         val adminUser = User.create(ADMIN_EMAIL, "Founding Admin").also { userRepository.save(it) }
         val adminSetup = run {
             companyRepository.save(company)
@@ -826,6 +826,35 @@ class ContractFixtureRoutesTest {
 
         response.status shouldBe HttpStatusCode.Conflict
         ContractFixtures.verifyOrUpdate("contracts/gl/cash-book-entry-vat-control-account-not-configured.json", response.bodyAsText())
+    }
+
+    // --- The VAT rate read SOP and CBB use to work out VAT themselves (2026-10-22, GL-T-28, GL-FR-TAX-2, GL-FR-CTR-2) ---
+
+    @Test
+    fun `contract fixture - GET vat-categories for a jurisdiction with a verified schedule`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.fetch(fixture, "vat-categories?asOf=2026-10-12")
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/vat-categories.json", response.bodyAsText())
+    }
+
+    @Test
+    fun `contract fixture - GET vat-categories for a jurisdiction with no verified schedule`() = testApplication {
+        // Sierra Leone's 15% row is loaded and unverified, so no schedule is offered and a caller must offer only no VAT.
+        val fixture = Fixture(configureAccounts = false, openPeriod = false, jurisdiction = Jurisdiction.SL)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.fetch(fixture, "vat-categories?asOf=2026-10-12")
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/vat-categories-not-configured.json", response.bodyAsText())
     }
 
     @Test
