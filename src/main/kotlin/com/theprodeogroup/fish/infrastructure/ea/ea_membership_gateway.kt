@@ -97,7 +97,8 @@ data class CallerMembership(
  * §3's open latency/availability question, resolved here as fail-closed).
  */
 sealed class EaCallerLookupResult {
-    data class Success(val email: String, val name: String, val memberships: List<CallerMembership>) : EaCallerLookupResult()
+    /** [userId] is EA's own `users.id` from `GET /me` (the stable person id, T17/RBAC R9); recorded as who posted (GL-T-38). Null only in a fake that has none. */
+    data class Success(val email: String, val name: String, val memberships: List<CallerMembership>, val userId: String? = null) : EaCallerLookupResult()
     data object Unauthorized : EaCallerLookupResult()
     data class Failure(val httpStatusCode: Int) : EaCallerLookupResult()
 }

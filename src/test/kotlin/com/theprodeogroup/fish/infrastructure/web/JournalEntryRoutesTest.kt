@@ -436,6 +436,60 @@ class JournalEntryRoutesTest {
         body.single().recordedSeq shouldBe null
     }
 
+    // ---- who, why and what document on the journal list: opt-in with ?include=audit (GL-T-38, GL-T-31) ----
+
+    @Test
+    fun `given an entry stored with who, why and the document, then the list shows them only with include=audit`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        fixture.postEntry(TODAY, "Stamped")
+        val entry = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).single()
+        fixture.journalEntryRepository.save(
+            JournalEntry.reconstitute(
+                entry.id, entry.periodId, entry.date, entry.lines, entry.source, entry.description, entry.status, entry.reversalOfEntryId,
+                recordedSeq = 4L, recordedAt = java.time.Instant.parse("2026-10-12T08:30:00Z"),
+                provenance = com.theprodeogroup.fish.domain.ledger.EntryProvenance(
+                    "SERVICE:sop", "11111111-1111-4111-8111-111111111111", "Customer asked",
+                    com.theprodeogroup.fish.domain.ledger.SourceReference(com.theprodeogroup.fish.domain.ledger.SourceReferenceType.SALES_INVOICE, "inv-1", "INV-0001"),
+                    com.theprodeogroup.fish.domain.ledger.VatBasis("20", 41, java.time.LocalDate.of(2011, 1, 4))
+                )
+            )
+        )
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val path = "/api/companies/${fixture.company.id.value}/journal-entries"
+
+        val plain = client.get(path) {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }.bodyAsText()
+        val audit: List<JournalEntryRecordAuditDto> = client.get("$path?include=audit") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }.body()
+
+        listOf("recordedBy", "actingUser", "sourceReference", "vatBasis", "\"reason\"").forEach { plain.contains(it) shouldBe false }
+        audit.single().recordedBy shouldBe "SERVICE:sop"
+        audit.single().actingUser shouldBe "11111111-1111-4111-8111-111111111111"
+        audit.single().reason shouldBe "Customer asked"
+        audit.single().sourceReference shouldBe SourceReferenceReadDto("SALES_INVOICE", "inv-1", "INV-0001")
+        audit.single().vatBasis shouldBe VatBasisReadDto("20", 41, "2011-01-04")
+        audit.single().recordedAt shouldBe "2026-10-12T08:30:00Z"
+    }
+
+    @Test
+    fun `given an include value other than audit, then the journal list is a 400`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.get("/api/companies/${fixture.company.id.value}/journal-entries?include=everything") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }
+
+        response.status shouldBe HttpStatusCode.BadRequest
+    }
+
     @Test
     fun `given two posted JournalEntries on different dates, when GET journal-entries is called, then it returns them newest first with resolved account names`() =
         testApplication {

@@ -55,6 +55,7 @@ fun Route.recordSupplierObligationAndPaymentRoutes(
 ) {
     post("/purchasing/record-obligation") {
         val request = call.receive<RecordSupplierObligationRequestDto>()
+        if (!call.recordProvenance(request.sourceReference, request.vatBasis)) return@post
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
         val company = companyRepository.findById(CompanyId(companyUuid))
         if (company == null) {
@@ -130,6 +131,7 @@ fun Route.recordSupplierObligationAndPaymentRoutes(
 
     post("/purchasing/record-payment") {
         val request = call.receive<RecordSupplierPaymentRequestDto>()
+        if (!call.recordProvenance(request.sourceReference, request.vatBasis)) return@post
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
         val companyId = CompanyId(companyUuid)
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post

@@ -59,6 +59,17 @@ object JournalEntriesTable : Table("journal_entries") {
     /** When the database stored the entry (V35 `DEFAULT now()`), never written by the application: read-only, shown beside the accounting date (GL-FR-LED-9). */
     val recordedAt = timestamp("recorded_at").defaultExpression(CurrentTimestamp)
 
+    // V36: who, why and what document, written once at insert from the request's audit context (GL-T-38, GL-T-31). All nullable.
+    val recordedBy = varchar("recorded_by", 120).nullable()
+    val actingUser = varchar("acting_user", 64).nullable()
+    val reason = varchar("reason", 500).nullable()
+    val sourceRefType = varchar("source_ref_type", 40).nullable()
+    val sourceRefId = varchar("source_ref_id", 100).nullable()
+    val sourceRefNumber = varchar("source_ref_number", 100).nullable()
+    val vatBasisRatePercent = varchar("vat_basis_rate_percent", 20).nullable()
+    val vatBasisRulebookVersion = integer("vat_basis_rulebook_version").nullable()
+    val vatBasisEffectiveFrom = date("vat_basis_effective_from").nullable()
+
     override val primaryKey = PrimaryKey(id)
 }
 

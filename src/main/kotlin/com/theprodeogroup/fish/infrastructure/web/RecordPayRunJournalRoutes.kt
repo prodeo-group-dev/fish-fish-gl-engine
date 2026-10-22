@@ -34,6 +34,7 @@ fun Route.recordPayRunJournalRoutes(
 ) {
     post("/payroll/record-pay-run-journal") {
         val request = call.receive<RecordPayRunJournalRequestDto>()
+        if (!call.recordProvenance(request.sourceReference, request.vatBasis)) return@post
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
         val companyId = CompanyId(companyUuid)
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post

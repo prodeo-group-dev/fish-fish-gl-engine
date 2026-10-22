@@ -118,6 +118,9 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation as ClientCon
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.serialization.kotlinx.json.json as clientJson
 import kotlinx.serialization.json.Json
+import com.theprodeogroup.fish.infrastructure.audit.AuditContext
+import com.theprodeogroup.fish.infrastructure.audit.AuditContexts
+import kotlinx.coroutines.withContext
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
@@ -515,6 +518,11 @@ fun Application.fishModule(
     // adding it for one header isn't worth a new dependency.
     intercept(ApplicationCallPipeline.Plugins) {
         call.response.header(HttpHeaders.CacheControl, "no-store, private")
+    }
+    // GL-T-38 (standards S4/S6): every request gets an AuditContext that the routes fill (the actor after authorisation, the reason and
+    // the source reference from the body) and the journal repository stamps onto a NEW entry. Carried across coroutine thread switches.
+    intercept(ApplicationCallPipeline.Plugins) {
+        withContext(AuditContexts.element(AuditContext())) { proceed() }
     }
     // CallId first, CallLogging second - callIdMdc puts the id CallId
     // generates/retrieves into MDC's "requestId" key, which logback.xml's

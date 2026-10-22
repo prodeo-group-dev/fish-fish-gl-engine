@@ -60,6 +60,7 @@ fun Route.recordSaleAndCollectionRoutes(
 ) {
     post("/sales/record-sale") {
         val request = call.receive<RecordSaleRequestDto>()
+        if (!call.recordProvenance(request.sourceReference, request.vatBasis)) return@post
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
         val company = companyRepository.findById(CompanyId(companyUuid))
         if (company == null) {
@@ -136,6 +137,7 @@ fun Route.recordSaleAndCollectionRoutes(
 
     post("/sales/record-collection") {
         val request = call.receive<RecordCollectionRequestDto>()
+        if (!call.recordProvenance(request.sourceReference, request.vatBasis)) return@post
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
         val companyId = CompanyId(companyUuid)
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post

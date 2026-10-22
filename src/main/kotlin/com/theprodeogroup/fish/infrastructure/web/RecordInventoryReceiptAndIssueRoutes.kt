@@ -54,6 +54,7 @@ fun Route.recordInventoryReceiptAndIssueRoutes(
 ) {
     post("/inventory/record-receipt") {
         val request = call.receive<RecordInventoryReceiptRequestDto>()
+        if (!call.recordProvenance(request.sourceReference, request.vatBasis)) return@post
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
         val companyId = CompanyId(companyUuid)
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post
@@ -99,6 +100,7 @@ fun Route.recordInventoryReceiptAndIssueRoutes(
 
     post("/inventory/record-issue") {
         val request = call.receive<RecordInventoryIssueRequestDto>()
+        if (!call.recordProvenance(request.sourceReference, request.vatBasis)) return@post
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
         val companyId = CompanyId(companyUuid)
         val tenantId = call.resolveTenantForCompany(companyId, companyRepository) ?: return@post

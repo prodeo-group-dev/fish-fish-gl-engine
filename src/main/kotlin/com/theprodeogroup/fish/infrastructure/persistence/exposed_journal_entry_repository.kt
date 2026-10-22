@@ -7,7 +7,12 @@ import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.ledger.JournalEntryRepository
+import com.theprodeogroup.fish.domain.ledger.EntryProvenance
 import com.theprodeogroup.fish.domain.ledger.JournalLine
+import com.theprodeogroup.fish.domain.ledger.SourceReference
+import com.theprodeogroup.fish.domain.ledger.SourceReferenceType
+import com.theprodeogroup.fish.domain.ledger.VatBasis
+import com.theprodeogroup.fish.infrastructure.audit.AuditContexts
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
@@ -48,6 +53,7 @@ class ExposedJournalEntryRepository : JournalEntryRepository {
             JournalEntriesTable.insert { statement ->
                 statement[id] = entry.id.value
                 populate(statement, entry)
+                stampProvenance(statement)
             }
         }
 
@@ -69,6 +75,7 @@ class ExposedJournalEntryRepository : JournalEntryRepository {
         val inserted = JournalEntriesTable.insertIgnore { statement ->
             statement[id] = entry.id.value
             populate(statement, entry)
+            stampProvenance(statement)
         }.insertedCount > 0
         if (inserted) {
             entry.lines.forEachIndexed { index, line ->
@@ -145,6 +152,37 @@ class ExposedJournalEntryRepository : JournalEntryRepository {
                 )
             }
 
+    /**
+     * Writes who, why and what document beside a NEW entry, from the request's audit context (null outside a request: nothing recorded).
+     * Called only on the insert paths: an update of an existing entry (its status turning REVERSED) never touches these columns, so the
+     * record stays what it was when the entry was stored (S1).
+     */
+    private fun stampProvenance(statement: UpdateBuilder<*>) {
+        val provenance = AuditContexts.current()?.snapshot() ?: return
+        statement[JournalEntriesTable.recordedBy] = provenance.recordedBy
+        statement[JournalEntriesTable.actingUser] = provenance.actingUser
+        statement[JournalEntriesTable.reason] = provenance.reason
+        statement[JournalEntriesTable.sourceRefType] = provenance.sourceReference?.type?.name
+        statement[JournalEntriesTable.sourceRefId] = provenance.sourceReference?.id
+        statement[JournalEntriesTable.sourceRefNumber] = provenance.sourceReference?.number
+        statement[JournalEntriesTable.vatBasisRatePercent] = provenance.vatBasis?.ratePercent
+        statement[JournalEntriesTable.vatBasisRulebookVersion] = provenance.vatBasis?.rulebookVersion
+        statement[JournalEntriesTable.vatBasisEffectiveFrom] = provenance.vatBasis?.effectiveFrom
+    }
+
+    private fun ResultRow.toProvenance(): EntryProvenance? {
+        val reference = this[JournalEntriesTable.sourceRefType]?.let { type ->
+            val id = this[JournalEntriesTable.sourceRefId] ?: return@let null
+            SourceReference(SourceReferenceType.valueOf(type), id, this[JournalEntriesTable.sourceRefNumber])
+        }
+        val basis = this[JournalEntriesTable.vatBasisRatePercent]?.let {
+            VatBasis(it, this[JournalEntriesTable.vatBasisRulebookVersion], this[JournalEntriesTable.vatBasisEffectiveFrom])
+        }
+        return EntryProvenance(
+            this[JournalEntriesTable.recordedBy], this[JournalEntriesTable.actingUser], this[JournalEntriesTable.reason], reference, basis
+        ).takeUnless { it.isEmpty }
+    }
+
     private fun populate(statement: UpdateBuilder<*>, entry: JournalEntry) {
         statement[JournalEntriesTable.periodId] = entry.periodId.value
         statement[JournalEntriesTable.entryDate] = entry.date
@@ -164,6 +202,7 @@ class ExposedJournalEntryRepository : JournalEntryRepository {
         status = PostingStatus.valueOf(this[JournalEntriesTable.status]),
         reversalOfEntryId = this[JournalEntriesTable.reversalOfEntryId]?.let { JournalEntryId(it) },
         recordedSeq = this[JournalEntriesTable.recordedSeq],
-        recordedAt = this[JournalEntriesTable.recordedAt]
+        recordedAt = this[JournalEntriesTable.recordedAt],
+        provenance = toProvenance()
     )
 }

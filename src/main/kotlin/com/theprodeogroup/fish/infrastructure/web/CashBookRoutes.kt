@@ -23,6 +23,9 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.request.header
 import io.ktor.server.request.receive
+import io.ktor.server.request.receiveText
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
@@ -365,6 +368,15 @@ private suspend fun ApplicationCall.handleCashBookUndo(
     if (!verifyClaimedTenant(tenantId)) return
     authorizeTenantForWrite(tenantId, companyId) ?: return
 
+    // The body is optional (GL-T-39, standard S4): {"reason": "..."} says why. An empty body still works; a malformed one is a 400.
+    val undoRequest = try {
+        receiveText().takeIf { it.isNotBlank() }?.let { Json.decodeFromString(UndoCashBookEntryRequestDto.serializer(), it) }
+    } catch (e: SerializationException) {
+        respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "The body, if sent, must be JSON like {\"reason\": \"why\"}"))
+        return
+    }
+    if (!recordReason(undoRequest?.reason)) return
+
     when (val result = undoCashBookEntryUseCase.execute(companyId, AccountId(accountUuid), JournalEntryId(entryUuid))) {
         is UndoCashBookEntryUseCase.Result.Undone -> respond(
             HttpStatusCode.Created,
@@ -412,6 +424,7 @@ private suspend fun ApplicationCall.handleCashBookEntry(
     }
 
     val body = receive<CashBookEntryRequestDto>()
+    if (!recordProvenance(body.sourceReference, body.vatBasis)) return
     val date = try {
         LocalDate.parse(body.date)
     } catch (e: DateTimeParseException) {
@@ -485,6 +498,7 @@ private suspend fun ApplicationCall.handleVatSettlement(
     }
 
     val body = receive<VatSettlementRequestDto>()
+    if (!recordProvenance(body.sourceReference, body.vatBasis)) return
     val date = try {
         LocalDate.parse(body.date)
     } catch (e: DateTimeParseException) {

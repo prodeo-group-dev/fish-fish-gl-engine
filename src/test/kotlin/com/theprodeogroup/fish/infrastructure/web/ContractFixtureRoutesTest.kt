@@ -88,6 +88,10 @@ import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.ExpenseClassification
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalEntryId
+import com.theprodeogroup.fish.domain.ledger.EntryProvenance
+import com.theprodeogroup.fish.domain.ledger.SourceReference
+import com.theprodeogroup.fish.domain.ledger.SourceReferenceType
+import com.theprodeogroup.fish.domain.ledger.VatBasis
 import com.theprodeogroup.fish.domain.ledger.JournalLine
 import io.ktor.client.request.post
 import io.ktor.client.request.put
@@ -936,6 +940,80 @@ class ContractFixtureRoutesTest {
 
         response.status shouldBe HttpStatusCode.OK
         ContractFixtures.verifyOrUpdate("contracts/gl/journal-entries.json", response.bodyAsText())
+    }
+
+    // --- Who, why and what document on a posting (V36; 2026-10-22, GL-T-38, GL-T-31, GL-FR-AUD-4, GL-FR-CTR-2): opt-in with ?include=audit ---
+
+    @Test
+    fun `contract fixture - GET account postings with include audit`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        // One receipt recorded through the door by a person, with the document it came from and the rate row used: it carries the audit fields.
+        // The seeded entries were stored before V36, so they show null: that is what every old entry will read.
+        val receipt = client.post("/api/companies/${fixture.company.id.value}/cash-books/${id(1).value}/receipts") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+            header("Idempotency-Key", "fx-audit-receipt")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"date": "2026-10-11", "amount": "125.00", "counterAccountId": "${id(8).value}", "description": "Takings",
+                    |"vatCategory": "STANDARD", "vatAmount": "25.00",
+                    |"sourceReference": {"type": "CASH_BOOK_ENTRY", "id": "cb-2026-0042", "number": "RCT-0042"},
+                    |"vatBasis": {"ratePercent": "20", "rulebookVersion": 41, "effectiveFrom": "2011-01-04"}}""".trimMargin()
+            )
+        }
+        receipt.status shouldBe HttpStatusCode.Created
+
+        val response = client.fetch(fixture, "accounts/${id(1).value}/postings?from=2026-10-04&to=2026-10-12&include=audit")
+
+        response.status shouldBe HttpStatusCode.OK
+        val pinnedActor = pinEntryIds(response.bodyAsText()).replace(Regex("\"recordedBy\":\"USER:[0-9a-f-]{36}\""), "\"recordedBy\":\"USER:00000000-0000-4000-8000-0000000000b9\"")
+        ContractFixtures.verifyOrUpdate("contracts/gl/account-postings-audit.json", pinnedActor)
+    }
+
+    @Test
+    fun `contract fixture - GET journal-entries with include audit`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        Period.create(fixture.company.id, PeriodType.MONTH, LocalDate.parse("2026-10-01"), LocalDate.parse("2026-10-31"), periodId).also { it.open(); fixture.periodRepository.save(it) }
+        Account.create(fixture.company.id, AccountType.ASSET, AccountClassification.CURRENT, "1000", "Cash", id = id(1), cashBookKind = CashBookKind.CASH).also { fixture.accountRepository.save(it) }
+        Account.create(fixture.company.id, AccountType.REVENUE, null, "4000", "Sales Revenue", id = id(8)).also { fixture.accountRepository.save(it) }
+        fun receipt(entryId: String, description: String) = JournalEntry.create(
+            periodId, LocalDate.parse("2026-10-05"),
+            listOf(
+                JournalLine(id(1), Money(BigDecimal("100.00"), GBP), TransactionSide.DEBIT),
+                JournalLine(id(8), Money(BigDecimal("100.00"), GBP), TransactionSide.CREDIT)
+            ),
+            JournalSource.CASH_BOOK, description, JournalEntryId(UUID.fromString(entryId))
+        ).also { it.post() }
+        fun stamp(entry: JournalEntry, seq: Long, at: String, provenance: EntryProvenance?) = JournalEntry.reconstitute(
+            entry.id, entry.periodId, entry.date, entry.lines, entry.source, entry.description, entry.status, entry.reversalOfEntryId,
+            seq, java.time.Instant.parse(at), provenance
+        )
+        val original = receipt("00000000-0000-4000-8000-0000000000b1", "Takings")
+        val reversal = original.reverse(java.time.Instant.parse("2026-10-06T09:00:00Z"), JournalEntryId(UUID.fromString("00000000-0000-4000-8000-0000000000b2")), "Undo of Takings")!!
+        fixture.journalEntryRepository.save(
+            stamp(
+                original, 1, "2026-10-05T08:00:00Z",
+                EntryProvenance(
+                    "USER:00000000-0000-4000-8000-0000000000b9", null, null,
+                    SourceReference(SourceReferenceType.CASH_BOOK_ENTRY, "cb-2026-0042", "RCT-0042"), VatBasis("20", 41, LocalDate.parse("2011-01-04"))
+                )
+            )
+        )
+        fixture.journalEntryRepository.save(
+            stamp(reversal, 2, "2026-10-06T09:00:00Z", EntryProvenance("SERVICE:cbb", "00000000-0000-4000-8000-0000000000b8", "Posted to the wrong book", null, null))
+        )
+        // An entry stored before V36: every audit field is null.
+        fixture.journalEntryRepository.save(stamp(receipt("00000000-0000-4000-8000-0000000000b3", "Older takings"), 0, "2026-10-04T10:30:00Z", null))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.fetch(fixture, "journal-entries?include=audit")
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/journal-entries-audit.json", response.bodyAsText())
     }
 
     @Test

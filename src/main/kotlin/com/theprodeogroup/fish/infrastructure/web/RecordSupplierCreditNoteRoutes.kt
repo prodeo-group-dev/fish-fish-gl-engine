@@ -40,6 +40,7 @@ fun Route.recordSupplierCreditNoteRoutes(
 ) {
     post("/purchasing/record-credit-note") {
         val request = call.receive<RecordSupplierCreditNoteRequestDto>()
+        if (!call.recordProvenance(request.sourceReference, request.vatBasis)) return@post
         val companyUuid = call.parseUuid(request.companyId) ?: return@post
         val companyId = CompanyId(companyUuid)
         val company = companyRepository.findById(companyId)

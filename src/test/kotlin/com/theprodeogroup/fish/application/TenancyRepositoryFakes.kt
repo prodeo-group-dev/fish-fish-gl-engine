@@ -210,6 +210,6 @@ class FakeEaMembershipGateway(
             )
         }
 
-        return EaCallerLookupResult.Success(email = user.email, name = user.name, memberships = memberships)
+        return EaCallerLookupResult.Success(email = user.email, name = user.name, memberships = memberships, userId = user.id.value.toString())
     }
 }

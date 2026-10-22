@@ -193,6 +193,7 @@ class RecordSaleAndCollectionRoutesTest {
                 disposeFixedAssetUseCase = disposeFixedAssetUseCase,
                 computeFixedAssetRegisterUseCase = computeFixedAssetRegisterUseCase,
                 vatRateRepository = FakeVatRateRepository(),
+                serviceVerifier = TestJwtSupport.serviceVerifier("sop"),
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
                 computeTaxUseCase = computeTaxUseCase,
                 taxRuleRepository = taxRuleRepository,
@@ -597,6 +598,78 @@ class RecordSaleAndCollectionRoutesTest {
 
         response.status shouldBe HttpStatusCode.OK
         response.body<RecordSaleResponseDto>().vatAmount shouldBe "200.00"
+    }
+
+    // ---- who posted, and for whom (V36; GL-T-38; X-Acting-User-Id = the person's EA user id, CM 2026-10-22) ----
+
+    private suspend fun io.ktor.client.HttpClient.recordSaleAs(fixture: Fixture, token: String, actingUser: String?) =
+        post("/api/sales/record-sale") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            if (actingUser != null) header("X-Acting-User-Id", actingUser)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"companyId": "${fixture.company.id.value}", "periodId": "${fixture.period.id.value}",
+                    |"date": "$TODAY", "arControlAccountId": "${fixture.arControlAccount.id.value}",
+                    |"revenueAccountId": "${fixture.revenueAccount.id.value}", "vatControlAccountId": "${fixture.vatControlAccount.id.value}",
+                    |"lines": [{"netAmount": "100.00", "vatCategory": "STANDARD", "vatAmount": "20.00"}], "currency": "GBP",
+                    |"customerId": "00000000-0000-4000-8000-0000000000c1",
+                    |"sourceReference": {"type": "SALES_INVOICE", "id": "sale-77", "number": "INV-0077"}}""".trimMargin()
+            )
+        }
+
+    @Test
+    fun `given a service credential posting for a person, then the entry records the service as who posted and the person as acting user`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val person = "11111111-1111-4111-8111-111111111111"
+
+        val response = client.recordSaleAs(fixture, TestJwtSupport.signServiceToken("sop"), person)
+
+        response.status shouldBe HttpStatusCode.OK
+        val provenance = fixture.journalEntryRepository.findAllByAccount(fixture.arControlAccount.id).single().provenance!!
+        provenance.recordedBy shouldBe "SERVICE:sop"
+        provenance.actingUser shouldBe person
+        provenance.sourceReference!!.number shouldBe "INV-0077"
+    }
+
+    @Test
+    fun `given a service credential and no acting-user header, then only the service is recorded`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.recordSaleAs(fixture, TestJwtSupport.signServiceToken("sop"), null).status shouldBe HttpStatusCode.OK
+
+        val provenance = fixture.journalEntryRepository.findAllByAccount(fixture.arControlAccount.id).single().provenance!!
+        provenance.recordedBy shouldBe "SERVICE:sop"
+        provenance.actingUser shouldBe null
+    }
+
+    @Test
+    fun `given an acting-user header that is not a UUID, an email or too long, then a service call is 400 and nothing is posted`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        for (bad in listOf("ada@example.com", "not-a-uuid", "1".repeat(65))) {
+            client.recordSaleAs(fixture, TestJwtSupport.signServiceToken("sop"), bad).status shouldBe HttpStatusCode.BadRequest
+        }
+        fixture.journalEntryRepository.saveCalls.size shouldBe 0
+    }
+
+    @Test
+    fun `given a person's own token and an acting-user header, then the header is ignored and the person is recorded`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.recordSaleAs(fixture, TestJwtSupport.signToken(TEST_EMAIL), "22222222-2222-4222-8222-222222222222").status shouldBe HttpStatusCode.OK
+
+        val provenance = fixture.journalEntryRepository.findAllByAccount(fixture.arControlAccount.id).single().provenance!!
+        provenance.recordedBy shouldBe "USER:${fixture.user.id.value}"
+        provenance.actingUser shouldBe null
     }
 
     // -- Idempotency-Key (docs/GL_Production_Readiness_Plan.md) --

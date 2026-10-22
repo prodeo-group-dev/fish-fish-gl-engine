@@ -31,7 +31,11 @@ data class PostJournalEntryRequestDto(
     val date: String,
     val lines: List<JournalLineDto>,
     val source: String,
-    val description: String? = null
+    val description: String? = null,
+    /** The document this posting came from (S6, GL-T-31): optional; declared by the sending service first. */
+    val sourceReference: SourceReferenceDto? = null,
+    /** The rate row the caller used for the VAT it worked out (F22-18): optional; declared by the sending service first. */
+    val vatBasis: VatBasisDto? = null
 )
 
 @Serializable
@@ -56,7 +60,11 @@ data class RemeasureLeaveAccrualRequestDto(
     val leaveExpenseAccountId: String,
     val accruedLeaveLiabilityAccountId: String,
     val periodId: String,
-    val date: String
+    val date: String,
+    /** The document this posting came from (S6, GL-T-31): optional; declared by the sending service first. */
+    val sourceReference: SourceReferenceDto? = null,
+    /** The rate row the caller used for the VAT it worked out (F22-18): optional; declared by the sending service first. */
+    val vatBasis: VatBasisDto? = null
 )
 
 @Serializable
@@ -66,7 +74,11 @@ data class UtilizeLeaveAccrualRequestDto(
     val cashAccountId: String,
     val accruedLeaveLiabilityAccountId: String,
     val periodId: String,
-    val date: String
+    val date: String,
+    /** The document this posting came from (S6, GL-T-31): optional; declared by the sending service first. */
+    val sourceReference: SourceReferenceDto? = null,
+    /** The rate row the caller used for the VAT it worked out (F22-18): optional; declared by the sending service first. */
+    val vatBasis: VatBasisDto? = null
 )
 
 /**
@@ -156,7 +168,11 @@ data class RecordSaleRequestDto(
     val lines: List<SaleLineDto>,
     val currency: String,
     val customerId: String,
-    val description: String? = null
+    val description: String? = null,
+    /** The document this posting came from (S6, GL-T-31): optional; declared by the sending service first. */
+    val sourceReference: SourceReferenceDto? = null,
+    /** The rate row the caller used for the VAT it worked out (F22-18): optional; declared by the sending service first. */
+    val vatBasis: VatBasisDto? = null
 )
 
 @Serializable
@@ -180,7 +196,11 @@ data class RecordCollectionRequestDto(
     val customerId: String,
     val description: String? = null,
     /** The receipt number from the caller's register, 1 to 64 characters; written into the entry description (added 2026-10-18). */
-    val reference: String? = null
+    val reference: String? = null,
+    /** The document this posting came from (S6, GL-T-31): optional; declared by the sending service first. */
+    val sourceReference: SourceReferenceDto? = null,
+    /** The rate row the caller used for the VAT it worked out (F22-18): optional; declared by the sending service first. */
+    val vatBasis: VatBasisDto? = null
 )
 
 @Serializable
@@ -206,7 +226,11 @@ data class RecordSalesReturnRequestDto(
     val amount: String,
     val currency: String,
     val customerId: String,
-    val description: String? = null
+    val description: String? = null,
+    /** The document this posting came from (S6, GL-T-31): optional; declared by the sending service first. */
+    val sourceReference: SourceReferenceDto? = null,
+    /** The rate row the caller used for the VAT it worked out (F22-18): optional; declared by the sending service first. */
+    val vatBasis: VatBasisDto? = null
 )
 
 @Serializable
@@ -313,6 +337,32 @@ data class JournalEntryRecordDto(
     val recordedSeq: Long?
 )
 
+/**
+ * [JournalEntryRecordDto] plus who, why and what document, returned only by `GET /companies/{companyId}/journal-entries?include=audit`
+ * (GL-T-38, GL-T-31; standards S4, S6). A separate type so the default list a consumer already decodes stays byte-identical until it opts in.
+ * The added fields are nullable and always present (null for an entry stored before V36).
+ */
+@Serializable
+data class JournalEntryRecordAuditDto(
+    val id: String,
+    val date: String,
+    val description: String?,
+    val status: String,
+    val source: String,
+    val lines: List<JournalEntryRecordLineDto>,
+    val reversalOfEntryId: String?,
+    val reversedByEntryId: String?,
+    val recordedAt: String?,
+    val recordedSeq: Long?,
+    /** `USER:<EA user id>` or `SERVICE:<name>`. */
+    val recordedBy: String?,
+    /** The EA user id a service posted for, as that service said. */
+    val actingUser: String?,
+    val reason: String?,
+    val sourceReference: SourceReferenceReadDto?,
+    val vatBasis: VatBasisReadDto?
+)
+
 /** `GET /companies/{companyId}/customers` - the "Schedule of Customers," and the SOP sale form's customer picker source. */
 @Serializable
 data class CustomerSummaryDto(
@@ -393,7 +443,11 @@ data class RecordSupplierObligationRequestDto(
     val supplierId: String,
     val description: String? = null,
     /** A [com.theprodeogroup.fish.domain.common.JournalSource] name, e.g. "IMPORT" - omitted/`null` keeps the use case's own default (`INTEGRATION`), preserving every caller that predates this field (2026-10-01). */
-    val journalSource: String? = null
+    val journalSource: String? = null,
+    /** The document this posting came from (S6, GL-T-31): optional; declared by the sending service first. */
+    val sourceReference: SourceReferenceDto? = null,
+    /** The rate row the caller used for the VAT it worked out (F22-18): optional; declared by the sending service first. */
+    val vatBasis: VatBasisDto? = null
 )
 
 @Serializable
@@ -416,7 +470,11 @@ data class RecordSupplierPaymentRequestDto(
     val amount: String,
     val currency: String,
     val supplierId: String,
-    val description: String? = null
+    val description: String? = null,
+    /** The document this posting came from (S6, GL-T-31): optional; declared by the sending service first. */
+    val sourceReference: SourceReferenceDto? = null,
+    /** The rate row the caller used for the VAT it worked out (F22-18): optional; declared by the sending service first. */
+    val vatBasis: VatBasisDto? = null
 )
 
 @Serializable
@@ -451,7 +509,11 @@ data class RecordSupplierCreditNoteRequestDto(
     val currency: String,
     val lines: List<PurchaseLineDto>,
     val originalSupplyDate: String? = null,
-    val description: String? = null
+    val description: String? = null,
+    /** The document this posting came from (S6, GL-T-31): optional; declared by the sending service first. */
+    val sourceReference: SourceReferenceDto? = null,
+    /** The rate row the caller used for the VAT it worked out (F22-18): optional; declared by the sending service first. */
+    val vatBasis: VatBasisDto? = null
 )
 
 @Serializable
@@ -491,7 +553,11 @@ data class RecordInventoryReceiptRequestDto(
     val itemId: String,
     val description: String? = null,
     /** A [com.theprodeogroup.fish.domain.common.JournalSource] name, e.g. "IMPORT" - omitted/`null` keeps the use case's own default (`INTEGRATION`), preserving every caller that predates this field (2026-10-01). */
-    val journalSource: String? = null
+    val journalSource: String? = null,
+    /** The document this posting came from (S6, GL-T-31): optional; declared by the sending service first. */
+    val sourceReference: SourceReferenceDto? = null,
+    /** The rate row the caller used for the VAT it worked out (F22-18): optional; declared by the sending service first. */
+    val vatBasis: VatBasisDto? = null
 )
 
 @Serializable
@@ -512,7 +578,11 @@ data class RecordInventoryIssueRequestDto(
     val itemId: String,
     val description: String? = null,
     /** A [com.theprodeogroup.fish.domain.common.JournalSource] name, e.g. "IMPORT" - omitted/`null` keeps the use case's own default (`INTEGRATION`), preserving every caller that predates this field (2026-10-01). */
-    val journalSource: String? = null
+    val journalSource: String? = null,
+    /** The document this posting came from (S6, GL-T-31): optional; declared by the sending service first. */
+    val sourceReference: SourceReferenceDto? = null,
+    /** The rate row the caller used for the VAT it worked out (F22-18): optional; declared by the sending service first. */
+    val vatBasis: VatBasisDto? = null
 )
 
 @Serializable
@@ -537,7 +607,11 @@ data class RecordPayRunRequestDto(
     val currency: String,
     val wagesExpenseAccountId: String,
     val salariesExpenseAccountId: String,
-    val cashAccountId: String
+    val cashAccountId: String,
+    /** The document this posting came from (S6, GL-T-31): optional; declared by the sending service first. */
+    val sourceReference: SourceReferenceDto? = null,
+    /** The rate row the caller used for the VAT it worked out (F22-18): optional; declared by the sending service first. */
+    val vatBasis: VatBasisDto? = null
 )
 
 @Serializable
@@ -1239,7 +1313,11 @@ data class CashBookEntryRequestDto(
     val cashFlowActivity: String? = null,
     /** VAT inside the gross [amount] (GL-FR-TAX-8, 2026-10-22): both [vatCategory] and [vatAmount] or neither. GL looks up no rate; the caller worked the amount out. */
     val vatCategory: String? = null,
-    val vatAmount: String? = null
+    val vatAmount: String? = null,
+    /** The document this posting came from (S6, GL-T-31): optional; declared by the sending service first. */
+    val sourceReference: SourceReferenceDto? = null,
+    /** The rate row the caller used for the VAT it worked out (F22-18): optional; declared by the sending service first. */
+    val vatBasis: VatBasisDto? = null
 )
 
 /**
@@ -1251,8 +1329,16 @@ data class VatSettlementRequestDto(
     val date: String,
     val amount: String,
     val direction: String? = null,
-    val description: String? = null
+    val description: String? = null,
+    /** The document this posting came from (S6, GL-T-31): optional; declared by the sending service first. */
+    val sourceReference: SourceReferenceDto? = null,
+    /** The rate row the caller used for the VAT it worked out (F22-18): optional; declared by the sending service first. */
+    val vatBasis: VatBasisDto? = null
 )
+
+/** The optional body of `POST .../entries/{entryId}/undo` (GL-T-39, S4): [reason] is why, trimmed, at most 500 characters; stored with the reversal. */
+@Serializable
+data class UndoCashBookEntryRequestDto(val reason: String? = null)
 
 /** A warning that did not stop the entry: [code] is `cash_below_zero` or `bank_overdrawn`, [balanceAfter] the book's balance after it. */
 @Serializable
@@ -1320,7 +1406,11 @@ data class RecordPayRunJournalRequestDto(
     val lines: List<PayRunJournalLineDto>,
     val description: String? = null,
     /** An opaque reference from Payroll (the run id), written into the entry description for tracing. */
-    val reference: String? = null
+    val reference: String? = null,
+    /** The document this posting came from (S6, GL-T-31): optional; declared by the sending service first. */
+    val sourceReference: SourceReferenceDto? = null,
+    /** The rate row the caller used for the VAT it worked out (F22-18): optional; declared by the sending service first. */
+    val vatBasis: VatBasisDto? = null
 )
 
 @Serializable
@@ -1374,6 +1464,58 @@ data class AccountPostingsResponseDto(
     val to: String,
     val openingNet: String,
     val postings: List<AccountPostingDto>
+)
+
+/** The document an entry came from, as the audit read returns it (S6). */
+@Serializable
+data class SourceReferenceReadDto(val type: String, val id: String, val number: String?)
+
+/** The rate row a caller said it used for the VAT it worked out, as the audit read returns it. */
+@Serializable
+data class VatBasisReadDto(val ratePercent: String, val rulebookVersion: Int?, val effectiveFrom: String?)
+
+/**
+ * One posting with who, why and what document, returned only by `GET .../accounts/{accountId}/postings?include=audit` (GL-T-38, GL-T-31;
+ * standards S4, S6). A separate type, not extra fields on [AccountPostingDto], so the default answer a strict consumer decodes stays
+ * byte-identical until that consumer opts in. Every added field is nullable and always present (null for an entry stored before V36).
+ */
+@Serializable
+data class AccountPostingAuditDto(
+    val entryId: String,
+    val periodId: String,
+    val periodOpen: Boolean,
+    val status: String,
+    val date: String,
+    val description: String?,
+    val source: String,
+    val reversalOfEntryId: String?,
+    val reversedByEntryId: String?,
+    val recordedSeq: Long?,
+    val lines: List<AccountPostingLineDto>,
+    /** When the system stored the entry (ISO instant), apart from [date]. */
+    val recordedAt: String?,
+    /** `USER:<EA user id>` or `SERVICE:<name>`. */
+    val recordedBy: String?,
+    /** The EA user id a service posted for, as that service said. */
+    val actingUser: String?,
+    val reason: String?,
+    val sourceReference: SourceReferenceReadDto?,
+    val vatBasis: VatBasisReadDto?
+)
+
+/** `GET .../postings?include=audit`: [AccountPostingsResponseDto] with [AccountPostingAuditDto] postings. */
+@Serializable
+data class AccountPostingsAuditResponseDto(
+    val accountId: String,
+    val code: String,
+    val name: String,
+    val type: String,
+    val cashBookKind: String?,
+    val currency: String,
+    val from: String,
+    val to: String,
+    val openingNet: String,
+    val postings: List<AccountPostingAuditDto>
 )
 
 /** `GET /companies/{companyId}/accounts/{accountId}/balance?asOf=`: a positive balance and the side it falls on (2026-10-19). */
