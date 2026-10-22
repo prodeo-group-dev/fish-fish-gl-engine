@@ -283,6 +283,7 @@ class ContractFixtureRoutesTest {
     private fun id(n: Int) = AccountId(UUID.fromString("00000000-0000-4000-8000-%012d".format(n)))
     private val periodId = PeriodId(UUID.fromString("00000000-0000-4000-8000-0000000000f1"))
     private val customer = UUID.fromString("00000000-0000-4000-8000-0000000000c1")
+    private val employee = UUID.fromString("00000000-0000-4000-8000-0000000000b1")
     private val supplier = UUID.fromString("00000000-0000-4000-8000-0000000000a1")
 
     /**
@@ -619,6 +620,101 @@ class ContractFixtureRoutesTest {
 
         response.status shouldBe HttpStatusCode.OK
         ContractFixtures.verifyOrUpdate("contracts/gl/payroll-posting-context.json", response.bodyAsText())
+    }
+
+
+    // --- Refusals SOP/POP relay, and the leave-accrual routes Payroll calls (2026-10-22, GL-T-2, GL-FR-CTR-2) ---
+
+    @Test
+    fun `contract fixture - POST purchasing record-obligation refused, a line account of the wrong type`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        // id(8) is the revenue account: not allowed on a purchase line.
+        val response = client.postRoute(
+            fixture, "purchasing/record-obligation",
+            fixtureBody(fixture, """"supplierId": "$supplier", "apControlAccountId": "${id(5).value}", "vatControlAccountId": "${id(6).value}",
+                |"lines": [{"netAmount": "1000.00", "vatCategory": "STANDARD", "accountId": "${id(8).value}"}], "currency": "GBP"""".trimMargin())
+        )
+
+        response.status shouldBe HttpStatusCode.BadRequest
+        ContractFixtures.verifyOrUpdate("contracts/gl/supplier-obligation-line-account-not-allowed.json", response.bodyAsText())
+    }
+
+    @Test
+    fun `contract fixture - POST purchasing record-obligation refused, no account named and no Suspense account`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postRoute(
+            fixture, "purchasing/record-obligation",
+            fixtureBody(fixture, """"supplierId": "$supplier", "apControlAccountId": "${id(5).value}", "vatControlAccountId": "${id(6).value}",
+                |"lines": [{"netAmount": "1000.00", "vatCategory": "STANDARD"}], "currency": "GBP"""".trimMargin())
+        )
+
+        response.status shouldBe HttpStatusCode.Conflict
+        ContractFixtures.verifyOrUpdate("contracts/gl/supplier-obligation-suspense-account-not-configured.json", response.bodyAsText())
+    }
+
+    @Test
+    fun `contract fixture - POST purchasing record-credit-note refused, the discounts account does not exist`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postRoute(
+            fixture, "purchasing/record-credit-note",
+            fixtureBody(fixture, """"supplierId": "$supplier", "kind": "DISCOUNT", "apControlAccountId": "${id(5).value}",
+                |"discountsReceivedAccountId": "${id(99).value}", "vatControlAccountId": "${id(6).value}",
+                |"lines": [{"netAmount": "100.00", "vatCategory": "STANDARD"}], "currency": "GBP"""".trimMargin())
+        )
+
+        response.status shouldBe HttpStatusCode.NotFound
+        ContractFixtures.verifyOrUpdate("contracts/gl/supplier-credit-note-discounts-account-not-found.json", response.bodyAsText())
+    }
+
+    /** The leave-accrual lifecycle in order: create, remeasure up (posts), utilize (posts), remeasure to the same figure (posts nothing). */
+    @Test
+    fun `contract fixture - leave accrual create, remeasure, utilize and remeasure with no change`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        fixture.extra(27, AccountType.EXPENSE, "5400", "Leave Expense")
+        fixture.extra(28, AccountType.LIABILITY, "2200", "Accrued Leave Liability", AccountClassification.CURRENT)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val pinAccrual = { text: String -> text.replace(Regex("\"leaveAccrualId\":\"[0-9a-f-]{36}\""), "\"leaveAccrualId\":\"00000000-0000-4000-8000-0000000000d1\"") }
+
+        val created = client.postRoute(fixture, "leave-accruals", """{"companyId": "${fixture.company.id.value}", "employeeId": "$employee", "currency": "GBP"}""")
+        created.status shouldBe HttpStatusCode.OK
+        val createdText = created.bodyAsText()
+        val accrualId = Regex("\"leaveAccrualId\":\"([0-9a-f-]{36})\"").find(createdText)!!.groupValues[1]
+        ContractFixtures.verifyOrUpdate("contracts/gl/leave-accrual-created.json", pinAccrual(createdText))
+
+        val remeasured = client.postRoute(
+            fixture, "leave-accruals/$accrualId/remeasure",
+            """{"targetAmount": "300.00", "currency": "GBP", "leaveExpenseAccountId": "${id(27).value}", "accruedLeaveLiabilityAccountId": "${id(28).value}", "periodId": "${periodId.value}", "date": "2026-10-12"}"""
+        )
+        remeasured.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/leave-accrual-remeasured.json", pinEntryId(pinAccrual(remeasured.bodyAsText())))
+
+        val utilized = client.postRoute(
+            fixture, "leave-accruals/$accrualId/utilize",
+            """{"amount": "100.00", "currency": "GBP", "cashAccountId": "${id(1).value}", "accruedLeaveLiabilityAccountId": "${id(28).value}", "periodId": "${periodId.value}", "date": "2026-10-13"}"""
+        )
+        utilized.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/leave-accrual-utilized.json", pinEntryId(pinAccrual(utilized.bodyAsText())))
+
+        val unchanged = client.postRoute(
+            fixture, "leave-accruals/$accrualId/remeasure",
+            """{"targetAmount": "200.00", "currency": "GBP", "leaveExpenseAccountId": "${id(27).value}", "accruedLeaveLiabilityAccountId": "${id(28).value}", "periodId": "${periodId.value}", "date": "2026-10-14"}"""
+        )
+        unchanged.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/leave-accrual-remeasure-no-change.json", pinAccrual(unchanged.bodyAsText()))
     }
 
     @Test
