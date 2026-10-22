@@ -1,6 +1,7 @@
 package com.theprodeogroup.fish.infrastructure.web
 
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
+import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.application.FakeAccountRepository
 import com.theprodeogroup.fish.application.FakeCompanyRepository
 import com.theprodeogroup.fish.application.FakeSupplierRepository
@@ -365,6 +366,74 @@ class JournalEntryRoutesTest {
         postJournalEntryUseCase.execute(
             PostJournalEntryUseCase.Request(period.companyId, period.id, date, lines, JournalSource.MANUAL, description)
         )
+    }
+
+    // ---- the journal list's link fields and recording time (GL-T-37, GL-FR-LED-9; standard S3, F22-26) ----
+
+    @Test
+    fun `given an entry and the entry that reverses it, when GET journal-entries is called, then each carries the structured link to the other`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        fixture.postEntry(TODAY, "Takings")
+        fixture.postEntry(TODAY, "Unrelated")
+        val original = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).first { it.description == "Takings" }
+        val reversal = original.reverse(java.time.Instant.parse("2026-10-13T09:00:00Z"), JournalEntryId.generate(), "Undo of Takings")!!
+        fixture.journalEntryRepository.recordReversal(original, reversal)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val body: List<JournalEntryRecordDto> = client.get("/api/companies/${fixture.company.id.value}/journal-entries") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }.body()
+
+        val listedOriginal = body.single { it.id == original.id.value.toString() }
+        val listedReversal = body.single { it.id == reversal.id.value.toString() }
+        listedOriginal.reversedByEntryId shouldBe reversal.id.value.toString()
+        listedOriginal.reversalOfEntryId shouldBe null
+        listedReversal.reversalOfEntryId shouldBe original.id.value.toString()
+        listedReversal.reversedByEntryId shouldBe null
+        val unrelated = body.single { it.description == "Unrelated" }
+        unrelated.reversalOfEntryId shouldBe null
+        unrelated.reversedByEntryId shouldBe null
+    }
+
+    @Test
+    fun `given entries that were stamped with a recorded order and time, when GET journal-entries is called, then the list shows them`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        fixture.postEntry(TODAY, "Stamped")
+        val entry = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).single()
+        fixture.journalEntryRepository.save(
+            JournalEntry.reconstitute(
+                entry.id, entry.periodId, entry.date, entry.lines, entry.source, entry.description, entry.status, entry.reversalOfEntryId,
+                7L, java.time.Instant.parse("2026-10-12T08:30:00Z")
+            )
+        )
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val body: List<JournalEntryRecordDto> = client.get("/api/companies/${fixture.company.id.value}/journal-entries") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }.body()
+
+        body.single().recordedSeq shouldBe 7L
+        body.single().recordedAt shouldBe "2026-10-12T08:30:00Z"
+    }
+
+    @Test
+    fun `given an entry that was never stamped, when GET journal-entries is called, then recordedAt and recordedSeq are null, never guessed`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        fixture.postEntry(TODAY, "Unstamped")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val body: List<JournalEntryRecordDto> = client.get("/api/companies/${fixture.company.id.value}/journal-entries") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+        }.body()
+
+        body.single().recordedAt shouldBe null
+        body.single().recordedSeq shouldBe null
     }
 
     @Test

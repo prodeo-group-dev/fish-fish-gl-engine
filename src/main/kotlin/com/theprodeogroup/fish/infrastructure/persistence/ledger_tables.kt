@@ -1,7 +1,9 @@
 package com.theprodeogroup.fish.infrastructure.persistence
 
 import org.jetbrains.exposed.sql.Table
+import org.jetbrains.exposed.sql.javatime.CurrentTimestamp
 import org.jetbrains.exposed.sql.javatime.date
+import org.jetbrains.exposed.sql.javatime.timestamp
 import java.math.BigDecimal
 
 /**
@@ -53,6 +55,9 @@ object JournalEntriesTable : Table("journal_entries") {
 
     /** Assigned by the database on insert (V35 identity column), never written by the application (`autoIncrement` makes Exposed leave it out of inserts so Postgres supplies it). */
     val recordedSeq = long("recorded_seq").autoIncrement()
+
+    /** When the database stored the entry (V35 `DEFAULT now()`), never written by the application: read-only, shown beside the accounting date (GL-FR-LED-9). */
+    val recordedAt = timestamp("recorded_at").defaultExpression(CurrentTimestamp)
 
     override val primaryKey = PrimaryKey(id)
 }

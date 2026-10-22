@@ -280,6 +280,8 @@ fun Route.journalEntryRoutes(
 
         val all = journalEntryRepository.findAllByCompany(companyId)
         val byId = all.associateBy { it.id }
+        // The structured link back from an original to the entry that reversed it (standard S3): derived from the reversals' own links.
+        val reversedBy = all.filter { it.reversalOfEntryId != null }.associate { it.reversalOfEntryId!! to it.id }
         val entries = all
             // Newest first: the day, then (V35) the order recorded within the day, latest recorded first.
             .sortedWith(compareByDescending<JournalEntry> { it.date }.thenByDescending { it.recordedSeq ?: Long.MIN_VALUE })
@@ -290,6 +292,10 @@ fun Route.journalEntryRoutes(
                     description = humanDescription(entry.description) { id -> byId[id] },
                     status = entry.status.name,
                     source = entry.source.name,
+                    reversalOfEntryId = entry.reversalOfEntryId?.value?.toString(),
+                    reversedByEntryId = reversedBy[entry.id]?.value?.toString(),
+                    recordedAt = entry.recordedAt?.toString(),
+                    recordedSeq = entry.recordedSeq,
                     lines = entry.lines.map { line ->
                         val account = accountRepository.findById(line.accountId)
                         JournalEntryRecordLineDto(

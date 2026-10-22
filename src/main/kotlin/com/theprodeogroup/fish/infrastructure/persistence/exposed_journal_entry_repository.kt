@@ -163,6 +163,7 @@ class ExposedJournalEntryRepository : JournalEntryRepository {
         description = this[JournalEntriesTable.description],
         status = PostingStatus.valueOf(this[JournalEntriesTable.status]),
         reversalOfEntryId = this[JournalEntriesTable.reversalOfEntryId]?.let { JournalEntryId(it) },
-        recordedSeq = this[JournalEntriesTable.recordedSeq]
+        recordedSeq = this[JournalEntriesTable.recordedSeq],
+        recordedAt = this[JournalEntriesTable.recordedAt]
     )
 }

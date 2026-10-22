@@ -87,6 +87,7 @@ import com.theprodeogroup.fish.domain.common.JournalSource
 import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.ExpenseClassification
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
+import com.theprodeogroup.fish.domain.ledger.JournalEntryId
 import com.theprodeogroup.fish.domain.ledger.JournalLine
 import io.ktor.client.request.post
 import io.ktor.client.request.put
@@ -900,6 +901,41 @@ class ContractFixtureRoutesTest {
 
         response.status shouldBe HttpStatusCode.BadRequest
         ContractFixtures.verifyOrUpdate("contracts/gl/record-sale-vat-amount-on-every-line.json", response.bodyAsText())
+    }
+
+    // --- The journal list (2026-10-22, GL-T-37, GL-FR-LED-9, GL-FR-CTR-2; standard S3, F22-26): link fields and recording time ---
+
+    @Test
+    fun `contract fixture - GET journal-entries with a reversed entry and its reversal`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        Period.create(fixture.company.id, PeriodType.MONTH, LocalDate.parse("2026-10-01"), LocalDate.parse("2026-10-31"), periodId).also { it.open(); fixture.periodRepository.save(it) }
+        Account.create(fixture.company.id, AccountType.ASSET, AccountClassification.CURRENT, "1000", "Cash", id = id(1), cashBookKind = CashBookKind.CASH).also { fixture.accountRepository.save(it) }
+        Account.create(fixture.company.id, AccountType.REVENUE, null, "4000", "Sales Revenue", id = id(8)).also { fixture.accountRepository.save(it) }
+        fun stamp(entry: JournalEntry, seq: Long, at: String) = JournalEntry.reconstitute(
+            entry.id, entry.periodId, entry.date, entry.lines, entry.source, entry.description, entry.status, entry.reversalOfEntryId,
+            seq, java.time.Instant.parse(at)
+        )
+        fun receipt(entryId: String, amount: String, description: String) = JournalEntry.create(
+            periodId, LocalDate.parse("2026-10-05"),
+            listOf(
+                JournalLine(id(1), Money(BigDecimal(amount), GBP), TransactionSide.DEBIT),
+                JournalLine(id(8), Money(BigDecimal(amount), GBP), TransactionSide.CREDIT)
+            ),
+            JournalSource.CASH_BOOK, description, JournalEntryId(UUID.fromString(entryId))
+        ).also { it.post() }
+        val original = receipt("00000000-0000-4000-8000-0000000000a1", "100.00", "Takings")
+        val reversal = original.reverse(java.time.Instant.parse("2026-10-06T09:00:00Z"), JournalEntryId(UUID.fromString("00000000-0000-4000-8000-0000000000a2")), "Undo of Takings")!!
+        val plain = receipt("00000000-0000-4000-8000-0000000000a3", "40.00", "Later takings")
+        fixture.journalEntryRepository.save(stamp(original, 1, "2026-10-05T08:00:00Z"))
+        fixture.journalEntryRepository.save(stamp(reversal, 2, "2026-10-06T09:00:00Z"))
+        fixture.journalEntryRepository.save(stamp(plain, 3, "2026-10-07T10:30:00Z"))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.fetch(fixture, "journal-entries")
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/journal-entries.json", response.bodyAsText())
     }
 
     @Test

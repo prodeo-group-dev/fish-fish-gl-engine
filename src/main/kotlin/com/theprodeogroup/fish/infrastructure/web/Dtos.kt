@@ -302,7 +302,15 @@ data class JournalEntryRecordDto(
     val description: String?,
     val status: String,
     val source: String,
-    val lines: List<JournalEntryRecordLineDto>
+    val lines: List<JournalEntryRecordLineDto>,
+    /** The entry this one reverses, as a structured link (standard S3, GL-FR-LED-9); null when it reverses nothing. Always present. */
+    val reversalOfEntryId: String?,
+    /** The entry that reversed this one; null when none has. Always present. */
+    val reversedByEntryId: String?,
+    /** When the system stored the entry (ISO instant), apart from [date]; null if unknown. For entries recorded before V35 it is the migration moment. */
+    val recordedAt: String?,
+    /** The order the system stored entries in; null if unknown. */
+    val recordedSeq: Long?
 )
 
 /** `GET /companies/{companyId}/customers` - the "Schedule of Customers," and the SOP sale form's customer picker source. */
