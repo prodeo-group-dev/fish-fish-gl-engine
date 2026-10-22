@@ -422,7 +422,7 @@ class TenantIsolationMatrixRouteTest {
         "im" to listOf(RouteDeclaration("GET", "/companies/{companyId}/inventory-posting-context")),
         "hr" to listOf(RouteDeclaration("GET", "/companies/{companyId}/payroll-posting-context")),
         "payroll" to listOf(RouteDeclaration("GET", "/companies/{companyId}/payroll-posting-context"), RouteDeclaration("GET", "/companies/{companyId}")),
-        "cbb" to listOf(RouteDeclaration("GET", "/companies/{companyId}/accounts"))
+        "cbb" to listOf(RouteDeclaration("GET", "/companies/{companyId}/accounts"), RouteDeclaration("GET", "/companies/{companyId}/vat-categories"))
     )
 
     @Test
@@ -627,7 +627,7 @@ class TenantIsolationMatrixRouteTest {
         "GET /companies/{companyId}/journal-entries", "GET /companies/{companyId}/customers",
         "GET /companies/{companyId}/fixed-assets", "GET /companies/{companyId}/money-velocity",
         "GET /companies/{companyId}/expense-velocity", "GET /companies/{companyId}/sales-to-expense-ratio",
-        "GET /companies/{companyId}/vat-categories",
+
         "GET /companies/{companyId}/reports/balance-sheet", "GET /companies/{companyId}/reports/profit-and-loss",
         "GET /companies/{companyId}/reports/cash-flow", "GET /companies/{companyId}/reports/working-capital",
         "GET /companies/{companyId}/reports/trial-balance", "GET /companies/{companyId}/reports/trading-profit-and-loss",
