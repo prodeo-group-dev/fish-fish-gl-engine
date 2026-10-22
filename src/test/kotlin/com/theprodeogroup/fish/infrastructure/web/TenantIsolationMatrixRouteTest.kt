@@ -621,6 +621,8 @@ class TenantIsolationMatrixRouteTest {
         "PUT /companies/{companyId}/accounts/{accountId}/cash-book-kind",
         "GET /companies/{companyId}/cash-books", "GET /companies/{companyId}/cash-books/{accountId}",
         "GET /companies/{companyId}/cash-balance-series",
+        // GL-T-32: people only (the Tax module) until the tax service credential is provisioned and allow-listed.
+        "GET /companies/{companyId}/vat-lines",
         // GL-T-30: people only until CBB's "Pay VAT" task puts it on the cbb allow-list.
         "POST /companies/{companyId}/cash-books/{accountId}/vat-settlement",
         "POST /companies/{companyId}/standard-accounts",

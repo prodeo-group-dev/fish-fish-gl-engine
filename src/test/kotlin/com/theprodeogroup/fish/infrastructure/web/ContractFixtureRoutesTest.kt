@@ -7,6 +7,7 @@ import com.theprodeogroup.fish.application.RecordCashBookTransferUseCase
 import com.theprodeogroup.fish.application.UndoCashBookEntryUseCase
 import com.theprodeogroup.fish.application.ListCounterAccountsUseCase
 import com.theprodeogroup.fish.application.ChangeCashBookKindUseCase
+import com.theprodeogroup.fish.application.ComputeVatLinesUseCase
 import com.theprodeogroup.fish.application.ComputeCashBookUseCase
 import com.theprodeogroup.fish.application.ComputeCashBalanceSeriesUseCase
 import com.theprodeogroup.fish.application.ListCashBooksUseCase
@@ -229,6 +230,7 @@ class ContractFixtureRoutesTest {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
                 vatRateRepository = FakeVatRateRepository(),
+                computeVatLinesUseCase = ComputeVatLinesUseCase(companyRepository, accountRepository, journalEntryRepository) { java.time.Instant.parse("2026-12-31T23:00:00Z") },
                 cashBookPolicies = CashBookPolicies(settlementAccount = if (enforceSettlement) PolicyMode.ENFORCE else PolicyMode.LOG),
                 jurisdictionRepository = jurisdictionRepository,
                 eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository),
@@ -1014,6 +1016,87 @@ class ContractFixtureRoutesTest {
 
         response.status shouldBe HttpStatusCode.OK
         ContractFixtures.verifyOrUpdate("contracts/gl/journal-entries-audit.json", response.bodyAsText())
+    }
+
+    // --- The VAT lines read Tax computes a return from (2026-10-22, GL-T-32, GL-FR-TAX-10, GL-FR-CTR-2; consumer Tax T-TS-13) ---
+
+    /** A quarter on the VAT Control Account: a sale, a purchase, a cash-book VAT receipt, the quarter's remittance, a reversed entry and its reversal, and an untagged manual debit. */
+    private fun Fixture.seedVatLines() {
+        Period.create(company.id, PeriodType.MONTH, LocalDate.parse("2026-10-01"), LocalDate.parse("2026-12-31"), periodId).also { it.open(); periodRepository.save(it) }
+        Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1010", "Bank", id = id(2), cashBookKind = CashBookKind.BANK).also { accountRepository.save(it) }
+        Account.create(company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2150", "VAT Control Account", id = id(6)).also { accountRepository.save(it) }
+        fun vatEntry(n: Int, date: String, vatSide: TransactionSide, amount: String, direction: String?, category: String?, source: JournalSource = JournalSource.INTEGRATION) =
+            JournalEntry.create(
+                periodId, LocalDate.parse(date),
+                listOf(
+                    JournalLine(id(2), Money(BigDecimal(amount), GBP), if (vatSide == TransactionSide.CREDIT) TransactionSide.DEBIT else TransactionSide.CREDIT),
+                    JournalLine(
+                        id(6), Money(BigDecimal(amount), GBP), vatSide,
+                        listOfNotNull(direction?.let { DimensionType.VAT_DIRECTION to it }, category?.let { DimensionType.VAT_CATEGORY to it }).toMap()
+                    )
+                ),
+                source, "VAT entry $n", JournalEntryId(UUID.fromString("00000000-0000-4000-8000-%012d".format(900 + n)))
+            ).also { it.post() }
+        fun store(entry: JournalEntry, seq: Long, provenance: EntryProvenance? = null) =
+            journalEntryRepository.save(
+                JournalEntry.reconstitute(
+                    entry.id, entry.periodId, entry.date, entry.lines, entry.source, entry.description, entry.status, entry.reversalOfEntryId,
+                    recordedSeq = seq, provenance = provenance
+                )
+            )
+        store(
+            vatEntry(1, "2026-10-12", TransactionSide.CREDIT, "200.00", "OUTPUT", "STANDARD"), 1,
+            EntryProvenance("SERVICE:sop", null, null, SourceReference(SourceReferenceType.SALES_INVOICE, "sale-77", "INV-0077"), null)
+        )
+        store(vatEntry(2, "2026-10-13", TransactionSide.DEBIT, "50.00", "INPUT", "REDUCED"), 2)
+        store(
+            vatEntry(3, "2026-10-20", TransactionSide.CREDIT, "25.00", "OUTPUT", "STANDARD", JournalSource.CASH_BOOK), 3,
+            EntryProvenance("SERVICE:cbb", null, null, SourceReference(SourceReferenceType.CASH_BOOK_ENTRY, "cb-2026-0042", "RCT-0042"), null)
+        )
+        val undone = vatEntry(4, "2026-11-02", TransactionSide.CREDIT, "40.00", "OUTPUT", "STANDARD")
+        val reversal = undone.reverse(java.time.Instant.parse("2026-11-03T09:00:00Z"), JournalEntryId(UUID.fromString("00000000-0000-4000-8000-000000000905")), "Undo of VAT entry 4")!!
+        store(undone, 4)
+        store(reversal, 5)
+        store(vatEntry(6, "2026-11-20", TransactionSide.DEBIT, "175.00", "SETTLEMENT", null, JournalSource.CASH_BOOK), 6)
+        store(vatEntry(7, "2026-12-15", TransactionSide.DEBIT, "10.00", null, null, JournalSource.MANUAL), 7)
+    }
+
+    @Test
+    fun `contract fixture - GET vat-lines for a quarter`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seedVatLines()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.fetch(fixture, "vat-lines?from=2026-10-01&to=2026-12-31")
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/vat-lines.json", response.bodyAsText())
+    }
+
+    @Test
+    fun `contract fixture - GET vat-lines first page with a cursor`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seedVatLines()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.fetch(fixture, "vat-lines?from=2026-10-01&to=2026-12-31&limit=3")
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/vat-lines-page.json", response.bodyAsText())
+    }
+
+    @Test
+    fun `contract fixture - GET vat-lines refused, no VAT control account`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.fetch(fixture, "vat-lines?from=2026-10-01&to=2026-12-31")
+
+        response.status shouldBe HttpStatusCode.Conflict
+        ContractFixtures.verifyOrUpdate("contracts/gl/vat-lines-no-control-account.json", response.bodyAsText())
     }
 
     @Test

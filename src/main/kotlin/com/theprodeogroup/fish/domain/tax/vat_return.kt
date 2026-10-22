@@ -6,6 +6,7 @@ import com.theprodeogroup.fish.domain.common.TransactionSide
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
 import com.theprodeogroup.fish.domain.ledger.JournalLine
+import com.theprodeogroup.fish.domain.ledger.hasHistoricalEffect
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import java.math.BigDecimal
 import java.time.Instant
@@ -81,12 +82,14 @@ class VatReturn private constructor(
          * lines on [vatControlAccountId] happens here, not on the
          * caller.
          *
-         * **Only entries whose status [PostingStatus.affectsBalance]
-         * count** - a Draft/Pending/Rejected entry hasn't taken effect
-         * yet, the same filter `ProfitAndLoss`/every other Ledger-derived
-         * report already applies implicitly by only ever being handed
-         * posted entries; made explicit here since a VAT return's window
-         * can span multiple Periods with different closing states.
+         * **Only entries that have had a real effect count** (posted, system
+         * or REVERSED: [hasHistoricalEffect], the rule the account balances use)
+         * - a Draft/Pending/Rejected entry hasn't taken effect yet; made explicit
+         * here since a VAT return's window can span multiple Periods with
+         * different closing states. A REVERSED original counts beside its
+         * reversal, so the pair nets to nothing: counting the reversal alone
+         * (as the earlier `affectsBalance` filter did, 2026-10-22 fix) would
+         * understate output VAT by every sale that was undone inside the window.
          *
          * **What the return is, and when it equals the account (GL-T-30, Femi 2026-10-22).** The return is the **movement** on
          * [vatControlAccountId] over the filing dates (credits less debits), not the account's balance. Paying the net due clears
@@ -120,7 +123,7 @@ class VatReturn private constructor(
             val zero = Money(BigDecimal.ZERO, currency)
 
             val vatLines = postedEntries
-                .filter { it.status.affectsBalance() && it.date in filingPeriod }
+                .filter { it.status.hasHistoricalEffect() && it.date in filingPeriod }
                 .flatMap { entry -> entry.lines.filter { it.accountId == vatControlAccountId } }
                 .filter { VatLineDirection.of(it.dimensions[DimensionType.VAT_DIRECTION]) != VatLineDirection.SETTLEMENT }
 

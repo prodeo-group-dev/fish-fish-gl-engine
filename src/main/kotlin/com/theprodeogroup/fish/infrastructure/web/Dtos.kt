@@ -1518,6 +1518,42 @@ data class AccountPostingsAuditResponseDto(
     val postings: List<AccountPostingAuditDto>
 )
 
+/** One posted line on the VAT Control Account, as raw facts (GL-T-32): the caller classifies by the line's own tags and side. */
+@Serializable
+data class VatLineDto(
+    val entryId: String,
+    val date: String,
+    /** `DEBIT` or `CREDIT`. */
+    val side: String,
+    /** Never negative; [side] says which way it moves the account. */
+    val amount: String,
+    val currency: String,
+    /** The line's raw `VAT_DIRECTION` tag (OUTPUT, INPUT, SETTLEMENT), or null when untagged. */
+    val vatDirection: String?,
+    /** The line's raw `VAT_CATEGORY` tag, or null. */
+    val vatCategory: String?,
+    /** `POSTED` or `REVERSED`. */
+    val entryStatus: String,
+    val sourceReference: SourceReferenceReadDto?,
+    /** For a reversal's line, the entry it reverses; null otherwise. */
+    val reversalOfEntryId: String?
+)
+
+/** `GET /companies/{companyId}/vat-lines?from=&to=`: the VAT Control Account's posted lines in the window, cursor-paged (GL-T-32). */
+@Serializable
+data class VatLinesResponseDto(
+    val companyId: String,
+    val vatControlAccountId: String,
+    val currency: String,
+    val from: String,
+    val to: String,
+    /** An instant, always present and the same on every page: only entries recorded at or before it are included, so a caller can state its figure was computed from entries recorded up to this moment. */
+    val recordedUpTo: String,
+    val lines: List<VatLineDto>,
+    /** Opaque; null on the last page. */
+    val nextCursor: String?
+)
+
 /** `GET /companies/{companyId}/accounts/{accountId}/balance?asOf=`: a positive balance and the side it falls on (2026-10-19). */
 @Serializable
 data class AccountBalanceResponseDto(

@@ -106,6 +106,7 @@ import com.theprodeogroup.fish.infrastructure.persistence.ExposedTaxComputationR
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedTaxRuleRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedVatReturnRepository
 import com.theprodeogroup.fish.infrastructure.persistence.ExposedBankReconciliationRepository
+import com.theprodeogroup.fish.application.ComputeVatLinesUseCase
 import com.theprodeogroup.fish.application.ComputeVatReturnUseCase
 import com.theprodeogroup.fish.domain.tax.VatReturnRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
@@ -397,6 +398,8 @@ fun Application.fishModule(
     popServiceVerifier: JWTVerifier? = null,
     cbbServiceVerifier: JWTVerifier? = null,
     payrollServiceVerifier: JWTVerifier? = null,
+    /** The VAT lines read; a test passes one with a fixed clock so the fixture is reproducible. Null builds the real one. */
+    computeVatLinesUseCase: ComputeVatLinesUseCase? = null,
     // T15 / G3: whether a service call off its credential's endpoint allow-list is refused (the default) or only
     // logged as WOULD BLOCK. Production reads FISH_SERVICE_ALLOWLIST_MODE; unset or anything but "log" enforces.
     serviceAllowListMode: ServiceAllowListMode = ServiceAllowListMode.ENFORCE,
@@ -677,6 +680,7 @@ fun Application.fishModule(
                 salesToExpenseRatioRoutes(computeSalesToExpenseRatioUseCase, companyRepository)
                 reportsRoutes(computeBalanceSheetUseCase, computeProfitAndLossUseCase, ComputeProfitAndLossForDatesUseCase(companyRepository, accountRepository, journalEntryRepository), computeCashFlowUseCase, computeWorkingCapitalUseCase, ComputeTrialBalanceUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository)
                 taxRoutes(computeTaxUseCase, companyRepository, taxRuleRepository, taxComputationRepository)
+                vatLinesRoutes(computeVatLinesUseCase ?: ComputeVatLinesUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository)
                 if (vatReturnRepository != null) {
                     vatReturnRoutes(
                         ComputeVatReturnUseCase(accountRepository, journalEntryRepository, vatReturnRepository), companyRepository
