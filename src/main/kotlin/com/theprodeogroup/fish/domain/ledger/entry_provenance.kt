@@ -20,6 +20,11 @@ enum class SourceReferenceType {
     STOCK_ISSUE,
     PAY_RUN,
     LEAVE_ACCRUAL,
+
+    /** Payroll's other source documents (FR-PAY-38, 2026-10-22): the document that caused a posting, which [LEAVE_ACCRUAL] (the accrual itself) does not name. The id is the owning service's own. */
+    SALARY_ADVANCE,
+    EXPENSE_CLAIM,
+    LEAVE_REQUEST,
     MANUAL_JOURNAL,
     CORRECTION
 }

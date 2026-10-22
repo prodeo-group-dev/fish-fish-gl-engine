@@ -820,6 +820,22 @@ class CashBookRoutesTest {
     }
 
     @Test
+    fun `given each of Payroll's document types as the source reference, then it is accepted and stored, and an unknown one is still refused`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        for (type in listOf("PAY_RUN", "SALARY_ADVANCE", "EXPENSE_CLAIM", "LEAVE_REQUEST")) {
+            val response = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!, "10.00", extra = ""","sourceReference":{"type":"$type","id":"doc-$type"}"""), "key-$type")
+            response.status shouldBe HttpStatusCode.Created
+        }
+        client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!, "10.00", extra = ""","sourceReference":{"type":"TIMESHEET","id":"x"}"""), "key-unknown").status shouldBe HttpStatusCode.BadRequest
+        fixture.journalEntryRepository.findAllByAccount(cash.id).mapNotNull { it.provenance?.sourceReference?.type?.name }.sorted() shouldBe
+            listOf("EXPENSE_CLAIM", "LEAVE_REQUEST", "PAY_RUN", "SALARY_ADVANCE")
+    }
+
+    @Test
     fun `given a source reference with an unknown type, an over-long id or a VAT basis that is not a percent, then it is 400 and nothing is posted`() = testApplication {
         val fixture = Fixture()
         val cash = fixture.cashBook("1000", CashBookKind.CASH)
