@@ -295,6 +295,20 @@ class VatReturnTest {
         vatReturn.inputVat shouldBe money("3.00")
     }
 
+    // ---- a reversed entry and its reversal net to nothing (found building GL-T-32, 2026-10-22) ----
+
+    @Test
+    fun `given a sale that was reversed, when the return is computed, then the original and its reversal cancel and the return is nil`() {
+        val vatAccountId = AccountId.generate()
+        val original = saleEntry(vatAccountId, Money(BigDecimal("200.00"), EUR), VatCategory.STANDARD, LocalDate.of(2026, 1, 15))
+        // The reversal is dated the day it is made, so make it inside the window.
+        val reversal = original.reverse(java.time.Instant.parse("2026-02-01T09:00:00Z"))!!
+
+        val vatReturn = VatReturn.of(CompanyId.generate(), JAN_FEB_2026, vatAccountId, listOf(original, reversal), EUR)
+
+        vatReturn.netVatDue shouldBe Money(BigDecimal.ZERO, EUR)
+    }
+
     // ---- the remittance is not VAT (GL-T-30, GL-FR-TAX-9; Femi 2026-10-22) ----
 
     @Test

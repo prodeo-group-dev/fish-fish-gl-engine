@@ -68,6 +68,7 @@ import com.theprodeogroup.fish.application.User
 import io.kotest.matchers.shouldBe
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -320,5 +321,107 @@ class VatReturnRoutesTest {
         }
 
         response.status shouldBe HttpStatusCode.BadRequest
+    }
+
+    // ---- the VAT lines read (GL-T-32, GL-FR-TAX-10; Tax T-TS-13) ----
+
+    private suspend fun io.ktor.client.HttpClient.vatLines(fixture: Fixture, query: String, email: String = ADMIN_EMAIL) =
+        get("/api/companies/${fixture.company.id.value}/vat-lines$query") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(email)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }
+
+    @Test
+    fun `given output VAT posted in the window, when vat-lines is read, then the line comes back as raw facts with the account and currency`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleOutputVat()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.vatLines(fixture, "?from=2026-01-01&to=2026-02-28")
+
+        response.status shouldBe HttpStatusCode.OK
+        val body: VatLinesResponseDto = response.body()
+        body.vatControlAccountId shouldBe fixture.vatAccount!!.id.value.toString()
+        body.currency shouldBe "EUR"
+        body.nextCursor shouldBe null
+        val line = body.lines.single()
+        line.date shouldBe "2026-01-15"
+        line.side shouldBe "CREDIT"
+        line.amount shouldBe "230.00"
+        line.vatCategory shouldBe "STANDARD"
+        line.vatDirection shouldBe null
+        line.entryStatus shouldBe "POSTED"
+        line.sourceReference shouldBe null
+    }
+
+    @Test
+    fun `given a window with no postings, then vat-lines is an empty page`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleOutputVat()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.vatLines(fixture, "?from=2026-03-01&to=2026-03-31").body<VatLinesResponseDto>().lines shouldBe emptyList()
+    }
+
+    @Test
+    fun `given a missing or malformed window, a backwards window, a bad limit or a bad cursor, then vat-lines is a 400`() = testApplication {
+        val fixture = Fixture()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        for (query in listOf("", "?from=2026-01-01", "?from=yesterday&to=2026-02-01", "?from=2026-02-01&to=2026-01-01", "?from=2026-01-01&to=2026-02-01&limit=0",
+            "?from=2026-01-01&to=2026-02-01&limit=2001", "?from=2026-01-01&to=2026-02-01&limit=many", "?from=2026-01-01&to=2026-02-01&cursor=junk")) {
+            client.vatLines(fixture, query).status shouldBe HttpStatusCode.BadRequest
+        }
+    }
+
+    @Test
+    fun `given a Company with no VAT control account, then vat-lines is a 409`() = testApplication {
+        val fixture = Fixture(seedVatAccount = false)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.vatLines(fixture, "?from=2026-01-01&to=2026-02-01")
+
+        response.status shouldBe HttpStatusCode.Conflict
+        response.body<ErrorResponseDto>().error shouldBe "vat_control_account_not_configured"
+    }
+
+    @Test
+    fun `given a Membership without the TAX module, no token or another Tenant, then vat-lines is refused`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleOutputVat()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.vatLines(fixture, "?from=2026-01-01&to=2026-02-28", RESTRICTED_EMAIL).status shouldBe HttpStatusCode.Forbidden
+        client.get("/api/companies/${fixture.company.id.value}/vat-lines?from=2026-01-01&to=2026-02-28") {
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+        }.status shouldBe HttpStatusCode.Unauthorized
+        client.get("/api/companies/${fixture.company.id.value}/vat-lines?from=2026-01-01&to=2026-02-28") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", UUID.randomUUID().toString())
+        }.status shouldBe HttpStatusCode.Forbidden
+    }
+
+    @Test
+    fun `given several lines and a small limit, then vat-lines pages through them with the cursor, each exactly once`() = testApplication {
+        val fixture = Fixture()
+        fixture.postSampleOutputVat()
+        fixture.postSampleOutputVat()
+        fixture.postSampleOutputVat()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val first: VatLinesResponseDto = client.vatLines(fixture, "?from=2026-01-01&to=2026-02-28&limit=2").body()
+        val second: VatLinesResponseDto = client.vatLines(fixture, "?from=2026-01-01&to=2026-02-28&limit=2&cursor=${first.nextCursor}").body()
+
+        first.lines.size shouldBe 2
+        (first.nextCursor != null) shouldBe true
+        second.lines.size shouldBe 1
+        second.nextCursor shouldBe null
+        (first.lines + second.lines).map { it.entryId }.toSet().size shouldBe 3
     }
 }
