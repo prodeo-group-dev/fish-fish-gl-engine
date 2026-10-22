@@ -490,6 +490,137 @@ class ContractFixtureRoutesTest {
         ContractFixtures.verifyOrUpdate("contracts/gl/record-collection-settlement-not-a-cash-book.json", response.bodyAsText())
     }
 
+
+    // --- The remaining posting answers and posting contexts the services read (2026-10-22, GL-T-2) ---
+
+    private fun Fixture.extra(n: Int, type: AccountType, code: String, name: String, classification: AccountClassification? = null) =
+        Account.create(company.id, type, classification, code, name, id = id(n)).also { accountRepository.save(it) }
+
+    private suspend fun io.ktor.client.HttpClient.postRoute(fixture: Fixture, route: String, body: String): io.ktor.client.statement.HttpResponse =
+        post("/api/$route") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+
+    private fun fixtureBody(fixture: Fixture, rest: String) =
+        """{"companyId": "${fixture.company.id.value}", "periodId": "${periodId.value}", "date": "2026-10-12", $rest}"""
+
+    @Test
+    fun `contract fixture - POST sales record-sales-return`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        val salesReturns = fixture.extra(29, AccountType.REVENUE, "4910", "Sales Returns")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postRoute(
+            fixture, "sales/record-sales-return",
+            fixtureBody(fixture, """"salesReturnsAccountId": "${salesReturns.id.value}", "arControlAccountId": "${id(3).value}", "amount": "100.00", "currency": "GBP", "customerId": "$customer"""")
+        )
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/record-sales-return.json", pinEntryId(response.bodyAsText()))
+    }
+
+    @Test
+    fun `contract fixture - POST purchasing record-payment`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postRoute(
+            fixture, "purchasing/record-payment",
+            fixtureBody(fixture, """"apControlAccountId": "${id(5).value}", "settlementAccountId": "${id(1).value}", "amount": "100.00", "currency": "GBP", "supplierId": "$supplier"""")
+        )
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/record-payment.json", pinEntryId(response.bodyAsText()))
+    }
+
+    @Test
+    fun `contract fixture - POST inventory record-receipt`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        val inventory = fixture.extra(24, AccountType.ASSET, "1300", "Inventory", AccountClassification.CURRENT)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postRoute(
+            fixture, "inventory/record-receipt",
+            fixtureBody(fixture, """"inventoryAssetAccountId": "${inventory.id.value}", "contraAccountId": "${id(5).value}", "committedCost": "100.00", "committedCostCurrency": "GBP", "itemId": "00000000-0000-4000-8000-0000000000a1"""")
+        )
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/record-receipt.json", pinEntryId(response.bodyAsText()))
+    }
+
+    @Test
+    fun `contract fixture - POST inventory record-issue`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        val inventory = fixture.extra(24, AccountType.ASSET, "1300", "Inventory", AccountClassification.CURRENT)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postRoute(
+            fixture, "inventory/record-issue",
+            fixtureBody(fixture, """"contraAccountId": "${id(9).value}", "inventoryAssetAccountId": "${inventory.id.value}", "committedCost": "100.00", "committedCostCurrency": "GBP", "itemId": "00000000-0000-4000-8000-0000000000a1"""")
+        )
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/record-issue.json", pinEntryId(response.bodyAsText()))
+    }
+
+    @Test
+    fun `contract fixture - GET purchase-posting-context`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        // The optional accounts present, so every field is shown non-null.
+        fixture.extra(21, AccountType.LIABILITY, "2300", "Trade Finance Facility Payable", AccountClassification.CURRENT)
+        fixture.extra(22, AccountType.REVENUE, "4920", "Discounts Received")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.fetch(fixture, "purchase-posting-context")
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/purchase-posting-context.json", response.bodyAsText())
+    }
+
+    @Test
+    fun `contract fixture - GET inventory-posting-context`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        fixture.extra(23, AccountType.EQUITY, "3910", "Suspense Account")
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.fetch(fixture, "inventory-posting-context")
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/inventory-posting-context.json", response.bodyAsText())
+    }
+
+    @Test
+    fun `contract fixture - GET payroll-posting-context`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        fixture.extra(25, AccountType.EXPENSE, "5200", "Wages Expense")
+        fixture.extra(26, AccountType.EXPENSE, "5300", "Salaries Expense")
+        fixture.extra(27, AccountType.EXPENSE, "5400", "Leave Expense")
+        fixture.extra(28, AccountType.LIABILITY, "2200", "Accrued Leave Liability", AccountClassification.CURRENT)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.fetch(fixture, "payroll-posting-context")
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/payroll-posting-context.json", response.bodyAsText())
+    }
+
     @Test
     fun `contract fixture - GET jurisdictions`() = testApplication {
         val fixture = Fixture(configureAccounts = false, openPeriod = false)
