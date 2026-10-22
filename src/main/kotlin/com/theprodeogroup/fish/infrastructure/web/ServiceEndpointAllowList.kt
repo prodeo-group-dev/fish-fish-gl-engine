@@ -34,6 +34,8 @@ object ServiceEndpointAllowList {
             "GET /companies/{companyId}",
             "GET /companies/{companyId}/sales-posting-context",
             "GET /companies/{companyId}/sales-invoices",
+            // GL-T-28: the VAT rate SOP reads (with the sale date) to work out the VAT it sends; F22-18.
+            "GET /companies/{companyId}/vat-categories",
             "POST /companies/{companyId}/customer-balances",
             "POST /sales/record-sale",
             "POST /sales/record-collection",

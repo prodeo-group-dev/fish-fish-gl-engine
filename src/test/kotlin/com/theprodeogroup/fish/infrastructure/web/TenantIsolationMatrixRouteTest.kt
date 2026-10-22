@@ -415,6 +415,7 @@ class TenantIsolationMatrixRouteTest {
         "sop" to listOf(
             RouteDeclaration("GET", "/companies/{companyId}/sales-posting-context"),
             RouteDeclaration("GET", "/companies/{companyId}/sales-invoices"),
+            RouteDeclaration("GET", "/companies/{companyId}/vat-categories"),
             RouteDeclaration("POST", "/companies/{companyId}/customer-balances"),
             RouteDeclaration("GET", "/companies/{companyId}")
         ),
