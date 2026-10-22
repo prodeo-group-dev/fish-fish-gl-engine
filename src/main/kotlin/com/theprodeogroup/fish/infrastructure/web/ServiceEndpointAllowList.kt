@@ -34,6 +34,8 @@ object ServiceEndpointAllowList {
             "GET /companies/{companyId}",
             "GET /companies/{companyId}/sales-posting-context",
             "GET /companies/{companyId}/sales-invoices",
+            // The receivables tie-out (2026-10-22, GL-T-12a): SOP compares its open total with the 1100 control balance as at a date.
+            "GET /companies/{companyId}/accounts/{accountId}/balance",
             "POST /companies/{companyId}/customer-balances",
             "POST /sales/record-sale",
             "POST /sales/record-collection",
