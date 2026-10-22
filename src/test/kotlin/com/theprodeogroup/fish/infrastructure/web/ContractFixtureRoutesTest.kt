@@ -1069,6 +1069,31 @@ class ContractFixtureRoutesTest {
         store(vatEntry(7, "2026-12-15", TransactionSide.DEBIT, "10.00", null, null, JournalSource.MANUAL), 7)
     }
 
+    // Tax computes its VAT return from the vat-lines read above. GL's own VatReturn over the SAME stored entries must give the figures
+    // Tax gets from the golden quarter (Tax, 2026-10-22: output 225, input 60, net 165 payable, standard +225, reduced -50), so the
+    // two stay in step: the reversed entry nets to zero, the quarter's remittance is not VAT due, and an untagged debit is input.
+    @Test
+    fun `the VAT return GL computes over the vat-lines quarter equals what Tax computes from the same quarter`() {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seedVatLines()
+        val entries = fixture.journalEntryRepository.findAllByPeriod(periodId)
+
+        val vatReturn = com.theprodeogroup.fish.domain.tax.VatReturn.of(
+            fixture.company.id,
+            com.theprodeogroup.fish.domain.tax.VatFilingPeriod(LocalDate.parse("2026-10-01"), LocalDate.parse("2026-12-31")),
+            id(6), entries, GBP
+        )
+
+        vatReturn.outputVat shouldBe Money(BigDecimal("225.00"), GBP)
+        vatReturn.inputVat shouldBe Money(BigDecimal("60.00"), GBP)
+        vatReturn.netVatDue shouldBe Money(BigDecimal("165.00"), GBP)
+        vatReturn.direction shouldBe com.theprodeogroup.fish.domain.tax.VatReturnDirection.PAYABLE
+        vatReturn.categoryBreakdown shouldBe mapOf(
+            com.theprodeogroup.fish.domain.tax.VatCategory.STANDARD to Money(BigDecimal("225.00"), GBP),
+            com.theprodeogroup.fish.domain.tax.VatCategory.REDUCED to Money(BigDecimal("-50.00"), GBP)
+        )
+    }
+
     @Test
     fun `contract fixture - GET vat-lines for a quarter`() = testApplication {
         val fixture = Fixture(configureAccounts = false, openPeriod = false)
