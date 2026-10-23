@@ -160,6 +160,7 @@ class JournalEntryRoutesTest {
         fun installInto(app: Application) {
             app.fishModule(
                 verifier = TestJwtSupport.verifier(),
+                hrServiceVerifier = TestJwtSupport.serviceVerifier("hr"),
                 eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository),
                 companyRepository = companyRepository,
                 periodRepository = periodRepository,
@@ -227,6 +228,98 @@ class JournalEntryRoutesTest {
         response.status shouldBe HttpStatusCode.Created
         val body: JournalEntryResponseDto = response.body()
         body.status shouldBe "POSTED"
+    }
+
+    // ---- Femi 2026-10-23 (via CBB): "The only way to write into the GL is through SOP IM POP CBB FA PAYROLL and Journal entries which CBB will not
+    // allow on itself." A PERSON posting a manual journal may not touch a cash or bank book account; service credentials post as before. ----
+
+    private fun journalBody(fixture: Fixture, cashSideAccountId: java.util.UUID, key: String? = null) =
+        """{"periodId": "${fixture.period.id.value}", "date": "$TODAY", "source": "MANUAL", "lines": [
+            |{"accountId": "${fixture.debitAccount.id.value}", "amount": "100.00", "currency": "GBP", "side": "DEBIT"},
+            |{"accountId": "$cashSideAccountId", "amount": "100.00", "currency": "GBP", "side": "CREDIT"}]}""".trimMargin()
+
+    private fun cashBook(fixture: Fixture, code: String, kind: com.theprodeogroup.fish.domain.ledger.CashBookKind) =
+        Account.create(fixture.company.id, AccountType.ASSET, AccountClassification.CURRENT, code, "Book $code", cashBookKind = kind)
+            .also { fixture.accountRepository.save(it) }
+
+    @Test
+    fun `given a person posting a manual journal with a line on a cash or bank book account, when posted, then it is refused 409 and nothing is posted`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        val cash = cashBook(fixture, "1001", com.theprodeogroup.fish.domain.ledger.CashBookKind.CASH)
+        val bank = cashBook(fixture, "1010", com.theprodeogroup.fish.domain.ledger.CashBookKind.BANK)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        for (book in listOf(cash, bank)) {
+            val response = client.post("/api/journal-entries") {
+                header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+                header("X-Tenant-Id", fixture.tenantId.value.toString())
+                contentType(ContentType.Application.Json)
+                setBody(journalBody(fixture, book.id.value))
+            }
+            response.status shouldBe HttpStatusCode.Conflict
+            val body: ErrorResponseDto = response.body()
+            body.error shouldBe "use_cash_and_bank_books"
+            body.detail shouldBe "Cash and bank accounts are written in Cash and Bank Books"
+        }
+        fixture.journalEntryRepository.saveCalls.size shouldBe 0
+    }
+
+    @Test
+    fun `given a person posting a manual journal on ordinary accounts, when posted, then it still posts, and a refusal did not spend the idempotency key`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        val bank = cashBook(fixture, "1010", com.theprodeogroup.fish.domain.ledger.CashBookKind.BANK)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        suspend fun post(body: String) = client.post("/api/journal-entries") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            header("Idempotency-Key", "manual-1")
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+
+        post(journalBody(fixture, bank.id.value)).status shouldBe HttpStatusCode.Conflict
+        // The same key, now on an ordinary account: it posts (the refusal stored nothing under the key).
+        post(journalBody(fixture, fixture.creditAccount.id.value)).status shouldBe HttpStatusCode.Created
+        fixture.journalEntryRepository.saveCalls.size shouldBe 1
+    }
+
+    @Test
+    fun `given a service credential posting a journal with a line on a cash book account, when posted, then it posts as before`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        val cash = cashBook(fixture, "1001", com.theprodeogroup.fish.domain.ledger.CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/journal-entries") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signServiceToken("hr")}")
+            contentType(ContentType.Application.Json)
+            setBody(journalBody(fixture, cash.id.value))
+        }
+
+        response.status shouldBe HttpStatusCode.Created
+        fixture.journalEntryRepository.saveCalls.size shouldBe 1
+    }
+
+    @Test
+    fun `given another Company's cash book account in a person's journal, when posted, then it is still account_not_found, never a refusal that confirms the account exists`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        val otherCompany = com.theprodeogroup.fish.domain.tenancy.CompanyId.generate()
+        val foreign = Account.create(otherCompany, AccountType.ASSET, AccountClassification.CURRENT, "1010", "Foreign bank", cashBookKind = com.theprodeogroup.fish.domain.ledger.CashBookKind.BANK)
+            .also { fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/journal-entries") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenantId.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody(journalBody(fixture, foreign.id.value))
+        }
+
+        response.status shouldBe HttpStatusCode.NotFound
+        response.body<ErrorResponseDto>().error shouldBe "account_not_found"
     }
 
     @Test

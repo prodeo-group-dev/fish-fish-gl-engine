@@ -25,6 +25,7 @@ import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.auth.principal
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.request.header
@@ -362,6 +363,20 @@ fun Route.journalEntryRoutes(
         } catch (e: IllegalArgumentException) {
             call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "source must be a valid JournalSource"))
             return@post
+        }
+
+        // Femi 2026-10-23 (via CBB): the only doors into the GL are the modules (SOP, IM, POP, CBB, FA, Payroll) and journal entries,
+        // "which CBB will not allow on itself": a PERSON may not post a manual journal that touches a cash or bank book account; those
+        // are written in Cash and Bank Books. Service credentials post their own journals as before, and entries already posted to
+        // those accounts are unchanged. Only this Company's own accounts count, so a foreign account id still reads as not found.
+        if (call.principal<AuthenticatedCaller>()?.isServiceAccount != true) {
+            val touchesABook = lines.map { it.accountId }.distinct()
+                .mapNotNull { accountRepository.findById(it) }
+                .any { it.companyId == period.companyId && it.cashBookKind != null }
+            if (touchesABook) {
+                call.respond(HttpStatusCode.Conflict, ErrorResponseDto("use_cash_and_bank_books", "Cash and bank accounts are written in Cash and Bank Books"))
+                return@post
+            }
         }
 
         call.respondIdempotently(
