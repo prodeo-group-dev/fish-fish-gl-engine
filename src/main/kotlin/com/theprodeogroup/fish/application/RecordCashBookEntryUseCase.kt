@@ -96,6 +96,9 @@ class RecordCashBookEntryUseCase(
         data object NotACashBook : Result()
         data object CounterAccountNotFound : Result()
         data object CounterAccountInactive : Result()
+
+        /** The book itself was inactivated by its owner: no new entry goes into it (Undo of an earlier one still works). */
+        data object BookInactive : Result()
         data class CounterAccountNotAllowed(val useInstead: UseInstead) : Result()
         data object InvalidAmount : Result()
         data object NoOpenPeriod : Result()
@@ -120,6 +123,7 @@ class RecordCashBookEntryUseCase(
         // A retry is answered from the entry that is already there, before anything else is checked.
         journalEntryRepository.findById(request.entryId)?.let { return replayOrReuse(it, request, book, currency) }
 
+        if (!book.active) return Result.BookInactive
         if (request.counterAccountId == book.id) return Result.CounterAccountNotAllowed(UseInstead.TRANSFER)
         val counter = accountRepository.findById(request.counterAccountId)?.takeIf { it.companyId == request.companyId }
             ?: return Result.CounterAccountNotFound

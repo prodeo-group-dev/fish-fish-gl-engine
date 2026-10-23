@@ -27,6 +27,7 @@ import com.theprodeogroup.fish.application.ComputeCustomerBalancesUseCase
 import com.theprodeogroup.fish.application.ComputeSupplierBalancesUseCase
 import com.theprodeogroup.fish.application.ComputeAccountBalanceUseCase
 import com.theprodeogroup.fish.application.ComputeAccountPostingsUseCase
+import com.theprodeogroup.fish.application.SetAccountActiveUseCase
 import com.theprodeogroup.fish.application.ComputeSalesPostingContextUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
@@ -638,6 +639,7 @@ fun Application.fishModule(
                 recordSupplierCreditNoteRoutes(RecordSupplierCreditNoteUseCase(periodRepository, accountRepository, journalEntryRepository), companyRepository, vatRateRepository, idempotencyKeyRepository)
                 recordPayRunJournalRoutes(RecordPayRunJournalUseCase(periodRepository, accountRepository, journalEntryRepository, companyRepository), companyRepository, idempotencyKeyRepository)
                 accountReadsRoutes(ComputeAccountPostingsUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository), ComputeAccountBalanceUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository)
+                accountActiveRoutes(SetAccountActiveUseCase(companyRepository, accountRepository), ComputeAccountBalanceUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository)
                 reverseJournalEntryRoutes(ReverseEntryUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository), companyRepository)
                 vatCategoriesRoutes(ComputeVatCategoriesUseCase(companyRepository, vatRateRepository), companyRepository)
                 companyRoutes(companyRepository)

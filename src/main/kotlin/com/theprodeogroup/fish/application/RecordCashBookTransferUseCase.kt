@@ -59,6 +59,9 @@ class RecordCashBookTransferUseCase(
         /** Either account is not a cash or bank book. */
         data object NotACashBook : Result()
         data object SameAccount : Result()
+
+        /** Either book was inactivated by its owner: no new entry goes into or out of it. */
+        data object AccountInactive : Result()
         data object InvalidAmount : Result()
         data object NoOpenPeriod : Result()
     }
@@ -73,6 +76,7 @@ class RecordCashBookTransferUseCase(
         journalEntryRepository.findById(request.entryId)?.let { return replayOrReuse(it, request, from, to, currency) }
 
         if (from.id == to.id) return Result.SameAccount
+        if (!from.active || !to.active) return Result.AccountInactive
         if (request.amount.signum() <= 0 || request.amount.stripTrailingZeros().scale() > currency.defaultFractionDigits) return Result.InvalidAmount
         val amount = Money(request.amount.setScale(currency.defaultFractionDigits), currency)
         val period = periodRepository.findAllByCompany(request.companyId).firstOrNull { it.allowsPosting() } ?: return Result.NoOpenPeriod

@@ -355,6 +355,8 @@ private suspend fun ApplicationCall.handleCashBookTransfer(
             respond(HttpStatusCode.NotFound, ErrorResponseDto("account_not_found", "Account not found"))
         RecordCashBookTransferUseCase.Result.NotACashBook ->
             respond(HttpStatusCode.Conflict, ErrorResponseDto("not_a_cash_or_bank_account", "Both accounts must be cash or bank accounts"))
+        RecordCashBookTransferUseCase.Result.AccountInactive ->
+            respond(HttpStatusCode.Conflict, ErrorResponseDto("account_inactive", "An account you are moving money between is no longer in use"))
         RecordCashBookTransferUseCase.Result.SameAccount ->
             respond(HttpStatusCode.BadRequest, ErrorResponseDto("same_account", "Choose a different account to move the money to"))
         RecordCashBookTransferUseCase.Result.InvalidAmount ->
@@ -578,6 +580,8 @@ private suspend fun ApplicationCall.respondCashBookEntryResult(result: RecordCas
             respond(HttpStatusCode.Conflict, ErrorResponseDto("not_a_cash_or_bank_account", "This account is not a cash or bank account, so it has no book"))
         RecordCashBookEntryUseCase.Result.CounterAccountNotFound ->
             respond(HttpStatusCode.NotFound, ErrorResponseDto("counter_account_not_found", "The other account was not found"))
+        RecordCashBookEntryUseCase.Result.BookInactive ->
+            respond(HttpStatusCode.Conflict, ErrorResponseDto("account_inactive", "This account is no longer in use, so nothing new can be recorded in it"))
         RecordCashBookEntryUseCase.Result.CounterAccountInactive ->
             respond(HttpStatusCode.Conflict, ErrorResponseDto("counter_account_inactive", "The other account is no longer in use"))
         is RecordCashBookEntryUseCase.Result.CounterAccountNotAllowed ->

@@ -69,6 +69,34 @@ object ModuleOwnedAccounts {
         }
     }
 
+    /**
+     * True when the system itself posts to [account] by its code, so the owner may not inactivate it (Femi, 2026-10-23: the owner decides the
+     * life span of his accounts; CM's decision 3a: not the Cash Book, the module-owned and control accounts, or the opening-figure accounts).
+     * A second cash or bank book is the owner's own account and may be inactivated; only account `1000` is the Cash Book. The business codes
+     * mean those accounts only in a business chart (an Individual's `1100` is Investments and `2000` is Loans), as in [useInstead].
+     */
+    fun requiredBySystem(account: Account, clientType: ClientType): Boolean {
+        val type = account.type
+        val code = account.code
+        if (type == AccountType.ASSET && code == ChartOfAccountsTemplate.CASH_CODE) return true
+        if (type == AccountType.EQUITY && (code == ChartOfAccountsTemplate.OPENING_BALANCE_EQUITY_CODE || code == ChartOfAccountsTemplate.SUSPENSE_ACCOUNT_CODE)) return true
+        if (clientType == ClientType.INDIVIDUAL) return false
+        return when (type) {
+            AccountType.ASSET -> code in setOf(
+                ACCOUNTS_RECEIVABLE_CODE, FIXED_ASSETS_CODE, ChartOfAccountsTemplate.ACCUMULATED_DEPRECIATION_CODE, ChartOfAccountsTemplate.INVENTORY_CODE
+            )
+            AccountType.LIABILITY -> code in setOf(
+                ACCOUNTS_PAYABLE_CODE, ChartOfAccountsTemplate.VAT_CONTROL_ACCOUNT_CODE, ChartOfAccountsTemplate.ACCRUED_LEAVE_LIABILITY_CODE,
+                ChartOfAccountsTemplate.FACILITY_LIABILITY_CODE
+            )
+            AccountType.REVENUE -> code == ChartOfAccountsTemplate.DISCOUNTS_RECEIVED_CODE
+            AccountType.EXPENSE -> code in setOf(
+                ChartOfAccountsTemplate.WAGES_EXPENSE_CODE, ChartOfAccountsTemplate.SALARIES_EXPENSE_CODE, ChartOfAccountsTemplate.LEAVE_EXPENSE_CODE
+            )
+            else -> false
+        }
+    }
+
     const val ACCOUNTS_RECEIVABLE_CODE = "1100"
     const val ACCOUNTS_PAYABLE_CODE = "2000"
     const val FIXED_ASSETS_CODE = "1200"

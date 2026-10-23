@@ -396,6 +396,16 @@ fun Route.journalEntryRoutes(
         call.respondIdempotently(
             idempotencyKeyRepository, tenantId, "post-journal-entry", Json.encodeToString(PostJournalEntryRequestDto.serializer(), request)
         ) {
+            // The owner has made an account inactive (Femi, 2026-10-23): no new journal line goes to it, from a person or a service credential
+            // alike. Only this Company's own accounts count, so a foreign account id still reads as not found below. Undo and reversals do not
+            // come through here, so correcting an earlier entry stays possible.
+            val touchesAnInactiveAccount = lines.map { it.accountId }.distinct()
+                .mapNotNull { accountRepository.findById(it) }
+                .any { it.companyId == period.companyId && !it.active }
+            if (touchesAnInactiveAccount) {
+                return@respondIdempotently HttpStatusCode.Conflict to errorResponseJson("account_inactive", "An account on this entry is no longer in use, so nothing new can be posted to it")
+            }
+
             val result = postJournalEntryUseCase.execute(
                 PostJournalEntryUseCase.Request(period.companyId, PeriodId(periodId), date, lines, source, request.description)
             )
