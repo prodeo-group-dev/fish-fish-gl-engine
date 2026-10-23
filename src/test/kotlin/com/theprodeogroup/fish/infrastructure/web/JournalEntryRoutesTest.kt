@@ -322,6 +322,117 @@ class JournalEntryRoutesTest {
         response.body<ErrorResponseDto>().error shouldBe "account_not_found"
     }
 
+    // ---- GL-RF-RV1: POST /companies/{c}/journal-entries/{id}/reverse (Femi via CM 2026-10-24: "Refuse, point to CBB") ----
+
+    private fun storedEntry(fixture: Fixture, source: com.theprodeogroup.fish.domain.common.JournalSource) =
+        com.theprodeogroup.fish.domain.ledger.JournalEntry.create(
+            fixture.period.id, TODAY,
+            listOf(
+                com.theprodeogroup.fish.domain.ledger.JournalLine(fixture.debitAccount.id, com.theprodeogroup.common.Money(java.math.BigDecimal("100.00"), GBP), com.theprodeogroup.fish.domain.common.TransactionSide.DEBIT),
+                com.theprodeogroup.fish.domain.ledger.JournalLine(fixture.creditAccount.id, com.theprodeogroup.common.Money(java.math.BigDecimal("100.00"), GBP), com.theprodeogroup.fish.domain.common.TransactionSide.CREDIT)
+            ),
+            source, "Takings"
+        ).also { it.post(); fixture.journalEntryRepository.save(it) }
+
+    private fun reversePath(fixture: Fixture, entryId: java.util.UUID) = "/api/companies/${fixture.company.id.value}/journal-entries/$entryId/reverse"
+
+    private fun io.ktor.client.request.HttpRequestBuilder.asPerson(fixture: Fixture) {
+        header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+        header("X-Tenant-Id", fixture.tenantId.value.toString())
+    }
+
+    @Test
+    fun `given a posted manual entry, when a person reverses it, then it is a 201, the original is reversed, and a second reversal is 409 already_reversed`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        val original = storedEntry(fixture, com.theprodeogroup.fish.domain.common.JournalSource.MANUAL)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post(reversePath(fixture, original.id.value)) {
+            asPerson(fixture)
+            contentType(ContentType.Application.Json)
+            setBody("""{"reason": "  Entered twice  "}""")
+        }
+
+        response.status shouldBe HttpStatusCode.Created
+        val body: ReverseEntryResponseDto = response.body()
+        body.reversedEntryId shouldBe original.id.value.toString()
+        val reversal = fixture.journalEntryRepository.findById(com.theprodeogroup.fish.domain.ledger.JournalEntryId(java.util.UUID.fromString(body.reversalEntryId)))!!
+        reversal.source shouldBe com.theprodeogroup.fish.domain.common.JournalSource.REVERSAL
+        reversal.provenance!!.reason shouldBe "Entered twice"
+        fixture.journalEntryRepository.findById(original.id)!!.status shouldBe com.theprodeogroup.fish.domain.common.PostingStatus.REVERSED
+
+        val again = client.post(reversePath(fixture, original.id.value)) { asPerson(fixture) }
+        again.status shouldBe HttpStatusCode.Conflict
+        again.body<ErrorResponseDto>().error shouldBe "already_reversed"
+    }
+
+    @Test
+    fun `given an entry made in a cash or bank book, when a person reverses it, then it is 409 correct_in_cash_and_bank_books and nothing changes`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        val original = storedEntry(fixture, com.theprodeogroup.fish.domain.common.JournalSource.CASH_BOOK)
+        val saves = fixture.journalEntryRepository.saveCalls.size
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post(reversePath(fixture, original.id.value)) { asPerson(fixture) }
+
+        response.status shouldBe HttpStatusCode.Conflict
+        val error: ErrorResponseDto = response.body()
+        error.error shouldBe "correct_in_cash_and_bank_books"
+        error.detail shouldBe "This entry was made in a cash or bank book: correct it in Cash and Bank Books"
+        fixture.journalEntryRepository.saveCalls.size shouldBe saves
+        fixture.journalEntryRepository.findById(original.id)!!.status shouldBe com.theprodeogroup.fish.domain.common.PostingStatus.POSTED
+    }
+
+    @Test
+    fun `given no sign-in, a claimed Tenant that does not own the Company, an unknown entry or too long a reason, then 401, 403, 404 and 400`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        val original = storedEntry(fixture, com.theprodeogroup.fish.domain.common.JournalSource.MANUAL)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.post(reversePath(fixture, original.id.value)).status shouldBe HttpStatusCode.Unauthorized
+        client.post(reversePath(fixture, original.id.value)) {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+            header("X-Tenant-Id", TenantId.generate().value.toString())
+        }.status shouldBe HttpStatusCode.Forbidden
+        client.post(reversePath(fixture, java.util.UUID.randomUUID())) { asPerson(fixture) }.status shouldBe HttpStatusCode.NotFound
+        client.post(reversePath(fixture, original.id.value)) {
+            asPerson(fixture)
+            contentType(ContentType.Application.Json)
+            setBody("""{"reason": "${"x".repeat(600)}"}""")
+        }.status shouldBe HttpStatusCode.BadRequest
+        fixture.journalEntryRepository.findById(original.id)!!.status shouldBe com.theprodeogroup.fish.domain.common.PostingStatus.POSTED
+    }
+
+    @Test
+    fun `given a READ-only member, when they reverse an entry, then it is 403 and nothing changes`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT, AccessLevel.READ)
+        val original = storedEntry(fixture, com.theprodeogroup.fish.domain.common.JournalSource.MANUAL)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.post(reversePath(fixture, original.id.value)) { asPerson(fixture) }.status shouldBe HttpStatusCode.Forbidden
+        fixture.journalEntryRepository.findById(original.id)!!.status shouldBe com.theprodeogroup.fish.domain.common.PostingStatus.POSTED
+    }
+
+    @Test
+    fun `given a service credential, when it calls the reversal, then it is refused, this door is for people`() = testApplication {
+        val fixture = Fixture(Role.ACCOUNTANT)
+        val original = storedEntry(fixture, com.theprodeogroup.fish.domain.common.JournalSource.MANUAL)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post(reversePath(fixture, original.id.value)) {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signServiceToken("hr")}")
+        }
+
+        // 403 forbidden_endpoint where the service has a verifier wired in this fixture, 401 where it has none: never a reversal.
+        (response.status.value in setOf(401, 403)) shouldBe true
+        fixture.journalEntryRepository.findById(original.id)!!.status shouldBe com.theprodeogroup.fish.domain.common.PostingStatus.POSTED
+    }
+
     @Test
     fun `given no bearer token, when posted, then it returns 401`() = testApplication {
         val fixture = Fixture(Role.ACCOUNTANT)

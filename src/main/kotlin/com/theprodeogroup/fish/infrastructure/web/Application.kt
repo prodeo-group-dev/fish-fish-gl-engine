@@ -54,6 +54,7 @@ import com.theprodeogroup.fish.application.RecordSalesReturnUseCase
 import com.theprodeogroup.fish.application.RecordSupplierObligationUseCase
 import com.theprodeogroup.fish.application.RecordSupplierCreditNoteUseCase
 import com.theprodeogroup.fish.application.RecordSupplierPaymentUseCase
+import com.theprodeogroup.fish.application.ReverseEntryUseCase
 import com.theprodeogroup.fish.application.RemeasureLeaveAccrualUseCase
 import com.theprodeogroup.fish.application.UtilizeLeaveAccrualUseCase
 import com.theprodeogroup.fish.domain.fixedassets.FixedAssetRepository
@@ -637,6 +638,7 @@ fun Application.fishModule(
                 recordSupplierCreditNoteRoutes(RecordSupplierCreditNoteUseCase(periodRepository, accountRepository, journalEntryRepository), companyRepository, vatRateRepository, idempotencyKeyRepository)
                 recordPayRunJournalRoutes(RecordPayRunJournalUseCase(periodRepository, accountRepository, journalEntryRepository, companyRepository), companyRepository, idempotencyKeyRepository)
                 accountReadsRoutes(ComputeAccountPostingsUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository), ComputeAccountBalanceUseCase(companyRepository, accountRepository, journalEntryRepository), companyRepository)
+                reverseJournalEntryRoutes(ReverseEntryUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository), companyRepository)
                 vatCategoriesRoutes(ComputeVatCategoriesUseCase(companyRepository, vatRateRepository), companyRepository)
                 companyRoutes(companyRepository)
                 recordInventoryReceiptAndIssueRoutes(recordInventoryReceiptUseCase, recordInventoryIssueUseCase, companyRepository, idempotencyKeyRepository)
