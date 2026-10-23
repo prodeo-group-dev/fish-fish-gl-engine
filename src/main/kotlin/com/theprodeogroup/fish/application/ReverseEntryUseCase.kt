@@ -14,7 +14,7 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * GL-RF-RV1, the generic journal reversal (Femi via CM, 2026-10-24: "Refuse, point to CBB"). A posted entry is corrected by a reversing
+ * GL-RF-RV1, the generic journal reversal (Femi via CM, 2026-10-23: "Refuse, point to CBB"). A posted entry is corrected by a reversing
  * entry, never by editing or deleting it: the reversal has the same accounts and amounts with the sides swapped, and the original is
  * marked REVERSED, both in ONE transaction ([JournalEntryRepository.recordReversal]).
  *

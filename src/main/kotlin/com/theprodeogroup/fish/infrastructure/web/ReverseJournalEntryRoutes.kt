@@ -14,7 +14,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
 /**
- * `POST /companies/{companyId}/journal-entries/{entryId}/reverse` (GL-RF-RV1; Femi via CM, 2026-10-24: "Refuse, point to CBB"): the generic
+ * `POST /companies/{companyId}/journal-entries/{entryId}/reverse` (GL-RF-RV1; Femi via CM, 2026-10-23: "Refuse, point to CBB"): the generic
  * journal reversal. A person with WRITE at the Company posts a reversing entry for any posted journal of that Company, with an optional
  * `{"reason": "..."}` recorded with the reversal; the original is marked REVERSED in the same transaction. An entry made in a cash or bank
  * book is refused (409 `correct_in_cash_and_bank_books`): it is corrected in Cash and Bank Books, never in the GL. There is no reconciliation

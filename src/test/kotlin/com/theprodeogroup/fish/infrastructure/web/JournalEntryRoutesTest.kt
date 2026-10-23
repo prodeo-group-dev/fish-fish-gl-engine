@@ -322,7 +322,7 @@ class JournalEntryRoutesTest {
         response.body<ErrorResponseDto>().error shouldBe "account_not_found"
     }
 
-    // ---- GL-RF-RV1: POST /companies/{c}/journal-entries/{id}/reverse (Femi via CM 2026-10-24: "Refuse, point to CBB") ----
+    // ---- GL-RF-RV1: POST /companies/{c}/journal-entries/{id}/reverse (Femi via CM 2026-10-23: "Refuse, point to CBB") ----
 
     private fun storedEntry(fixture: Fixture, source: com.theprodeogroup.fish.domain.common.JournalSource) =
         com.theprodeogroup.fish.domain.ledger.JournalEntry.create(
