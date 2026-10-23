@@ -278,7 +278,9 @@ data class AccountSummaryDto(
      */
     val formerCashBookKind: String? = null,
     /** The UTC day the owner stopped using this account as a book (`YYYY-MM-DD`), else `null`. Added 2026-10-23 (V38, GL-T-18). */
-    val stoppedOn: String? = null
+    val stoppedOn: String? = null,
+    /** `false` when the owner has inactivated this account (listed only with `?includeInactive=true`). Always present. Added 2026-10-23. */
+    val active: Boolean = true
 )
 
 /**
@@ -1485,6 +1487,8 @@ data class AccountPostingsResponseDto(
     val formerCashBookKind: String?,
     /** The UTC day the book was stopped (`YYYY-MM-DD`), else `null`; always present. */
     val stoppedOn: String?,
+    /** `false` when the owner has inactivated this account; the postings read still works for it. Always present. Added 2026-10-23. */
+    val active: Boolean,
     val currency: String,
     val from: String,
     val to: String,
@@ -1541,6 +1545,8 @@ data class AccountPostingsAuditResponseDto(
     val formerCashBookKind: String?,
     /** The UTC day the book was stopped (`YYYY-MM-DD`), else `null`; always present. */
     val stoppedOn: String?,
+    /** `false` when the owner has inactivated this account; the postings read still works for it. Always present. Added 2026-10-23. */
+    val active: Boolean,
     val currency: String,
     val from: String,
     val to: String,

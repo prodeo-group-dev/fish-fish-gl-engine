@@ -69,6 +69,7 @@ import com.theprodeogroup.fish.application.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.application.User
+import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -517,6 +518,37 @@ class CashBookRoutesTest {
         header.formerCashBookKind shouldBe "BANK"
         header.stoppedOn shouldBe stopped.stoppedOn
         header.postings.size shouldBe 1
+    }
+
+    @Test
+    fun `given an inactive account, when the chart is read, then it is left out by default and listed with active false on includeInactive - and the postings header says active`() = testApplication {
+        val fixture = Fixture()
+        val live = fixture.cashBook("1015", CashBookKind.CASH)
+        val closed = fixture.cashBook("1016", CashBookKind.BANK)
+        fixture.post(closed, fixture.revenueAccount!!, "40.00", TODAY.minusDays(1))
+        closed.deactivate().isValid shouldBe true
+        fixture.accountRepository.save(closed)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val base = "/api/companies/${fixture.company.id.value}"
+
+        val byDefault: List<AccountSummaryDto> = client.get("$base/accounts") { signedIn(fixture) }.body()
+        byDefault.map { it.code } shouldNotContain "1016"
+        byDefault.first { it.code == "1015" }.active shouldBe true
+
+        val all: List<AccountSummaryDto> = client.get("$base/accounts?includeInactive=true") { signedIn(fixture) }.body()
+        all.first { it.code == "1016" }.active shouldBe false
+        all.first { it.code == "1015" }.active shouldBe true
+        client.get("$base/accounts?includeInactive=false") { signedIn(fixture) }.body<List<AccountSummaryDto>>().map { it.code } shouldNotContain "1016"
+
+        client.get("$base/accounts?includeInactive=maybe") { signedIn(fixture) }.status shouldBe HttpStatusCode.BadRequest
+        client.get("$base/accounts?includeInactive=true&usableFor=settlement-line") { signedIn(fixture) }.status shouldBe HttpStatusCode.BadRequest
+
+        // Reading an inactive account's postings needs no active check: the header says active=false and the posting is there.
+        val header: AccountPostingsResponseDto = client.get("$base/accounts/${closed.id.value}/postings?from=${TODAY.minusDays(7)}&to=$TODAY") { signedIn(fixture) }.body()
+        header.active shouldBe false
+        header.postings.size shouldBe 1
+        client.get("$base/accounts/${live.id.value}/postings?from=${TODAY.minusDays(7)}&to=$TODAY") { signedIn(fixture) }.body<AccountPostingsResponseDto>().active shouldBe true
     }
 
     @Test

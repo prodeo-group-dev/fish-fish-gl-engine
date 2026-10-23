@@ -1344,17 +1344,19 @@ class ContractFixtureRoutesTest {
         ).also { it.post(); journalEntryRepository.save(it) }
         old.changeCashBookKind(null, LocalDate.parse("2026-10-20"))
         accountRepository.save(old)
+        // An account the owner inactivated (not a book): listed only on ?includeInactive=true, marked active false.
+        Account.create(company.id, AccountType.EXPENSE, null, "5900", "Closed expense", id = id(15)).also { it.deactivate(); accountRepository.save(it) }
         return old
     }
 
     @Test
-    fun `contract fixture - GET accounts with a stopped book`() = testApplication {
+    fun `contract fixture - GET accounts with a stopped book and an inactive account (includeInactive)`() = testApplication {
         val fixture = Fixture(configureAccounts = false, openPeriod = false)
         fixture.seedStoppedBook()
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.fetch(fixture, "accounts")
+        val response = client.fetch(fixture, "accounts?includeInactive=true")
 
         response.status shouldBe HttpStatusCode.OK
         ContractFixtures.verifyOrUpdate("contracts/gl/accounts-chart.json", response.bodyAsText())
