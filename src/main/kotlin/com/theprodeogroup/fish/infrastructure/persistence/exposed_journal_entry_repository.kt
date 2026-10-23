@@ -101,11 +101,13 @@ class ExposedJournalEntryRepository : JournalEntryRepository {
                     x.amount.amount.compareTo(y.amount.amount) == 0 && x.dimensions == y.dimensions
             }
 
-    override fun insertIfAbsent(entry: JournalEntry): Boolean = transaction {
+    override fun insertIfAbsent(entry: JournalEntry): Boolean = insertIfAbsent(entry, inheritedSourceReference = null)
+
+    private fun insertIfAbsent(entry: JournalEntry, inheritedSourceReference: SourceReference?): Boolean = transaction {
         val inserted = JournalEntriesTable.insertIgnore { statement ->
             statement[id] = entry.id.value
             populate(statement, entry)
-            stampProvenance(statement)
+            stampProvenance(statement, inheritedSourceReference)
         }.insertedCount > 0
         if (inserted) insertLines(entry)
         inserted
@@ -114,7 +116,10 @@ class ExposedJournalEntryRepository : JournalEntryRepository {
     override fun recordReversal(original: JournalEntry, reversal: JournalEntry): Boolean = transaction {
         // `insertIfAbsent` and `save` each open a `transaction {}`; inside this one they join it, so all of it
         // commits or none of it does.
-        if (!insertIfAbsent(reversal)) {
+        // A reversal names the same source document as the entry it reverses (standard S6: a correction links to the document it corrects),
+        // so a cash book can show the original receipt number against the Undo row. Only the document reference is inherited, never the
+        // original's actor, reason or VAT basis; a reference the request names itself wins. See stampProvenance.
+        if (!insertIfAbsent(reversal, inheritedSourceReference = original.provenance?.sourceReference)) {
             false
         } else {
             save(original)
@@ -175,14 +180,19 @@ class ExposedJournalEntryRepository : JournalEntryRepository {
      * Called only on the insert paths: an update of an existing entry (its status turning REVERSED) never touches these columns, so the
      * record stays what it was when the entry was stored (S1).
      */
-    private fun stampProvenance(statement: UpdateBuilder<*>) {
-        val provenance = AuditContexts.current()?.snapshot() ?: return
+    private fun stampProvenance(statement: UpdateBuilder<*>, inheritedSourceReference: SourceReference? = null) {
+        val fromRequest = AuditContexts.current()?.snapshot()
+        if (fromRequest == null && inheritedSourceReference == null) return
+        val provenance = fromRequest ?: EntryProvenance(null, null, null, null, null)
+        // The request's own source reference wins; a reversal that names none takes the reversed entry's (recordReversal passes it). It is a fact
+        // of the entry being reversed, not a guess, so it is stored even outside a request.
+        val sourceReference = provenance.sourceReference ?: inheritedSourceReference
         statement[JournalEntriesTable.recordedBy] = provenance.recordedBy
         statement[JournalEntriesTable.actingUser] = provenance.actingUser
         statement[JournalEntriesTable.reason] = provenance.reason
-        statement[JournalEntriesTable.sourceRefType] = provenance.sourceReference?.type?.name
-        statement[JournalEntriesTable.sourceRefId] = provenance.sourceReference?.id
-        statement[JournalEntriesTable.sourceRefNumber] = provenance.sourceReference?.number
+        statement[JournalEntriesTable.sourceRefType] = sourceReference?.type?.name
+        statement[JournalEntriesTable.sourceRefId] = sourceReference?.id
+        statement[JournalEntriesTable.sourceRefNumber] = sourceReference?.number
         statement[JournalEntriesTable.vatBasisRatePercent] = provenance.vatBasis?.ratePercent
         statement[JournalEntriesTable.vatBasisRulebookVersion] = provenance.vatBasis?.rulebookVersion
         statement[JournalEntriesTable.vatBasisEffectiveFrom] = provenance.vatBasis?.effectiveFrom
