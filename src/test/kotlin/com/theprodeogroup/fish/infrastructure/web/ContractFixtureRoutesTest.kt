@@ -17,6 +17,9 @@ import com.theprodeogroup.fish.domain.tenancy.AccessLevel
 import com.theprodeogroup.fish.application.ComputeTaxUseCase
 import com.theprodeogroup.fish.application.FakeTaxRuleRepository
 import com.theprodeogroup.fish.application.FakeTaxComputationRepository
+import com.theprodeogroup.fish.application.FakeVatReturnRepository
+import com.theprodeogroup.fish.domain.tax.TaxRule
+import com.theprodeogroup.fish.domain.tax.TaxType
 import com.theprodeogroup.fish.application.ComputeExpenseVelocityUseCase
 import com.theprodeogroup.fish.application.ComputeSalesToExpenseRatioUseCase
 import com.theprodeogroup.fish.application.ComputeMoneyVelocityUseCase
@@ -131,7 +134,7 @@ private val FIXED_CLOCK: Clock = Clock.fixed(Instant.parse("2026-10-12T09:00:00Z
  */
 class ContractFixtureRoutesTest {
 
-    private class Fixture(configureAccounts: Boolean = true, openPeriod: Boolean = true) {
+    private class Fixture(configureAccounts: Boolean = true, openPeriod: Boolean = true, jurisdiction: Jurisdiction = Jurisdiction.UK) {
         val userRepository = FakeUserRepository()
         val membershipRepository = FakeMembershipRepository()
         val companyRepository = FakeCompanyRepository()
@@ -142,6 +145,7 @@ class ContractFixtureRoutesTest {
         val addCompanyToTenantUseCase = AddCompanyToTenantUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository)
         val taxRuleRepository = FakeTaxRuleRepository()
         val taxComputationRepository = FakeTaxComputationRepository()
+        val vatReturnRepository = FakeVatReturnRepository()
         val computeTaxUseCase = ComputeTaxUseCase(periodRepository, accountRepository, journalEntryRepository, taxComputationRepository)
         val postJournalEntryUseCase = PostJournalEntryUseCase(periodRepository, accountRepository, journalEntryRepository)
         val createAccountUseCase = CreateAccountUseCase(companyRepository, accountRepository)
@@ -190,7 +194,7 @@ class ContractFixtureRoutesTest {
         val undoCashBookEntryUseCase = UndoCashBookEntryUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository)
 
         val tenant = TenantId.generate()
-        val company = Company.create(tenant, "Purse UK", ClientType.NON_PROFIT, Jurisdiction.UK, GBP, id = CompanyId(UUID.fromString("00000000-0000-4000-8000-0000000000c0")))
+        val company = Company.create(tenant, "Purse UK", ClientType.NON_PROFIT, jurisdiction, GBP, id = CompanyId(UUID.fromString("00000000-0000-4000-8000-0000000000c0")))
         val adminUser = User.create(ADMIN_EMAIL, "Founding Admin").also { userRepository.save(it) }
         val adminSetup = run {
             companyRepository.save(company)
@@ -239,6 +243,7 @@ class ContractFixtureRoutesTest {
                 computeTaxUseCase = computeTaxUseCase,
                 taxRuleRepository = taxRuleRepository,
                 taxComputationRepository = taxComputationRepository,
+                vatReturnRepository = vatReturnRepository,
                 periodRepository = periodRepository,
                 accountRepository = accountRepository,
                 journalEntryRepository = journalEntryRepository,
@@ -1130,6 +1135,85 @@ class ContractFixtureRoutesTest {
 
         response.status shouldBe HttpStatusCode.Conflict
         ContractFixtures.verifyOrUpdate("contracts/gl/vat-lines-no-control-account.json", response.bodyAsText())
+    }
+
+    // --- The VAT rate read SOP and CBB use to work out VAT themselves (GL-T-28, GL-FR-TAX-2, GL-FR-CTR-2) ---
+
+    @Test
+    fun `contract fixture - GET vat-categories for a jurisdiction with a verified schedule`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.fetch(fixture, "vat-categories?asOf=2026-10-12")
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/vat-categories.json", response.bodyAsText())
+    }
+
+    @Test
+    fun `contract fixture - GET vat-categories for a jurisdiction with no verified schedule`() = testApplication {
+        // Sierra Leone's 15% row is loaded and unverified, so no schedule is offered and a caller must offer only no VAT.
+        val fixture = Fixture(configureAccounts = false, openPeriod = false, jurisdiction = Jurisdiction.SL)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.fetch(fixture, "vat-categories?asOf=2026-10-12")
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/vat-categories-not-configured.json", response.bodyAsText())
+    }
+
+    // --- The tax answers (GL-T-2, GL-FR-CTR-2): corporate income tax and the VAT return ---
+
+    private fun pinTaxIds(text: String) = text
+        .replace(Regex("\"id\":\"[0-9a-f-]{36}\""), "\"id\":\"00000000-0000-4000-8000-0000000000f3\"")
+        .replace(Regex("\"taxRuleId\":\"[0-9a-f-]{36}\""), "\"taxRuleId\":\"00000000-0000-4000-8000-0000000000f2\"")
+        .replace(Regex("\"computedAt\":\"[^\"]+\""), "\"computedAt\":\"2026-10-31T00:00:00Z\"")
+
+    @Test
+    fun `contract fixture - POST companies tax computes corporate income tax for a period`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        fixture.taxRuleRepository.save(TaxRule.create(Jurisdiction.UK, TaxType.CORPORATE_INCOME_TAX, BigDecimal("0.25")))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postRoute(fixture, "companies/${fixture.company.id.value}/tax", """{"periodId": "${periodId.value}"}""")
+
+        response.status shouldBe HttpStatusCode.Created
+        ContractFixtures.verifyOrUpdate("contracts/gl/tax-computation.json", pinTaxIds(response.bodyAsText()))
+    }
+
+    @Test
+    fun `contract fixture - POST companies tax refused, no tax rule for the jurisdiction`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postRoute(fixture, "companies/${fixture.company.id.value}/tax", """{"periodId": "${periodId.value}"}""")
+
+        response.status shouldBe HttpStatusCode.Conflict
+        ContractFixtures.verifyOrUpdate("contracts/gl/tax-computation-no-tax-rule.json", response.bodyAsText())
+    }
+
+    @Test
+    fun `contract fixture - POST companies vat-return computes the return for a filing period`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.postRoute(
+            fixture, "companies/${fixture.company.id.value}/vat-return",
+            """{"filingPeriodStartDate": "2026-10-01", "filingPeriodEndDate": "2026-10-31", "vatControlAccountId": "${id(6).value}"}"""
+        )
+
+        response.status shouldBe HttpStatusCode.Created
+        ContractFixtures.verifyOrUpdate("contracts/gl/vat-return.json", pinTaxIds(response.bodyAsText()))
     }
 
     @Test
