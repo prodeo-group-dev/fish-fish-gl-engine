@@ -423,7 +423,11 @@ class TenantIsolationMatrixRouteTest {
             RouteDeclaration("GET", "/companies/{companyId}")
         ),
         "pop" to listOf(RouteDeclaration("GET", "/companies/{companyId}/purchase-posting-context")),
-        "im" to listOf(RouteDeclaration("GET", "/companies/{companyId}/inventory-posting-context")),
+        "im" to listOf(
+            RouteDeclaration("GET", "/companies/{companyId}/inventory-posting-context"),
+            RouteDeclaration("GET", "/companies/{companyId}"),
+            RouteDeclaration("GET", "/companies/{companyId}/accounts")
+        ),
         "hr" to listOf(RouteDeclaration("GET", "/companies/{companyId}/payroll-posting-context")),
         "payroll" to listOf(RouteDeclaration("GET", "/companies/{companyId}/payroll-posting-context"), RouteDeclaration("GET", "/companies/{companyId}")),
         "cbb" to listOf(RouteDeclaration("GET", "/companies/{companyId}/accounts"), RouteDeclaration("GET", "/companies/{companyId}/vat-categories")),
