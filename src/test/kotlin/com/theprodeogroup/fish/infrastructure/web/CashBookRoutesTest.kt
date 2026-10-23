@@ -192,8 +192,10 @@ class CashBookRoutesTest {
             Account.create(company.id, AccountType.LIABILITY, AccountClassification.CURRENT, "2150", "VAT Control Account").also { accountRepository.save(it) }
         } else null
 
-        fun installInto(app: Application) {
+        fun installInto(app: Application, allowListMode: ServiceAllowListMode = ServiceAllowListMode.ENFORCE) {
             app.fishModule(
+                serviceVerifier = TestJwtSupport.serviceVerifier("sop"),
+                serviceAllowListMode = allowListMode,
                 verifier = TestJwtSupport.verifier(),
                 eaMembershipGateway = FakeEaMembershipGateway(userRepository, membershipRepository),
                 companyRepository = companyRepository,
@@ -243,7 +245,8 @@ class CashBookRoutesTest {
                 recordCashBookEntryUseCase = recordCashBookEntryUseCase,
                 listCounterAccountsUseCase = listCounterAccountsUseCase,
                 recordCashBookTransferUseCase = recordCashBookTransferUseCase,
-                undoCashBookEntryUseCase = undoCashBookEntryUseCase
+                undoCashBookEntryUseCase = undoCashBookEntryUseCase,
+                cbbServiceVerifier = TestJwtSupport.serviceVerifier("cbb")
             )
         }
     }
@@ -270,6 +273,12 @@ class CashBookRoutesTest {
         entry.post()
         journalEntryRepository.save(entry)
         return entry
+    }
+
+    /** A call as the Cash and Bank Books service, acting for the founding admin: the ONLY caller allowed to undo (Femi, 2026-10-23: "Restrict to CBB now"). */
+    private fun io.ktor.client.request.HttpRequestBuilder.asCbb(fixture: Fixture) {
+        header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signServiceToken("cbb")}")
+        header("X-Acting-User-Id", fixture.adminUser.id.value.toString())
     }
 
     private fun io.ktor.client.request.HttpRequestBuilder.signedIn(fixture: Fixture, email: String = ADMIN_EMAIL) {
@@ -667,7 +676,7 @@ class CashBookRoutesTest {
         val recorded: CashBookEntryResponseDto =
             client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!, "125.00", extra = vatExtra("STANDARD", "25.00")), "undo-vat").body()
 
-        val undo = client.post("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/${recorded.entryId}/undo") { signedIn(fixture) }
+        val undo = client.post("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/${recorded.entryId}/undo") { asCbb(fixture) }
 
         undo.status shouldBe HttpStatusCode.Created
         undo.body<CashBookUndoResponseDto>().balanceAfter shouldBe "0.00"
@@ -859,7 +868,7 @@ class CashBookRoutesTest {
         val recorded: CashBookEntryResponseDto = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!), "to-undo-1").body()
 
         val undo = client.post("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/${recorded.entryId}/undo") {
-            signedIn(fixture)
+            asCbb(fixture)
             contentType(ContentType.Application.Json)
             setBody("""{"reason":"  Posted to the wrong book  "}""")
         }
@@ -867,7 +876,9 @@ class CashBookRoutesTest {
         undo.status shouldBe HttpStatusCode.Created
         val reversal = fixture.journalEntryRepository.findById(com.theprodeogroup.fish.domain.ledger.JournalEntryId(java.util.UUID.fromString(undo.body<CashBookUndoResponseDto>().reversalEntryId)))!!
         reversal.provenance!!.reason shouldBe "Posted to the wrong book"
-        reversal.provenance!!.recordedBy shouldBe "USER:${fixture.adminUser.id.value}"
+        // The undo is CBB's call, made for the signed-in person: GL records the service and the person it acted for.
+        reversal.provenance!!.recordedBy shouldBe "SERVICE:cbb"
+        reversal.provenance!!.actingUser shouldBe fixture.adminUser.id.value.toString()
         fixture.journalEntryRepository.findById(com.theprodeogroup.fish.domain.ledger.JournalEntryId(java.util.UUID.fromString(recorded.entryId)))!!.provenance!!.reason shouldBe null
     }
 
@@ -881,10 +892,10 @@ class CashBookRoutesTest {
         val second: CashBookEntryResponseDto = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!, "20.00"), "u2").body()
         fun path(id: String) = "/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/$id/undo"
 
-        client.post(path(first.entryId)) { signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"reason":"x"""" + "x".repeat(500) + """"}""") }.status shouldBe HttpStatusCode.BadRequest
-        client.post(path(first.entryId)) { signedIn(fixture); contentType(ContentType.Application.Json); setBody("not json") }.status shouldBe HttpStatusCode.BadRequest
-        client.post(path(first.entryId)) { signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"reason":"   "}""") }.status shouldBe HttpStatusCode.Created
-        client.post(path(second.entryId)) { signedIn(fixture) }.status shouldBe HttpStatusCode.Created
+        client.post(path(first.entryId)) { asCbb(fixture); contentType(ContentType.Application.Json); setBody("""{"reason":"x"""" + "x".repeat(500) + """"}""") }.status shouldBe HttpStatusCode.BadRequest
+        client.post(path(first.entryId)) { asCbb(fixture); contentType(ContentType.Application.Json); setBody("not json") }.status shouldBe HttpStatusCode.BadRequest
+        client.post(path(first.entryId)) { asCbb(fixture); contentType(ContentType.Application.Json); setBody("""{"reason":"   "}""") }.status shouldBe HttpStatusCode.Created
+        client.post(path(second.entryId)) { asCbb(fixture) }.status shouldBe HttpStatusCode.Created
         fixture.journalEntryRepository.findAllByAccount(cash.id).count { it.provenance?.reason != null } shouldBe 0
     }
 
@@ -1134,19 +1145,75 @@ class CashBookRoutesTest {
         val recorded: CashBookEntryResponseDto = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!), "to-undo").body()
         val undoPath = "/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/${recorded.entryId}/undo"
 
-        val undo = client.post(undoPath) { signedIn(fixture) }
+        val undo = client.post(undoPath) { asCbb(fixture) }
 
         undo.status shouldBe HttpStatusCode.Created
         val undone: CashBookUndoResponseDto = undo.body()
         undone.balanceAfter shouldBe "0.00"
         undone.undoneEntryId shouldBe recorded.entryId
-        val again = client.post(undoPath) { signedIn(fixture) }
+        val again = client.post(undoPath) { asCbb(fixture) }
         again.status shouldBe HttpStatusCode.Conflict
         again.body<ErrorResponseDto>().error shouldBe "already_undone"
         val book: CashBookResponseDto = client.get("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}?from=${TODAY.minusDays(1)}&to=$TODAY") { signedIn(fixture) }.body()
         book.rows.size shouldBe 2
         book.closingBalance shouldBe "0.00"
         book.rows.map { it.canUndo } shouldBe listOf(false, false)
+    }
+
+    // ---- Femi 2026-10-23: "CBB corrects errors in a Bank and Cash Book. Never the GL." GL's undo door is for the CBB credential only. ----
+
+    @Test
+    fun `given a person, even the founding admin, when they call GL's undo directly, then it is a 403 saying undo is done in Cash and Bank Books and the entry is not reversed`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val recorded: CashBookEntryResponseDto = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!), "person-undo").body()
+        val before = fixture.journalEntryRepository.saveCalls.size
+
+        val response = client.post("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/${recorded.entryId}/undo") { signedIn(fixture) }
+
+        response.status shouldBe HttpStatusCode.Forbidden
+        val body: ErrorResponseDto = response.body()
+        body.error shouldBe "forbidden"
+        body.detail shouldBe "Undo is done in Cash and Bank Books"
+        fixture.journalEntryRepository.saveCalls.size shouldBe before
+    }
+
+    @Test
+    fun `given any other service credential, when it calls GL's undo, then it is refused by its allow-list`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val recorded: CashBookEntryResponseDto = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!), "svc-undo").body()
+
+        for (service in listOf("sop", "pop", "im", "hr", "payroll", "tax")) {
+            val response = client.post("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/${recorded.entryId}/undo") {
+                header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signServiceToken(service)}")
+            }
+            // 401 where the service has no verifier wired in this fixture (it authenticates as nobody), 403 where it does: never a reversal.
+            (response.status.value in setOf(401, 403)) shouldBe true
+        }
+        fixture.journalEntryRepository.findAllByAccount(cash.id).size shouldBe 1
+    }
+
+    @Test
+    fun `given the endpoint allow-list is only logging, when another service calls GL's undo, then the door itself still refuses it`() = testApplication {
+        // Defense in depth: the allow-list is the first wall (ENFORCE in production once CM sets it); the handler is the second.
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this, ServiceAllowListMode.LOG) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val recorded: CashBookEntryResponseDto = client.recordEntry(fixture, cash, "receipts", entryBody(fixture.revenueAccount!!), "log-mode").body()
+
+        val response = client.post("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/${recorded.entryId}/undo") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signServiceToken("sop")}")
+        }
+
+        response.status shouldBe HttpStatusCode.Forbidden
+        response.body<ErrorResponseDto>().detail shouldBe "Undo is done in Cash and Bank Books"
+        fixture.journalEntryRepository.findAllByAccount(cash.id).size shouldBe 1
     }
 
     @Test
@@ -1158,7 +1225,7 @@ class CashBookRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/${onBank.id.value}/undo") { signedIn(fixture) }
+        val response = client.post("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/${onBank.id.value}/undo") { asCbb(fixture) }
 
         response.status shouldBe HttpStatusCode.NotFound
         fixture.journalEntryRepository.findById(onBank.id)!!.status shouldBe com.theprodeogroup.fish.domain.common.PostingStatus.POSTED
@@ -1172,7 +1239,7 @@ class CashBookRoutesTest {
         application { fixture.installInto(this) }
         val client = createClient { install(ContentNegotiation) { json() } }
 
-        val response = client.post("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/${journal.id.value}/undo") { signedIn(fixture) }
+        val response = client.post("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/entries/${journal.id.value}/undo") { asCbb(fixture) }
 
         response.status shouldBe HttpStatusCode.Conflict
         val body: CounterAccountNotAllowedDto = response.body()
