@@ -84,6 +84,9 @@ Status codes are what the code answers today; a token that appears with two stat
 | `settlement_account_required` | 400 | A settlement line named no cash or bank book. |
 | `settlement_account_not_a_cash_book` | 409 | The account the money settles into must be a cash or bank account of the Company (only refused when the rule is enforced). |
 | `use_cash_and_bank_books` | 409 | A person posted a manual journal (`POST /journal-entries`) with a line on a cash or bank book account. Those accounts are written in Cash and Bank Books (Femi, 2026-10-23); service credentials post their own journals as before, and entries already posted are unchanged. |
+| `already_reversed` | 409 | The entry was already reversed (GL's generic journal reversal, `POST /companies/{id}/journal-entries/{entryId}/reverse`); a second reversal is refused, not repeated. |
+| `not_reversible` | 409 | The entry is itself a reversal or not posted, so it cannot be reversed; a wrong reversal is corrected with a new journal. |
+| `correct_in_cash_and_bank_books` | 409 | The entry was made in a cash or bank book, so GL's journal reversal refuses it: it is corrected in Cash and Bank Books, never in the GL (Femi, 2026-10-24). Every other journal is reversed, with no reconciliation check. |
 | `suspense_account_not_configured` | 409 | A line named no account and the Company has no Suspense account (3910). |
 | `line_account_not_found` | 404 | A line's account does not exist for this Company; the detail is the id. |
 | `line_account_not_allowed` | 400 | A line's account has the wrong type, is inactive, or is a control or module-owned account; the detail is `<id>: <reason>`. |

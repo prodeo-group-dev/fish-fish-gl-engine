@@ -1340,6 +1340,14 @@ data class VatSettlementRequestDto(
 @Serializable
 data class UndoCashBookEntryRequestDto(val reason: String? = null)
 
+/** The optional body of `POST /companies/{companyId}/journal-entries/{entryId}/reverse` (GL-RF-RV1): [reason] says why the entry is reversed. */
+@Serializable
+data class ReverseEntryRequestDto(val reason: String? = null)
+
+/** `POST .../journal-entries/{entryId}/reverse`: the reversing entry that was posted and the entry it reversed. */
+@Serializable
+data class ReverseEntryResponseDto(val reversalEntryId: String, val reversedEntryId: String)
+
 /** A warning that did not stop the entry: [code] is `cash_below_zero` or `bank_overdrawn`, [balanceAfter] the book's balance after it. */
 @Serializable
 data class CashBookWarningDto(val code: String, val accountId: String, val balanceAfter: String)

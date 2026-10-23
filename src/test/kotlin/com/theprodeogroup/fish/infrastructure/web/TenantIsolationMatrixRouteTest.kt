@@ -658,6 +658,8 @@ class TenantIsolationMatrixRouteTest {
         // GL-T-30: people only until CBB's "Pay VAT" task puts it on the cbb allow-list.
         "POST /companies/{companyId}/cash-books/{accountId}/vat-settlement",
         "POST /companies/{companyId}/standard-accounts",
+        // GL-RF-RV1: the generic journal reversal is a door for people only; no service credential reverses an entry here.
+        "POST /companies/{companyId}/journal-entries/{entryId}/reverse",
 
         "GET /companies/{companyId}/journal-entries", "GET /companies/{companyId}/customers",
         "GET /companies/{companyId}/fixed-assets", "GET /companies/{companyId}/money-velocity",
