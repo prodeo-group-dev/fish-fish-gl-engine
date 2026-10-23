@@ -711,6 +711,10 @@ fun buildJwksServiceVerifierForPayroll(): JWTVerifier? {
 fun buildJwksServiceVerifierForTax(): JWTVerifier? {
     val issuer = System.getenv("FISH_JWT_ISSUER")
         ?: error("FISH_JWT_ISSUER environment variable is required - no default for a security-relevant value")
-    val serviceAudience = System.getenv("FISH_JWT_SERVICE_AUDIENCE_TAX")?.takeIf { it.isNotBlank() } ?: return null
+    val serviceAudience = taxServiceAudience() ?: return null
     return buildJwksVerifierFor(issuer, serviceAudience)
 }
+
+/** The Tax audience: `FISH_JWT_SERVICE_AUDIENCE_TAX` and no other variable; unset or blank is `null` (no credential), never an empty audience. [env] is injectable for the test. */
+internal fun taxServiceAudience(env: (String) -> String? = System::getenv): String? =
+    env("FISH_JWT_SERVICE_AUDIENCE_TAX")?.takeIf { it.isNotBlank() }

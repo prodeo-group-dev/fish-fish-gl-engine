@@ -435,6 +435,32 @@ class TenantIsolationMatrixRouteTest {
     )
 
     @Test
+    fun `the tax credential reaches only its three reads, and a token of an unknown audience reaches none of them`() = testApplication {
+        val fixture = Fixture(role = Role.OWNER_ADMIN)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val taxToken = TestJwtSupport.signServiceToken("tax")
+        val strangerToken = TestJwtSupport.signServiceToken("not-a-service-gl-knows")
+        val company = fixture.company.id.value
+
+        // A tax token on a posting route and on a read that is not one of its three: refused by the allow-list (403), not 401.
+        val record = client.request("/api/sales/record-sale") {
+            method = HttpMethod.Post
+            header(HttpHeaders.Authorization, "Bearer $taxToken")
+            contentType(ContentType.Application.Json)
+            setBody("{}")
+        }
+        record.status.value shouldBe 403
+        client.call(RouteDeclaration("GET", "/companies/{companyId}/journal-entries"), company, taxToken, null).status.value shouldBe 403
+        client.call(RouteDeclaration("GET", "/companies/{companyId}/accounts"), company, taxToken, null).status.value shouldBe 403
+
+        // A token whose audience no verifier is configured for authenticates as nobody: 401 on its three reads.
+        for (path in listOf("/companies/{companyId}", "/companies/{companyId}/reports/profit-and-loss", "/companies/{companyId}/vat-lines")) {
+            client.call(RouteDeclaration("GET", path), company, strangerToken, null).status.value shouldBe 401
+        }
+    }
+
+    @Test
     fun `every service credential is held to the claimed Tenant on the Company-in-path routes it uses`() = testApplication {
         // T15 / G2 (Femi's D5): valid for all Tenants, but a Tenant CLAIMED in X-Tenant-Id must own the Company.
         // T15 / G4: the header may be omitted; GL then derives the Tenant from the Company.
