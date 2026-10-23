@@ -428,8 +428,8 @@ class JournalEntryRoutesTest {
             header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signServiceToken("hr")}")
         }
 
-        // 403 forbidden_endpoint where the service has a verifier wired in this fixture, 401 where it has none: never a reversal.
-        (response.status.value in setOf(401, 403)) shouldBe true
+        // The hr credential is wired in this fixture: authenticated, then refused by its allow-list (this route is on no service list).
+        response.status shouldBe HttpStatusCode.Forbidden
         fixture.journalEntryRepository.findById(original.id)!!.status shouldBe com.theprodeogroup.fish.domain.common.PostingStatus.POSTED
     }
 
