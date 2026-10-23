@@ -8,8 +8,9 @@ import com.theprodeogroup.fish.domain.tenancy.CompanyId
 
 /**
  * `PUT /companies/{companyId}/accounts/{accountId}/cash-book-kind` (docs/GL_Cash_And_Bank_Books_SRS.md,
- * FR-CB02): flags an existing ASSET account as CASH or BANK, or clears the flag. This is how a Company
- * whose only account `1000` is really its bank makes it reconcilable.
+ * FR-CB02): flags an existing ASSET account that has no kind yet as CASH or BANK, or clears the flag. The owner may
+ * always stop using a book (Femi, 2026-10-23: "That cannot be stopped. It is the owner's prerogative"): stopping is never refused for a
+ * balance, unreconciled lines or existing entries, and deletes nothing. Account `1000` is always the Cash Book.
  *
  * It changes what the account can do, never a balance. An account of another Company is reported as not
  * found (never a distinct "forbidden", so this never confirms another Company's account exists).

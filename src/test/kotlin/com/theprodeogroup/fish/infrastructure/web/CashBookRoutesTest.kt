@@ -479,6 +479,32 @@ class CashBookRoutesTest {
     }
 
     @Test
+    fun `given a bank book with entries and a balance, when the owner stops using it, then it succeeds and nothing posted is touched - Femi 2026-10-23, the owner's prerogative`() = testApplication {
+        val fixture = Fixture()
+        val bank = fixture.cashBook("1016", CashBookKind.BANK)
+        val entry = fixture.post(bank, fixture.revenueAccount!!, "800.00", TODAY.minusDays(1))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val base = "/api/companies/${fixture.company.id.value}"
+
+        val stop = client.put("$base/accounts/${bank.id.value}/cash-book-kind") {
+            signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"cashBookKind":null}""")
+        }
+
+        stop.status shouldBe HttpStatusCode.OK
+        stop.body<AccountCashBookKindDto>().cashBookKind shouldBe null
+        fixture.accountRepository.findById(bank.id)!!.cashBookKind shouldBe null
+        fixture.accountRepository.findById(bank.id)!!.active shouldBe true
+        val stored = fixture.journalEntryRepository.findById(entry.id)!!
+        stored.status shouldBe com.theprodeogroup.fish.domain.common.PostingStatus.POSTED
+        stored.lines.size shouldBe 2
+        client.get("$base/cash-books") { signedIn(fixture) }.body<List<CashBookListItemDto>>().map { it.code } shouldBe emptyList()
+        val book = client.get("$base/cash-books/${bank.id.value}") { signedIn(fixture) }
+        book.status shouldBe HttpStatusCode.Conflict
+        book.body<ErrorResponseDto>().error shouldBe "not_a_cash_or_bank_account"
+    }
+
+    @Test
     fun `given a bank account, when its kind is set to BANK again, then it is a 200 and unchanged`() = testApplication {
         val fixture = Fixture()
         val bank = fixture.cashBook("1016", CashBookKind.BANK)

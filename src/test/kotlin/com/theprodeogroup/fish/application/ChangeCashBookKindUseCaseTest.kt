@@ -69,7 +69,7 @@ class ChangeCashBookKindUseCaseTest {
     }
 
     @Test
-    fun `given a BANK account, when its kind is cleared (clearing is held for Femi, this test flips if he rules to refuse it), then it is cleared`() {
+    fun `given a BANK account, when its kind is cleared (the owner may stop using a book, Femi 2026-10-23), then it is cleared`() {
         val bank = asset("1010").also { it.changeCashBookKind(CashBookKind.BANK); accounts.save(it) }
 
         useCase.execute(companyId, bank.id, null).shouldBeInstanceOf<ChangeCashBookKindUseCase.Result.Success>()
