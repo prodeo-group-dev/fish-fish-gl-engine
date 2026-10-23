@@ -279,17 +279,36 @@ class AccountTest {
     }
 
     @Test
-    fun `given an Asset account, when its kind is changed and cleared, then the kind follows`() {
+    fun `given an Asset account with no kind, when a kind is set for the first time and then cleared, then the kind follows`() {
         val account = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1000", "Cash")
 
         account.changeCashBookKind(CashBookKind.CASH).isValid shouldBe true
         account.cashBookKind shouldBe CashBookKind.CASH
 
-        account.changeCashBookKind(CashBookKind.BANK).isValid shouldBe true
-        account.cashBookKind shouldBe CashBookKind.BANK
-
         account.changeCashBookKind(null).isValid shouldBe true
         account.cashBookKind shouldBe null
+
+        account.changeCashBookKind(CashBookKind.BANK).isValid shouldBe true
+        account.cashBookKind shouldBe CashBookKind.BANK
+    }
+
+    @Test
+    fun `given a cash book, when it is changed to a bank account, or a bank account to a cash book, then it is refused and the kind is unchanged - GL-T-18, Femi 2026-10-23`() {
+        val cash = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1010", "Till", cashBookKind = CashBookKind.CASH)
+        val bank = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1020", "Bank", cashBookKind = CashBookKind.BANK)
+
+        cash.changeCashBookKind(CashBookKind.BANK).isValid shouldBe false
+        cash.cashBookKind shouldBe CashBookKind.CASH
+        bank.changeCashBookKind(CashBookKind.CASH).isValid shouldBe false
+        bank.cashBookKind shouldBe CashBookKind.BANK
+    }
+
+    @Test
+    fun `given a cash book, when the same kind is set again, then it is accepted and unchanged`() {
+        val cash = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1010", "Till", cashBookKind = CashBookKind.CASH)
+
+        cash.changeCashBookKind(CashBookKind.CASH).isValid shouldBe true
+        cash.cashBookKind shouldBe CashBookKind.CASH
     }
 
     @Test

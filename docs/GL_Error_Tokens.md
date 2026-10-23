@@ -108,7 +108,7 @@ Status codes are what the code answers today; a token that appears with two stat
 | `not_a_cash_or_bank_account` | 409 | The account is not a cash or bank book, so it has no book. |
 | `prime_cash_book_kind_fixed` | 409 | Account 1000 is the Cash Book and stays a cash account; add a bank account instead. |
 | `kind_requires_asset_account` | 409 | Only an asset account can be a cash or bank book. |
-| `reconciliations_exist` | 409 | This bank book has reconciliations, so it stays a bank account. |
+| `cash_book_kind_fixed` | 409 | A cash book stays a cash book and a bank account stays a bank account (Femi, 2026-10-23); open a new account instead. |
 | `counter_account_not_found` | 404 | The other side of a receipt or payment does not exist for this Company. |
 | `counter_account_inactive` | 409 | The other side of a receipt or payment is inactive. |
 | `counter_account_not_allowed` | 409 | The other side is a control or module-owned account; the answer carries a `useInstead` token naming the right screen (sales collection, supplier payment, inventory, fixed assets, VAT, opening figures, transfer). |
