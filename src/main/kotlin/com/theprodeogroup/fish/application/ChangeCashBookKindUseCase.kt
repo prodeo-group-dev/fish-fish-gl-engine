@@ -5,6 +5,8 @@ import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.domain.ledger.CashBookKind
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
+import java.time.Clock
+import java.time.LocalDate
 
 /**
  * `PUT /companies/{companyId}/accounts/{accountId}/cash-book-kind` (docs/GL_Cash_And_Bank_Books_SRS.md,
@@ -19,7 +21,8 @@ import com.theprodeogroup.fish.domain.tenancy.CompanyId
  * from none, and repeating the current kind, are allowed.
  */
 class ChangeCashBookKindUseCase(
-    private val accountRepository: AccountRepository
+    private val accountRepository: AccountRepository,
+    private val clock: Clock = Clock.systemUTC()
 ) {
     sealed class Result {
         data class Success(val account: Account) : Result()
@@ -44,7 +47,7 @@ class ChangeCashBookKindUseCase(
         val current = account.cashBookKind
         if (current != null && kind != null && kind != current) return Result.KindFixed
 
-        val outcome = account.changeCashBookKind(kind)
+        val outcome = account.changeCashBookKind(kind, LocalDate.now(clock))
         if (!outcome.isValid) return Result.NotAnAssetAccount(outcome.errors.firstOrNull())
         accountRepository.save(account)
         return Result.Success(account)

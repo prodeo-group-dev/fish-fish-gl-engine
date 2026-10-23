@@ -62,6 +62,8 @@ class ExposedAccountRepository : AccountRepository {
         statement[AccountsTable.active] = account.active
         statement[AccountsTable.hasPostedActivity] = account.hasPostedActivity
         statement[AccountsTable.cashBookKind] = account.cashBookKind?.name
+        statement[AccountsTable.formerCashBookKind] = account.formerCashBookKind?.name
+        statement[AccountsTable.stoppedOn] = account.stoppedOn
     }
 
     private fun ResultRow.toAccount(): Account = Account.reconstitute(
@@ -75,6 +77,8 @@ class ExposedAccountRepository : AccountRepository {
         parentId = this[AccountsTable.parentId]?.let { AccountId(it) },
         active = this[AccountsTable.active],
         hasPostedActivity = this[AccountsTable.hasPostedActivity],
-        cashBookKind = this[AccountsTable.cashBookKind]?.let { CashBookKind.valueOf(it) }
+        cashBookKind = this[AccountsTable.cashBookKind]?.let { CashBookKind.valueOf(it) },
+        formerCashBookKind = this[AccountsTable.formerCashBookKind]?.let { CashBookKind.valueOf(it) },
+        stoppedOn = this[AccountsTable.stoppedOn]
     )
 }

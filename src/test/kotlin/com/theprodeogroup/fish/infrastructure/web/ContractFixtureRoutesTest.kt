@@ -186,7 +186,7 @@ class ContractFixtureRoutesTest {
         val computeReceivablesPayablesSummaryUseCase = ComputeReceivablesPayablesSummaryUseCase(companyRepository, accountRepository, journalEntryRepository, FIXED_CLOCK)
         val cashBookReconciliations = FakeBankReconciliationRepository()
         val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository, cashBookReconciliations)
-        val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository)
+        val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, FIXED_CLOCK)
         val addMissingStandardAccountsUseCase = AddMissingStandardAccountsUseCase(companyRepository, accountRepository)
         val recordCashBookEntryUseCase = RecordCashBookEntryUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository, postJournalEntryUseCase)
         val listCounterAccountsUseCase = ListCounterAccountsUseCase(companyRepository, accountRepository)
@@ -1324,6 +1324,71 @@ class ContractFixtureRoutesTest {
 
         response.status shouldBe HttpStatusCode.OK
         ContractFixtures.verifyOrUpdate("contracts/gl/account-postings.json", pinEntryIds(response.bodyAsText()))
+    }
+
+    /**
+     * The synthetic business plus a STOPPED bank book (GL-T-18, V38): account 1050 was a bank book, carries one posting, and its owner stopped
+     * using it on 2026-10-20 (kind cleared, former kind and day remembered; nothing posted changed).
+     */
+    private fun Fixture.seedStoppedBook(): Account {
+        seed()
+        val old = Account.create(company.id, AccountType.ASSET, AccountClassification.CURRENT, "1050", "Old bank", id = id(14), cashBookKind = CashBookKind.BANK)
+        val capital = accountRepository.findById(id(7))!!
+        JournalEntry.create(
+            periodId, LocalDate.parse("2026-10-10"),
+            listOf(
+                JournalLine(old.id, Money(BigDecimal("500.00"), GBP), TransactionSide.DEBIT),
+                JournalLine(capital.id, Money(BigDecimal("500.00"), GBP), TransactionSide.CREDIT)
+            ),
+            JournalSource.MANUAL, "Synthetic"
+        ).also { it.post(); journalEntryRepository.save(it) }
+        old.changeCashBookKind(null, LocalDate.parse("2026-10-20"))
+        accountRepository.save(old)
+        return old
+    }
+
+    @Test
+    fun `contract fixture - GET accounts with a stopped book`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seedStoppedBook()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.fetch(fixture, "accounts")
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/accounts-chart.json", response.bodyAsText())
+    }
+
+    @Test
+    fun `contract fixture - GET account postings of a stopped book`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        val old = fixture.seedStoppedBook()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.fetch(fixture, "accounts/${old.id.value}/postings?from=2026-10-04&to=2026-10-31")
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/account-postings-stopped-book.json", pinEntryIds(response.bodyAsText()))
+    }
+
+    @Test
+    fun `contract fixture - PUT cash-book-kind stops a bank book`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.put("/api/companies/${fixture.company.id.value}/accounts/${id(2).value}/cash-book-kind") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody("""{"cashBookKind":null}""")
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/account-cash-book-kind-stopped.json", response.bodyAsText())
     }
 
     @Test

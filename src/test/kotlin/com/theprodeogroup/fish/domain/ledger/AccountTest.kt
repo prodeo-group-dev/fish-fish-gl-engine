@@ -2,6 +2,7 @@ package com.theprodeogroup.fish.domain.ledger
 
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import io.kotest.matchers.shouldBe
+import java.time.LocalDate
 import io.kotest.assertions.throwables.shouldThrow
 import org.junit.jupiter.api.Test
 
@@ -301,6 +302,51 @@ class AccountTest {
         cash.cashBookKind shouldBe CashBookKind.CASH
         bank.changeCashBookKind(CashBookKind.CASH).isValid shouldBe false
         bank.cashBookKind shouldBe CashBookKind.BANK
+    }
+
+    @Test
+    fun `given a bank book, when the owner stops using it, then the former kind and the day are remembered and the kind is cleared`() {
+        val bank = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1020", "Bank", cashBookKind = CashBookKind.BANK)
+
+        bank.changeCashBookKind(null, LocalDate.of(2026, 10, 23)).isValid shouldBe true
+
+        bank.cashBookKind shouldBe null
+        bank.formerCashBookKind shouldBe CashBookKind.BANK
+        bank.stoppedOn shouldBe LocalDate.of(2026, 10, 23)
+    }
+
+    @Test
+    fun `given an account that was never a book, when it is asked to stop, then nothing is remembered`() {
+        val sales = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1100", "Debtors")
+
+        sales.changeCashBookKind(null, LocalDate.of(2026, 10, 23)).isValid shouldBe true
+
+        sales.cashBookKind shouldBe null
+        sales.formerCashBookKind shouldBe null
+        sales.stoppedOn shouldBe null
+    }
+
+    @Test
+    fun `given a stopped bank book, when it is designated again, then the former kind stays and the stopped day is cleared`() {
+        val bank = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1020", "Bank", cashBookKind = CashBookKind.BANK)
+        bank.changeCashBookKind(null, LocalDate.of(2026, 10, 23))
+
+        bank.changeCashBookKind(CashBookKind.BANK, LocalDate.of(2026, 11, 1)).isValid shouldBe true
+
+        bank.cashBookKind shouldBe CashBookKind.BANK
+        bank.formerCashBookKind shouldBe CashBookKind.BANK
+        bank.stoppedOn shouldBe null
+    }
+
+    @Test
+    fun `given a stopped book, when it is stopped again, then the original stopped day is kept`() {
+        val cash = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1010", "Till", cashBookKind = CashBookKind.CASH)
+        cash.changeCashBookKind(null, LocalDate.of(2026, 10, 23))
+
+        cash.changeCashBookKind(null, LocalDate.of(2026, 12, 1)).isValid shouldBe true
+
+        cash.stoppedOn shouldBe LocalDate.of(2026, 10, 23)
+        cash.formerCashBookKind shouldBe CashBookKind.CASH
     }
 
     @Test

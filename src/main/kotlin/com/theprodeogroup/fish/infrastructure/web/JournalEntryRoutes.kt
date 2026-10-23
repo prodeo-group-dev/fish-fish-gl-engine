@@ -133,7 +133,7 @@ fun Route.journalEntryRoutes(
         }
         call.respond(
             listed.filter { typeFilter == null || it.type == typeFilter }
-                .map { AccountSummaryDto(it.id.value.toString(), it.code, it.name, it.type.name, it.classification?.name, it.cashBookKind?.name, it.expenseClassification?.name) }
+                .map { AccountSummaryDto(it.id.value.toString(), it.code, it.name, it.type.name, it.classification?.name, it.cashBookKind?.name, it.expenseClassification?.name, it.formerCashBookKind?.name, it.stoppedOn?.toString()) }
         )
     }
 

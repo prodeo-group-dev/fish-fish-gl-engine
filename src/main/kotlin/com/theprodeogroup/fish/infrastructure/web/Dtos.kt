@@ -271,7 +271,14 @@ data class AccountSummaryDto(
     /** `CASH`, `BANK` or `null` (no book). Added 2026-10-10 (docs/GL_Cash_And_Bank_Books_SRS.md, FR-CB03); additive and nullable. */
     val cashBookKind: String? = null,
     /** The expense classification name (for example `COST_OF_GOODS_SOLD`, `ADMINISTRATIVE`) or `null`; lets a picker group expense accounts. Added 2026-10-18; additive and nullable. */
-    val expenseClassification: String? = null
+    val expenseClassification: String? = null,
+    /**
+     * The kind this account had when its owner stopped using it as a cash or bank book (`CASH` or `BANK`), else `null`. With a `null`
+     * [cashBookKind] it marks a STOPPED book, as opposed to an account that was never a book. Added 2026-10-23 (V38, GL-T-18); additive and nullable.
+     */
+    val formerCashBookKind: String? = null,
+    /** The UTC day the owner stopped using this account as a book (`YYYY-MM-DD`), else `null`. Added 2026-10-23 (V38, GL-T-18). */
+    val stoppedOn: String? = null
 )
 
 /**
@@ -1283,7 +1290,14 @@ data class CashBookRangeTooLargeDto(val error: String, val detail: String, val r
 data class ChangeCashBookKindRequestDto(val cashBookKind: String? = null)
 
 @Serializable
-data class AccountCashBookKindDto(val accountId: String, val code: String, val name: String, val cashBookKind: String? = null)
+data class AccountCashBookKindDto(
+    val accountId: String,
+    val code: String,
+    val name: String,
+    val cashBookKind: String? = null,
+    val formerCashBookKind: String? = null,
+    val stoppedOn: String? = null
+)
 
 /** `POST /companies/{companyId}/standard-accounts`: what was added to an older chart, what was left alone because the code is used by a different kind of account, and whether account 1000 became the CASH book. */
 @Serializable
@@ -1467,6 +1481,10 @@ data class AccountPostingsResponseDto(
     val name: String,
     val type: String,
     val cashBookKind: String?,
+    /** `CASH` or `BANK` when the owner has stopped using this account as a book (V38, GL-T-18), else `null`; always present. */
+    val formerCashBookKind: String?,
+    /** The UTC day the book was stopped (`YYYY-MM-DD`), else `null`; always present. */
+    val stoppedOn: String?,
     val currency: String,
     val from: String,
     val to: String,
@@ -1519,6 +1537,10 @@ data class AccountPostingsAuditResponseDto(
     val name: String,
     val type: String,
     val cashBookKind: String?,
+    /** `CASH` or `BANK` when the owner has stopped using this account as a book (V38, GL-T-18), else `null`; always present. */
+    val formerCashBookKind: String?,
+    /** The UTC day the book was stopped (`YYYY-MM-DD`), else `null`; always present. */
+    val stoppedOn: String?,
     val currency: String,
     val from: String,
     val to: String,

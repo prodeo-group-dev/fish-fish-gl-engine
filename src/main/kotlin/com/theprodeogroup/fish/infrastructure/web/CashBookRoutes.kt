@@ -221,7 +221,10 @@ fun Route.cashBookRoutes(
 
         when (val result = changeCashBookKindUseCase.execute(companyId, AccountId(accountUuid), kind)) {
             is ChangeCashBookKindUseCase.Result.Success -> call.respond(
-                AccountCashBookKindDto(result.account.id.value.toString(), result.account.code, result.account.name, result.account.cashBookKind?.name)
+                AccountCashBookKindDto(
+                    result.account.id.value.toString(), result.account.code, result.account.name, result.account.cashBookKind?.name,
+                    result.account.formerCashBookKind?.name, result.account.stoppedOn?.toString()
+                )
             )
             ChangeCashBookKindUseCase.Result.AccountNotFound ->
                 call.respond(HttpStatusCode.NotFound, ErrorResponseDto("account_not_found", "Account not found"))

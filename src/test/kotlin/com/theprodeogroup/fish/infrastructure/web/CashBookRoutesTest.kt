@@ -492,7 +492,10 @@ class CashBookRoutesTest {
         }
 
         stop.status shouldBe HttpStatusCode.OK
-        stop.body<AccountCashBookKindDto>().cashBookKind shouldBe null
+        val stopped: AccountCashBookKindDto = stop.body()
+        stopped.cashBookKind shouldBe null
+        stopped.formerCashBookKind shouldBe "BANK"
+        stopped.stoppedOn shouldBe java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString()
         fixture.accountRepository.findById(bank.id)!!.cashBookKind shouldBe null
         fixture.accountRepository.findById(bank.id)!!.active shouldBe true
         val stored = fixture.journalEntryRepository.findById(entry.id)!!
@@ -502,6 +505,18 @@ class CashBookRoutesTest {
         val book = client.get("$base/cash-books/${bank.id.value}") { signedIn(fixture) }
         book.status shouldBe HttpStatusCode.Conflict
         book.body<ErrorResponseDto>().error shouldBe "not_a_cash_or_bank_account"
+
+        // CBB finds a stopped book by these two fields on the chart and the postings header, and its entries by the postings read (no kind needed).
+        val chartRow = client.get("$base/accounts") { signedIn(fixture) }.body<List<AccountSummaryDto>>().first { it.accountId == bank.id.value.toString() }
+        chartRow.cashBookKind shouldBe null
+        chartRow.formerCashBookKind shouldBe "BANK"
+        chartRow.stoppedOn shouldBe stopped.stoppedOn
+        val postings = client.get("$base/accounts/${bank.id.value}/postings?from=${TODAY.minusDays(7)}&to=$TODAY") { signedIn(fixture) }
+        postings.status shouldBe HttpStatusCode.OK
+        val header: AccountPostingsResponseDto = postings.body()
+        header.formerCashBookKind shouldBe "BANK"
+        header.stoppedOn shouldBe stopped.stoppedOn
+        header.postings.size shouldBe 1
     }
 
     @Test

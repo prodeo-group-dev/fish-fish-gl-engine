@@ -25,6 +25,8 @@ object AccountsTable : Table("accounts") {
     val active = bool("active")
     val hasPostedActivity = bool("has_posted_activity")
     val cashBookKind = varchar("cash_book_kind", 10).nullable()
+    val formerCashBookKind = varchar("former_cash_book_kind", 10).nullable()
+    val stoppedOn = date("stopped_on").nullable()
 
     override val primaryKey = PrimaryKey(id)
 }
