@@ -48,6 +48,10 @@ object ServiceEndpointAllowList {
             "POST /purchasing/record-credit-note"
         ),
         "im" to setOf(
+            // The Company read (2026-10-23): IM's item-create currency guard reads the Company's currency here (without a listing every item create is a 503).
+            "GET /companies/{companyId}",
+            // The account list (2026-10-23): IM's lookupAccount validates an item's default expense or revenue account (live since IM :38; unlisted, it was 403 forbidden_endpoint).
+            "GET /companies/{companyId}/accounts",
             "GET /companies/{companyId}/inventory-posting-context",
             "POST /inventory/record-receipt",
             "POST /inventory/record-issue"
