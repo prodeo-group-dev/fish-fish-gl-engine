@@ -46,6 +46,8 @@ class ChangeCashBookKindUseCase(
         }
         val current = account.cashBookKind
         if (current != null && kind != null && kind != current) return Result.KindFixed
+        val former = account.formerCashBookKind
+        if (current == null && former != null && kind != null && kind != former) return Result.KindFixed
 
         val outcome = account.changeCashBookKind(kind, LocalDate.now(clock))
         if (!outcome.isValid) return Result.NotAnAssetAccount(outcome.errors.firstOrNull())

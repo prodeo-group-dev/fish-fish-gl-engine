@@ -148,6 +148,12 @@ class Account private constructor(
         if (current != null && newKind != null && newKind != current) {
             return ValidationResult.failure("A cash book stays a cash book and a bank account stays a bank account (this is $current)")
         }
+        // Stopping use does not unlock a change either (Femi, 2026-10-23: "Once set up as a bank account, it is a bank account"): a stopped
+        // book may only be designated again as the kind it had.
+        val former = formerCashBookKind
+        if (current == null && former != null && newKind != null && newKind != former) {
+            return ValidationResult.failure("This was a $former account and stays one; open a new account for the other kind")
+        }
         if (newKind == null && current != null) {
             // Stopping use of a book (Femi, 2026-10-23: the owner's prerogative). Remember what it was and when; touch nothing posted.
             formerCashBookKind = current

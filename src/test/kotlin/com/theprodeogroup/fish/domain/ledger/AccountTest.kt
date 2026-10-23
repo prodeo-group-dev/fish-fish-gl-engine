@@ -289,8 +289,8 @@ class AccountTest {
         account.changeCashBookKind(null).isValid shouldBe true
         account.cashBookKind shouldBe null
 
-        account.changeCashBookKind(CashBookKind.BANK).isValid shouldBe true
-        account.cashBookKind shouldBe CashBookKind.BANK
+        account.changeCashBookKind(CashBookKind.CASH).isValid shouldBe true
+        account.cashBookKind shouldBe CashBookKind.CASH
     }
 
     @Test
@@ -336,6 +336,23 @@ class AccountTest {
         bank.cashBookKind shouldBe CashBookKind.BANK
         bank.formerCashBookKind shouldBe CashBookKind.BANK
         bank.stoppedOn shouldBe null
+    }
+
+    @Test
+    fun `given a stopped cash book or a stopped bank account, when it is designated as the OTHER kind, then it is refused - it cannot be changed from its primary use, Femi 2026-10-23`() {
+        val cash = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1010", "Till", cashBookKind = CashBookKind.CASH)
+        val bank = Account.create(CompanyId.generate(), AccountType.ASSET, AccountClassification.CURRENT, "1020", "Bank", cashBookKind = CashBookKind.BANK)
+        cash.changeCashBookKind(null, LocalDate.of(2026, 10, 23))
+        bank.changeCashBookKind(null, LocalDate.of(2026, 10, 23))
+
+        cash.changeCashBookKind(CashBookKind.BANK).isValid shouldBe false
+        bank.changeCashBookKind(CashBookKind.CASH).isValid shouldBe false
+
+        cash.cashBookKind shouldBe null
+        cash.formerCashBookKind shouldBe CashBookKind.CASH
+        cash.stoppedOn shouldBe LocalDate.of(2026, 10, 23)
+        bank.cashBookKind shouldBe null
+        bank.formerCashBookKind shouldBe CashBookKind.BANK
     }
 
     @Test

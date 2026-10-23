@@ -520,6 +520,26 @@ class CashBookRoutesTest {
     }
 
     @Test
+    fun `given a bank book that was stopped, when it is set as a cash book, then it is 409 cash_book_kind_fixed, and when it is set as a bank account again it is a book again - Femi 2026-10-23`() = testApplication {
+        val fixture = Fixture()
+        val bank = fixture.cashBook("1016", CashBookKind.BANK)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val url = "/api/companies/${fixture.company.id.value}/accounts/${bank.id.value}/cash-book-kind"
+        client.put(url) { signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"cashBookKind":null}""") }.status shouldBe HttpStatusCode.OK
+
+        val toCash = client.put(url) { signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"cashBookKind":"CASH"}""") }
+        toCash.status shouldBe HttpStatusCode.Conflict
+        toCash.body<ErrorResponseDto>().error shouldBe "cash_book_kind_fixed"
+        fixture.accountRepository.findById(bank.id)!!.cashBookKind shouldBe null
+
+        val toBank = client.put(url) { signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"cashBookKind":"BANK"}""") }
+        toBank.status shouldBe HttpStatusCode.OK
+        toBank.body<AccountCashBookKindDto>().stoppedOn shouldBe null
+        fixture.accountRepository.findById(bank.id)!!.cashBookKind shouldBe CashBookKind.BANK
+    }
+
+    @Test
     fun `given a bank account, when its kind is set to BANK again, then it is a 200 and unchanged`() = testApplication {
         val fixture = Fixture()
         val bank = fixture.cashBook("1016", CashBookKind.BANK)

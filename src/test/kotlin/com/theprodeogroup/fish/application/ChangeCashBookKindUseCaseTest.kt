@@ -65,6 +65,21 @@ class ChangeCashBookKindUseCaseTest {
     }
 
     @Test
+    fun `given a stopped bank account, when it is flagged CASH, then it is refused as KindFixed, and when it is flagged BANK it is a book again - Femi 2026-10-23`() {
+        val bank = asset("1010").also { it.changeCashBookKind(CashBookKind.BANK); accounts.save(it) }
+        useCase.execute(companyId, bank.id, null).shouldBeInstanceOf<ChangeCashBookKindUseCase.Result.Success>()
+
+        useCase.execute(companyId, bank.id, CashBookKind.CASH) shouldBe ChangeCashBookKindUseCase.Result.KindFixed
+        accounts.findById(bank.id)!!.cashBookKind shouldBe null
+
+        useCase.execute(companyId, bank.id, CashBookKind.BANK).shouldBeInstanceOf<ChangeCashBookKindUseCase.Result.Success>()
+        val again = accounts.findById(bank.id)!!
+        again.cashBookKind shouldBe CashBookKind.BANK
+        again.stoppedOn shouldBe null
+        again.formerCashBookKind shouldBe CashBookKind.BANK
+    }
+
+    @Test
     fun `given a bank account, when it is flagged BANK again, then it is a success and unchanged`() {
         val bank = asset("1010").also { it.changeCashBookKind(CashBookKind.BANK); accounts.save(it) }
 
