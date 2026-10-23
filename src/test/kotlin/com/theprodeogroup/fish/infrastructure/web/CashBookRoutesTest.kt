@@ -69,6 +69,7 @@ import com.theprodeogroup.fish.application.Membership
 import com.theprodeogroup.fish.domain.tenancy.Role
 import com.theprodeogroup.fish.domain.tenancy.TenantId
 import com.theprodeogroup.fish.application.User
+import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -492,7 +493,10 @@ class CashBookRoutesTest {
         }
 
         stop.status shouldBe HttpStatusCode.OK
-        stop.body<AccountCashBookKindDto>().cashBookKind shouldBe null
+        val stopped: AccountCashBookKindDto = stop.body()
+        stopped.cashBookKind shouldBe null
+        stopped.formerCashBookKind shouldBe "BANK"
+        stopped.stoppedOn shouldBe java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString()
         fixture.accountRepository.findById(bank.id)!!.cashBookKind shouldBe null
         fixture.accountRepository.findById(bank.id)!!.active shouldBe true
         val stored = fixture.journalEntryRepository.findById(entry.id)!!
@@ -502,6 +506,69 @@ class CashBookRoutesTest {
         val book = client.get("$base/cash-books/${bank.id.value}") { signedIn(fixture) }
         book.status shouldBe HttpStatusCode.Conflict
         book.body<ErrorResponseDto>().error shouldBe "not_a_cash_or_bank_account"
+
+        // CBB finds a stopped book by these two fields on the chart and the postings header, and its entries by the postings read (no kind needed).
+        val chartRow = client.get("$base/accounts") { signedIn(fixture) }.body<List<AccountSummaryDto>>().first { it.accountId == bank.id.value.toString() }
+        chartRow.cashBookKind shouldBe null
+        chartRow.formerCashBookKind shouldBe "BANK"
+        chartRow.stoppedOn shouldBe stopped.stoppedOn
+        val postings = client.get("$base/accounts/${bank.id.value}/postings?from=${TODAY.minusDays(7)}&to=$TODAY") { signedIn(fixture) }
+        postings.status shouldBe HttpStatusCode.OK
+        val header: AccountPostingsResponseDto = postings.body()
+        header.formerCashBookKind shouldBe "BANK"
+        header.stoppedOn shouldBe stopped.stoppedOn
+        header.postings.size shouldBe 1
+    }
+
+    @Test
+    fun `given an inactive account, when the chart is read, then it is left out by default and listed with active false on includeInactive - and the postings header says active`() = testApplication {
+        val fixture = Fixture()
+        val live = fixture.cashBook("1015", CashBookKind.CASH)
+        val closed = fixture.cashBook("1016", CashBookKind.BANK)
+        fixture.post(closed, fixture.revenueAccount!!, "40.00", TODAY.minusDays(1))
+        closed.deactivate().isValid shouldBe true
+        fixture.accountRepository.save(closed)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val base = "/api/companies/${fixture.company.id.value}"
+
+        val byDefault: List<AccountSummaryDto> = client.get("$base/accounts") { signedIn(fixture) }.body()
+        byDefault.map { it.code } shouldNotContain "1016"
+        byDefault.first { it.code == "1015" }.active shouldBe true
+
+        val all: List<AccountSummaryDto> = client.get("$base/accounts?includeInactive=true") { signedIn(fixture) }.body()
+        all.first { it.code == "1016" }.active shouldBe false
+        all.first { it.code == "1015" }.active shouldBe true
+        client.get("$base/accounts?includeInactive=false") { signedIn(fixture) }.body<List<AccountSummaryDto>>().map { it.code } shouldNotContain "1016"
+
+        client.get("$base/accounts?includeInactive=maybe") { signedIn(fixture) }.status shouldBe HttpStatusCode.BadRequest
+        client.get("$base/accounts?includeInactive=true&usableFor=settlement-line") { signedIn(fixture) }.status shouldBe HttpStatusCode.BadRequest
+
+        // Reading an inactive account's postings needs no active check: the header says active=false and the posting is there.
+        val header: AccountPostingsResponseDto = client.get("$base/accounts/${closed.id.value}/postings?from=${TODAY.minusDays(7)}&to=$TODAY") { signedIn(fixture) }.body()
+        header.active shouldBe false
+        header.postings.size shouldBe 1
+        client.get("$base/accounts/${live.id.value}/postings?from=${TODAY.minusDays(7)}&to=$TODAY") { signedIn(fixture) }.body<AccountPostingsResponseDto>().active shouldBe true
+    }
+
+    @Test
+    fun `given a bank book that was stopped, when it is set as a cash book, then it is 409 cash_book_kind_fixed, and when it is set as a bank account again it is a book again - Femi 2026-10-23`() = testApplication {
+        val fixture = Fixture()
+        val bank = fixture.cashBook("1016", CashBookKind.BANK)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val url = "/api/companies/${fixture.company.id.value}/accounts/${bank.id.value}/cash-book-kind"
+        client.put(url) { signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"cashBookKind":null}""") }.status shouldBe HttpStatusCode.OK
+
+        val toCash = client.put(url) { signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"cashBookKind":"CASH"}""") }
+        toCash.status shouldBe HttpStatusCode.Conflict
+        toCash.body<ErrorResponseDto>().error shouldBe "cash_book_kind_fixed"
+        fixture.accountRepository.findById(bank.id)!!.cashBookKind shouldBe null
+
+        val toBank = client.put(url) { signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"cashBookKind":"BANK"}""") }
+        toBank.status shouldBe HttpStatusCode.OK
+        toBank.body<AccountCashBookKindDto>().stoppedOn shouldBe null
+        fixture.accountRepository.findById(bank.id)!!.cashBookKind shouldBe CashBookKind.BANK
     }
 
     @Test

@@ -3,6 +3,8 @@ package com.theprodeogroup.fish.domain.ledger
 import com.theprodeogroup.common.Money
 import com.theprodeogroup.common.ValidationResult
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 /**
  * A Chart of Accounts entry belonging to a Company (docs/DDD_Design.md
@@ -41,7 +43,9 @@ class Account private constructor(
     val name: String,
     expenseClassification: ExpenseClassification?,
     val parentId: AccountId?,
-    cashBookKind: CashBookKind? = null
+    cashBookKind: CashBookKind? = null,
+    formerCashBookKind: CashBookKind? = null,
+    stoppedOn: LocalDate? = null
 ) {
     /**
      * How an Expense account is grouped in the trading P&L (cost of sales,
@@ -58,6 +62,18 @@ class Account private constructor(
      * switches between cash and bank afterwards (GL-T-18). It changes what the account can DO, never a balance.
      */
     var cashBookKind: CashBookKind? = cashBookKind
+        private set
+
+    /**
+     * The kind this account had when its owner last stopped using it as a book (V38, GL-T-18); `null` for an account that was never
+     * stopped. Never cleared once set. It is what tells Cash and Bank Books a STOPPED book from an account that was never a book, so a
+     * final balance can still be reconciled on the statement date.
+     */
+    var formerCashBookKind: CashBookKind? = formerCashBookKind
+        private set
+
+    /** The UTC day the owner last stopped using this account as a book; `null` while it is a book again, or if it was never stopped. */
+    var stoppedOn: LocalDate? = stoppedOn
         private set
 
     var active: Boolean = true
@@ -124,13 +140,26 @@ class Account private constructor(
      * never become a bank account, nor a bank account a cash book. The kind is set from `null` once, or repeated unchanged; any switch
      * to the other kind is refused here, as the second wall behind the use case.
      */
-    fun changeCashBookKind(newKind: CashBookKind?): ValidationResult {
+    fun changeCashBookKind(newKind: CashBookKind?, on: LocalDate = LocalDate.now(ZoneOffset.UTC)): ValidationResult {
         if (newKind != null && type != AccountType.ASSET) {
             return ValidationResult.failure("Only an ASSET account can be a cash or bank account (this is $type)")
         }
         val current = cashBookKind
         if (current != null && newKind != null && newKind != current) {
             return ValidationResult.failure("A cash book stays a cash book and a bank account stays a bank account (this is $current)")
+        }
+        // Stopping use does not unlock a change either (Femi, 2026-10-23: "Once set up as a bank account, it is a bank account"): a stopped
+        // book may only be designated again as the kind it had.
+        val former = formerCashBookKind
+        if (current == null && former != null && newKind != null && newKind != former) {
+            return ValidationResult.failure("This was a $former account and stays one; open a new account for the other kind")
+        }
+        if (newKind == null && current != null) {
+            // Stopping use of a book (Femi, 2026-10-23: the owner's prerogative). Remember what it was and when; touch nothing posted.
+            formerCashBookKind = current
+            stoppedOn = on
+        } else if (newKind != null) {
+            stoppedOn = null
         }
         cashBookKind = newKind
         return ValidationResult.success()
@@ -192,9 +221,11 @@ class Account private constructor(
             parentId: AccountId?,
             active: Boolean,
             hasPostedActivity: Boolean,
-            cashBookKind: CashBookKind? = null
+            cashBookKind: CashBookKind? = null,
+            formerCashBookKind: CashBookKind? = null,
+            stoppedOn: LocalDate? = null
         ): Account {
-            val account = Account(id, companyId, type, classification, code, name, expenseClassification, parentId, cashBookKind)
+            val account = Account(id, companyId, type, classification, code, name, expenseClassification, parentId, cashBookKind, formerCashBookKind, stoppedOn)
             account.active = active
             account.hasPostedActivity = hasPostedActivity
             return account

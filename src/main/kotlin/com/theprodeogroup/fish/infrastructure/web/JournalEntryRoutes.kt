@@ -124,7 +124,21 @@ fun Route.journalEntryRoutes(
             }
         }
 
-        val active = accountRepository.findAllByCompany(companyId).filter { it.active }
+        // `?includeInactive=true` (2026-10-23, GL-T-18 / the owner's account life span): also lists accounts the owner has made inactive, each
+        // marked `active: false`, so Cash and Bank Books can still reach a stopped book for its final reconciliation. Default unchanged.
+        val includeInactive = when (val raw = call.request.queryParameters["includeInactive"]) {
+            null, "false" -> false
+            "true" -> true
+            else -> {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "includeInactive, if sent, must be true or false"))
+                return@get
+            }
+        }
+        if (includeInactive && usableFor != null) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponseDto("bad_request", "includeInactive cannot be combined with usableFor: an inactive account is never usable for a line"))
+            return@get
+        }
+        val active = accountRepository.findAllByCompany(companyId).filter { includeInactive || it.active }
         val listed = if (usableFor == null) {
             active.sortedBy { it.code }
         } else {
@@ -133,7 +147,7 @@ fun Route.journalEntryRoutes(
         }
         call.respond(
             listed.filter { typeFilter == null || it.type == typeFilter }
-                .map { AccountSummaryDto(it.id.value.toString(), it.code, it.name, it.type.name, it.classification?.name, it.cashBookKind?.name, it.expenseClassification?.name) }
+                .map { AccountSummaryDto(it.id.value.toString(), it.code, it.name, it.type.name, it.classification?.name, it.cashBookKind?.name, it.expenseClassification?.name, it.formerCashBookKind?.name, it.stoppedOn?.toString(), it.active) }
         )
     }
 

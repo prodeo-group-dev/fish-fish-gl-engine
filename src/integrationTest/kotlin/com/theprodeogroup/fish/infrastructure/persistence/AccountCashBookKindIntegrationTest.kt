@@ -14,6 +14,7 @@ import org.jetbrains.exposed.sql.transactions.transaction
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.time.LocalDate
 import java.util.Currency
 
 /**
@@ -80,6 +81,44 @@ class AccountCashBookKindIntegrationTest {
         accountRepository.save(account)
 
         accountRepository.findById(account.id)!!.cashBookKind shouldBe CashBookKind.CASH
+    }
+
+    @Test
+    fun `given a bank book, when it is stopped and saved and later designated again, then the former kind and the stopped day load back - V38, GL-T-18`() {
+        val companyId = newCompany()
+        val account = Account.create(companyId, AccountType.ASSET, AccountClassification.CURRENT, "1020", "Bank", cashBookKind = CashBookKind.BANK)
+        accountRepository.save(account)
+
+        account.changeCashBookKind(null, LocalDate.of(2026, 10, 23))
+        accountRepository.save(account)
+        val stopped = accountRepository.findById(account.id)!!
+        stopped.cashBookKind shouldBe null
+        stopped.formerCashBookKind shouldBe CashBookKind.BANK
+        stopped.stoppedOn shouldBe LocalDate.of(2026, 10, 23)
+
+        account.changeCashBookKind(CashBookKind.BANK, LocalDate.of(2026, 11, 1))
+        accountRepository.save(account)
+        val again = accountRepository.findById(account.id)!!
+        again.cashBookKind shouldBe CashBookKind.BANK
+        again.formerCashBookKind shouldBe CashBookKind.BANK
+        again.stoppedOn shouldBe null
+    }
+
+    @Test
+    fun `given the V38 columns, when the database is asked for a stopped day on a book that is still active or has no former kind, or a former kind on a non-asset, then the CHECK constraints refuse`() {
+        val companyId = newCompany()
+        val bank = Account.create(companyId, AccountType.ASSET, AccountClassification.CURRENT, "1020", "Bank", cashBookKind = CashBookKind.BANK)
+        val plain = Account.create(companyId, AccountType.ASSET, AccountClassification.CURRENT, "1100", "Debtors")
+        val sales = Account.create(companyId, AccountType.REVENUE, null, "4000", "Sales")
+        listOf(bank, plain, sales).forEach { accountRepository.save(it) }
+
+        fun refused(sql: String) = runCatching { transaction { exec(sql) } }.isFailure
+
+        refused("UPDATE accounts SET stopped_on = DATE '2026-10-23' WHERE id = '${bank.id.value}'") shouldBe true
+        refused("UPDATE accounts SET stopped_on = DATE '2026-10-23' WHERE id = '${plain.id.value}'") shouldBe true
+        refused("UPDATE accounts SET former_cash_book_kind = 'CASH' WHERE id = '${sales.id.value}'") shouldBe true
+        refused("UPDATE accounts SET former_cash_book_kind = 'WALLET' WHERE id = '${plain.id.value}'") shouldBe true
+        refused("UPDATE accounts SET former_cash_book_kind = 'BANK', stopped_on = DATE '2026-10-23' WHERE id = '${plain.id.value}'") shouldBe false
     }
 
     @Test

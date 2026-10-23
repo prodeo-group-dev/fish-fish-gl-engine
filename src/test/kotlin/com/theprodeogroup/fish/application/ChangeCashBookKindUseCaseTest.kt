@@ -8,11 +8,15 @@ import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.junit.jupiter.api.Test
+import java.time.Clock
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 class ChangeCashBookKindUseCaseTest {
 
     private val accounts = FakeAccountRepository()
-    private val useCase = ChangeCashBookKindUseCase(accounts)
+    private val today = LocalDate.of(2026, 10, 23)
+    private val useCase = ChangeCashBookKindUseCase(accounts, Clock.fixed(today.atTime(23, 30).toInstant(ZoneOffset.UTC), ZoneOffset.UTC))
     private val companyId = CompanyId.generate()
 
     private fun asset(code: String = "1010") =
@@ -61,6 +65,21 @@ class ChangeCashBookKindUseCaseTest {
     }
 
     @Test
+    fun `given a stopped bank account, when it is flagged CASH, then it is refused as KindFixed, and when it is flagged BANK it is a book again - Femi 2026-10-23`() {
+        val bank = asset("1010").also { it.changeCashBookKind(CashBookKind.BANK); accounts.save(it) }
+        useCase.execute(companyId, bank.id, null).shouldBeInstanceOf<ChangeCashBookKindUseCase.Result.Success>()
+
+        useCase.execute(companyId, bank.id, CashBookKind.CASH) shouldBe ChangeCashBookKindUseCase.Result.KindFixed
+        accounts.findById(bank.id)!!.cashBookKind shouldBe null
+
+        useCase.execute(companyId, bank.id, CashBookKind.BANK).shouldBeInstanceOf<ChangeCashBookKindUseCase.Result.Success>()
+        val again = accounts.findById(bank.id)!!
+        again.cashBookKind shouldBe CashBookKind.BANK
+        again.stoppedOn shouldBe null
+        again.formerCashBookKind shouldBe CashBookKind.BANK
+    }
+
+    @Test
     fun `given a bank account, when it is flagged BANK again, then it is a success and unchanged`() {
         val bank = asset("1010").also { it.changeCashBookKind(CashBookKind.BANK); accounts.save(it) }
 
@@ -91,5 +110,17 @@ class ChangeCashBookKindUseCaseTest {
 
         useCase.execute(companyId, prime.id, CashBookKind.CASH).shouldBeInstanceOf<ChangeCashBookKindUseCase.Result.Success>()
         accounts.findById(prime.id)!!.cashBookKind shouldBe CashBookKind.CASH
+    }
+
+    @Test
+    fun `given a bank book, when the owner stops using it, then the account remembers it was a bank book and the UTC day it was stopped`() {
+        val bank = asset("1010").also { it.changeCashBookKind(CashBookKind.BANK); accounts.save(it) }
+
+        useCase.execute(companyId, bank.id, null).shouldBeInstanceOf<ChangeCashBookKindUseCase.Result.Success>()
+
+        val stored = accounts.findById(bank.id)!!
+        stored.cashBookKind shouldBe null
+        stored.formerCashBookKind shouldBe CashBookKind.BANK
+        stored.stoppedOn shouldBe today
     }
 }
