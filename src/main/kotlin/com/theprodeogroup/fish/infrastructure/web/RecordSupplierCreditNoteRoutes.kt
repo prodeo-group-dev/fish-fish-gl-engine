@@ -7,7 +7,7 @@ import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.purchasing.SupplierId
 import com.theprodeogroup.fish.domain.tax.VatCategory
-import com.theprodeogroup.fish.domain.tax.VatRateRepository
+import com.theprodeogroup.fish.domain.tax.RateSource
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import com.theprodeogroup.fish.infrastructure.persistence.IdempotencyKeyRepository
@@ -35,7 +35,7 @@ import java.util.Currency
 fun Route.recordSupplierCreditNoteRoutes(
     recordSupplierCreditNoteUseCase: RecordSupplierCreditNoteUseCase,
     companyRepository: CompanyRepository,
-    vatRateRepository: VatRateRepository,
+    rateSource: RateSource,
     idempotencyKeyRepository: IdempotencyKeyRepository
 ) {
     post("/purchasing/record-credit-note") {
@@ -51,7 +51,7 @@ fun Route.recordSupplierCreditNoteRoutes(
         if (!call.verifyClaimedTenant(company.tenantId)) return@post
         call.authorizeTenantForWrite(company.tenantId, companyId) ?: return@post
 
-        val vatRateSchedule = vatRateRepository.findVerifiedScheduleFor(company.jurisdiction)
+        val vatRateSchedule = rateSource.findVerifiedScheduleFor(company.jurisdiction)
         if (vatRateSchedule == null) {
             call.respond(
                 HttpStatusCode.Conflict,

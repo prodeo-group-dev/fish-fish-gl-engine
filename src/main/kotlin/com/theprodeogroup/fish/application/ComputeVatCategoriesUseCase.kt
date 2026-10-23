@@ -2,7 +2,7 @@ package com.theprodeogroup.fish.application
 
 import com.theprodeogroup.fish.domain.common.Jurisdiction
 import com.theprodeogroup.fish.domain.tax.VatCategoryRate
-import com.theprodeogroup.fish.domain.tax.VatRateRepository
+import com.theprodeogroup.fish.domain.tax.RateSource
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import java.time.LocalDate
@@ -21,7 +21,7 @@ import java.time.LocalDate
  */
 class ComputeVatCategoriesUseCase(
     private val companyRepository: CompanyRepository,
-    private val vatRateRepository: VatRateRepository
+    private val rateSource: RateSource
 ) {
     sealed class Result {
         data class Success(
@@ -35,7 +35,7 @@ class ComputeVatCategoriesUseCase(
 
     fun execute(companyId: CompanyId, asOf: LocalDate): Result {
         val company = companyRepository.findById(companyId) ?: return Result.CompanyNotFound
-        val schedule = vatRateRepository.findVerifiedScheduleFor(company.jurisdiction)
+        val schedule = rateSource.findVerifiedScheduleFor(company.jurisdiction)
         return Result.Success(
             company.jurisdiction, asOf,
             scheduleConfigured = schedule != null,
