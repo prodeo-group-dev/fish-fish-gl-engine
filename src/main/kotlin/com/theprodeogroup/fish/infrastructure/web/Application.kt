@@ -251,7 +251,7 @@ fun Application.productionModule() {
     val listCashBooksUseCase = ListCashBooksUseCase(companyRepository, accountRepository, journalEntryRepository)
     val computeCashBalanceSeriesUseCase = ComputeCashBalanceSeriesUseCase(companyRepository, accountRepository, journalEntryRepository)
     val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository, bankReconciliationRepository)
-    val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, bankReconciliationRepository)
+    val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository)
     val addMissingStandardAccountsUseCase = AddMissingStandardAccountsUseCase(companyRepository, accountRepository)
     val recordCashBookEntryUseCase = RecordCashBookEntryUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository, postJournalEntryUseCase)
     val listCounterAccountsUseCase = ListCounterAccountsUseCase(companyRepository, accountRepository)

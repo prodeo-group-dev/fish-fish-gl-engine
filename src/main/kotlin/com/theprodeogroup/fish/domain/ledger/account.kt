@@ -54,8 +54,8 @@ class Account private constructor(
 
     /**
      * Whether this ASSET account is a cash or a bank account with its own book (docs/GL_Cash_And_Bank_Books_SRS.md,
-     * FR-CB01). `null` = no book. Changeable after creation ([changeCashBookKind]): a Company whose only account
-     * `1000` is really its bank flags it BANK so it can be reconciled. It changes what the account can DO, never a balance.
+     * FR-CB01). `null` = no book. Designated once after creation if it was not set at creation ([changeCashBookKind]); it never
+     * switches between cash and bank afterwards (GL-T-18). It changes what the account can DO, never a balance.
      */
     var cashBookKind: CashBookKind? = cashBookKind
         private set
@@ -119,13 +119,18 @@ class Account private constructor(
     }
 
     /**
-     * Sets or clears (`null`) this account's cash/bank kind. Only an ASSET account may have one.
-     * Whether a BANK account may be cleared while reconciliations exist is an application-layer rule
-     * (it needs the reconciliation repository), not checked here.
+     * Sets (or clears, `null`) this account's cash/bank kind. Only an ASSET account may have one.
+     * GL-T-18 (Femi, 2026-10-23, Decisions_Log "A cash or bank book's kind never changes"): once an account is a cash book it can
+     * never become a bank account, nor a bank account a cash book. The kind is set from `null` once, or repeated unchanged; any switch
+     * to the other kind is refused here, as the second wall behind the use case.
      */
     fun changeCashBookKind(newKind: CashBookKind?): ValidationResult {
         if (newKind != null && type != AccountType.ASSET) {
             return ValidationResult.failure("Only an ASSET account can be a cash or bank account (this is $type)")
+        }
+        val current = cashBookKind
+        if (current != null && newKind != null && newKind != current) {
+            return ValidationResult.failure("A cash book stays a cash book and a bank account stays a bank account (this is $current)")
         }
         cashBookKind = newKind
         return ValidationResult.success()

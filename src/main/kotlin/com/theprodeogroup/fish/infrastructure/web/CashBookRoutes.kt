@@ -227,8 +227,11 @@ fun Route.cashBookRoutes(
                 call.respond(HttpStatusCode.NotFound, ErrorResponseDto("account_not_found", "Account not found"))
             is ChangeCashBookKindUseCase.Result.NotAnAssetAccount ->
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("kind_requires_asset_account", result.message ?: "Only an asset account can be a cash or bank account"))
-            ChangeCashBookKindUseCase.Result.ReconciliationsExist ->
-                call.respond(HttpStatusCode.Conflict, ErrorResponseDto("reconciliations_exist", "This bank account has bank reconciliations, so it stays a bank account"))
+            ChangeCashBookKindUseCase.Result.KindFixed ->
+                call.respond(
+                    HttpStatusCode.Conflict,
+                    ErrorResponseDto("cash_book_kind_fixed", "A cash book stays a cash book and a bank account stays a bank account. Open a new account instead.")
+                )
             ChangeCashBookKindUseCase.Result.PrimeCashBookKindFixed ->
                 call.respond(HttpStatusCode.Conflict, ErrorResponseDto("prime_cash_book_kind_fixed", "Account 1000 is the Cash Book and stays a cash account; add a bank account instead"))
         }

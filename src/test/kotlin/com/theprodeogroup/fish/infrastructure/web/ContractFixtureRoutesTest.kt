@@ -186,7 +186,7 @@ class ContractFixtureRoutesTest {
         val computeReceivablesPayablesSummaryUseCase = ComputeReceivablesPayablesSummaryUseCase(companyRepository, accountRepository, journalEntryRepository, FIXED_CLOCK)
         val cashBookReconciliations = FakeBankReconciliationRepository()
         val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository, cashBookReconciliations)
-        val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, cashBookReconciliations)
+        val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository)
         val addMissingStandardAccountsUseCase = AddMissingStandardAccountsUseCase(companyRepository, accountRepository)
         val recordCashBookEntryUseCase = RecordCashBookEntryUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository, postJournalEntryUseCase)
         val listCounterAccountsUseCase = ListCounterAccountsUseCase(companyRepository, accountRepository)

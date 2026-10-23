@@ -194,7 +194,7 @@ class TenantIsolationMatrixRouteTest {
         val computeCashBalanceSeriesUseCase = ComputeCashBalanceSeriesUseCase(companyRepository, accountRepository, journalEntryRepository)
         val cashBookReconciliations = FakeBankReconciliationRepository()
         val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository, cashBookReconciliations)
-        val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, cashBookReconciliations)
+        val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository)
         val addMissingStandardAccountsUseCase = AddMissingStandardAccountsUseCase(companyRepository, accountRepository)
         val recordCashBookEntryUseCase = RecordCashBookEntryUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository, postJournalEntryUseCase)
         val listCounterAccountsUseCase = ListCounterAccountsUseCase(companyRepository, accountRepository)

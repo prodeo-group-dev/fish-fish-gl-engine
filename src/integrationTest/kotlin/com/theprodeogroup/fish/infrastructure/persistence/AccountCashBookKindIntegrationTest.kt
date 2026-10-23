@@ -71,6 +71,18 @@ class AccountCashBookKindIntegrationTest {
     }
 
     @Test
+    fun `given a saved cash book, when a switch to bank is refused and the account is saved again, then it still loads as a cash book - GL-T-18`() {
+        val companyId = newCompany()
+        val account = Account.create(companyId, AccountType.ASSET, AccountClassification.CURRENT, "1010", "Till", cashBookKind = CashBookKind.CASH)
+        accountRepository.save(account)
+
+        account.changeCashBookKind(CashBookKind.BANK).isValid shouldBe false
+        accountRepository.save(account)
+
+        accountRepository.findById(account.id)!!.cashBookKind shouldBe CashBookKind.CASH
+    }
+
+    @Test
     fun `given a non-asset row, when the database is asked to store a kind on it, then the CHECK constraint refuses`() {
         val companyId = newCompany()
         val sales = Account.create(companyId, AccountType.REVENUE, null, "4000", "Sales")

@@ -156,7 +156,7 @@ class CashBookRoutesTest {
         val computeCashBalanceSeriesUseCase = ComputeCashBalanceSeriesUseCase(companyRepository, accountRepository, journalEntryRepository)
         val cashBookReconciliations = FakeBankReconciliationRepository()
         val computeCashBookUseCase = ComputeCashBookUseCase(companyRepository, accountRepository, journalEntryRepository, periodRepository, cashBookReconciliations)
-        val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository, cashBookReconciliations)
+        val changeCashBookKindUseCase = ChangeCashBookKindUseCase(accountRepository)
         val addMissingStandardAccountsUseCase = AddMissingStandardAccountsUseCase(companyRepository, accountRepository)
         val recordCashBookEntryUseCase = RecordCashBookEntryUseCase(companyRepository, accountRepository, periodRepository, journalEntryRepository, postJournalEntryUseCase)
         val listCounterAccountsUseCase = ListCounterAccountsUseCase(companyRepository, accountRepository)
@@ -452,6 +452,71 @@ class CashBookRoutesTest {
         response.status shouldBe HttpStatusCode.Conflict
         response.body<ErrorResponseDto>().error shouldBe "prime_cash_book_kind_fixed"
         fixture.accountRepository.findById(cash.id)!!.cashBookKind shouldBe CashBookKind.CASH
+    }
+
+    @Test
+    fun `given a cash book or a bank account, when its kind is changed to the other, then it is refused with cash_book_kind_fixed and unchanged - GL-T-18, Femi 2026-10-23`() = testApplication {
+        val fixture = Fixture()
+        val till = fixture.cashBook("1015", CashBookKind.CASH)
+        val bank = fixture.cashBook("1016", CashBookKind.BANK)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val base = "/api/companies/${fixture.company.id.value}/accounts"
+
+        val toBank = client.put("$base/${till.id.value}/cash-book-kind") {
+            signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"cashBookKind":"BANK"}""")
+        }
+        val toCash = client.put("$base/${bank.id.value}/cash-book-kind") {
+            signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"cashBookKind":"CASH"}""")
+        }
+
+        toBank.status shouldBe HttpStatusCode.Conflict
+        toBank.body<ErrorResponseDto>().error shouldBe "cash_book_kind_fixed"
+        toCash.status shouldBe HttpStatusCode.Conflict
+        toCash.body<ErrorResponseDto>().error shouldBe "cash_book_kind_fixed"
+        fixture.accountRepository.findById(till.id)!!.cashBookKind shouldBe CashBookKind.CASH
+        fixture.accountRepository.findById(bank.id)!!.cashBookKind shouldBe CashBookKind.BANK
+    }
+
+    @Test
+    fun `given a bank book with entries and a balance, when the owner stops using it, then it succeeds and nothing posted is touched - Femi 2026-10-23, the owner's prerogative`() = testApplication {
+        val fixture = Fixture()
+        val bank = fixture.cashBook("1016", CashBookKind.BANK)
+        val entry = fixture.post(bank, fixture.revenueAccount!!, "800.00", TODAY.minusDays(1))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val base = "/api/companies/${fixture.company.id.value}"
+
+        val stop = client.put("$base/accounts/${bank.id.value}/cash-book-kind") {
+            signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"cashBookKind":null}""")
+        }
+
+        stop.status shouldBe HttpStatusCode.OK
+        stop.body<AccountCashBookKindDto>().cashBookKind shouldBe null
+        fixture.accountRepository.findById(bank.id)!!.cashBookKind shouldBe null
+        fixture.accountRepository.findById(bank.id)!!.active shouldBe true
+        val stored = fixture.journalEntryRepository.findById(entry.id)!!
+        stored.status shouldBe com.theprodeogroup.fish.domain.common.PostingStatus.POSTED
+        stored.lines.size shouldBe 2
+        client.get("$base/cash-books") { signedIn(fixture) }.body<List<CashBookListItemDto>>().map { it.code } shouldBe emptyList()
+        val book = client.get("$base/cash-books/${bank.id.value}") { signedIn(fixture) }
+        book.status shouldBe HttpStatusCode.Conflict
+        book.body<ErrorResponseDto>().error shouldBe "not_a_cash_or_bank_account"
+    }
+
+    @Test
+    fun `given a bank account, when its kind is set to BANK again, then it is a 200 and unchanged`() = testApplication {
+        val fixture = Fixture()
+        val bank = fixture.cashBook("1016", CashBookKind.BANK)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.put("/api/companies/${fixture.company.id.value}/accounts/${bank.id.value}/cash-book-kind") {
+            signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"cashBookKind":"BANK"}""")
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        response.body<AccountCashBookKindDto>().cashBookKind shouldBe "BANK"
     }
 
     @Test
