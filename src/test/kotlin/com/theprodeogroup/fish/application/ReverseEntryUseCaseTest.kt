@@ -26,7 +26,7 @@ import java.time.LocalDate
 import java.util.Currency
 
 /**
- * GL-RF-RV1, the generic journal reversal (Femi via CM, 2026-10-24: "Refuse, point to CBB"). Every journal is reversed, always, with no
+ * GL-RF-RV1, the generic journal reversal (Femi via CM, 2026-10-23: "Refuse, point to CBB"). Every journal is reversed, always, with no
  * reconciliation check, EXCEPT an entry made in a cash or bank book, which is corrected in Cash and Bank Books, never in the GL.
  */
 class ReverseEntryUseCaseTest {
