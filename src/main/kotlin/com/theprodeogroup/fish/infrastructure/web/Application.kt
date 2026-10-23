@@ -302,6 +302,7 @@ fun Application.productionModule() {
         popServiceVerifier = serviceVerifierOrWarn("POP", "FISH_JWT_SERVICE_AUDIENCE_POP", buildJwksServiceVerifierForPop()),
         cbbServiceVerifier = serviceVerifierOrWarn("CBB", "FISH_JWT_SERVICE_AUDIENCE_CBB", buildJwksServiceVerifierForCbb()),
         payrollServiceVerifier = serviceVerifierOrWarn("PAYROLL", "FISH_JWT_SERVICE_AUDIENCE_PAYROLL", buildJwksServiceVerifierForPayroll()),
+        taxServiceVerifier = serviceVerifierOrWarn("TAX", "FISH_JWT_SERVICE_AUDIENCE_TAX", buildJwksServiceVerifierForTax()),
         serviceAllowListMode = ServiceAllowListMode.fromEnvironment(System.getenv("FISH_SERVICE_ALLOWLIST_MODE")).also {
             if (it == ServiceAllowListMode.LOG) log.warn("FISH_SERVICE_ALLOWLIST_MODE=log: service calls off a credential's endpoint allow-list are ANSWERED and logged as WOULD BLOCK, not refused")
         },
@@ -398,6 +399,7 @@ fun Application.fishModule(
     popServiceVerifier: JWTVerifier? = null,
     cbbServiceVerifier: JWTVerifier? = null,
     payrollServiceVerifier: JWTVerifier? = null,
+    taxServiceVerifier: JWTVerifier? = null,
     /** The VAT lines read; a test passes one with a fixed clock so the fixture is reproducible. Null builds the real one. */
     computeVatLinesUseCase: ComputeVatLinesUseCase? = null,
     // T15 / G3: whether a service call off its credential's endpoint allow-list is refused (the default) or only
@@ -600,7 +602,7 @@ fun Application.fishModule(
     idempotencyKeyPolicy?.let { attributes.put(IdempotencyKeyPolicyKey, it) }
     installFishJwtAuth(
         verifier, eaMembershipGateway,
-        serviceVerifier ?: DenyAllJwtVerifier, imServiceVerifier ?: DenyAllJwtVerifier, hrServiceVerifier ?: DenyAllJwtVerifier, popServiceVerifier ?: DenyAllJwtVerifier, cbbServiceVerifier ?: DenyAllJwtVerifier, payrollServiceVerifier ?: DenyAllJwtVerifier,
+        serviceVerifier ?: DenyAllJwtVerifier, imServiceVerifier ?: DenyAllJwtVerifier, hrServiceVerifier ?: DenyAllJwtVerifier, popServiceVerifier ?: DenyAllJwtVerifier, cbbServiceVerifier ?: DenyAllJwtVerifier, payrollServiceVerifier ?: DenyAllJwtVerifier, taxServiceVerifier ?: DenyAllJwtVerifier,
         serviceAllowListMode
     )
 

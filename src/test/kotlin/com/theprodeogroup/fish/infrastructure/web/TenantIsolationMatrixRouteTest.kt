@@ -275,6 +275,7 @@ class TenantIsolationMatrixRouteTest {
                 hrServiceVerifier = TestJwtSupport.serviceVerifier("hr"),
                 cbbServiceVerifier = TestJwtSupport.serviceVerifier("cbb"),
                 payrollServiceVerifier = TestJwtSupport.serviceVerifier("payroll"),
+                taxServiceVerifier = TestJwtSupport.serviceVerifier("tax"),
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
                 computeTaxUseCase = computeTaxUseCase,
                 taxRuleRepository = taxRuleRepository,
@@ -357,7 +358,9 @@ class TenantIsolationMatrixRouteTest {
     }
 
     private fun fill(template: String, companyId: UUID): String =
-        template.replace("{companyId}", companyId.toString()).replace(Regex("""\{[A-Za-z]+\}""")) { UUID.randomUUID().toString() }
+        template.replace("{companyId}", companyId.toString()).replace(Regex("""\{[A-Za-z]+\}""")) { UUID.randomUUID().toString() } +
+            // The VAT lines read needs its filing window; the Tenant checks under test come before the window is read.
+            (if (template.endsWith("/vat-lines")) "?from=2026-10-01&to=2026-12-31" else "")
 
     private suspend fun io.ktor.client.HttpClient.call(
         route: RouteDeclaration, companyId: UUID, token: String?, tenantHeader: UUID?
@@ -423,7 +426,12 @@ class TenantIsolationMatrixRouteTest {
         "im" to listOf(RouteDeclaration("GET", "/companies/{companyId}/inventory-posting-context")),
         "hr" to listOf(RouteDeclaration("GET", "/companies/{companyId}/payroll-posting-context")),
         "payroll" to listOf(RouteDeclaration("GET", "/companies/{companyId}/payroll-posting-context"), RouteDeclaration("GET", "/companies/{companyId}")),
-        "cbb" to listOf(RouteDeclaration("GET", "/companies/{companyId}/accounts"), RouteDeclaration("GET", "/companies/{companyId}/vat-categories"))
+        "cbb" to listOf(RouteDeclaration("GET", "/companies/{companyId}/accounts"), RouteDeclaration("GET", "/companies/{companyId}/vat-categories")),
+        "tax" to listOf(
+            RouteDeclaration("GET", "/companies/{companyId}"),
+            RouteDeclaration("GET", "/companies/{companyId}/reports/profit-and-loss"),
+            RouteDeclaration("GET", "/companies/{companyId}/vat-lines")
+        )
     )
 
     @Test
@@ -621,8 +629,6 @@ class TenantIsolationMatrixRouteTest {
         "PUT /companies/{companyId}/accounts/{accountId}/cash-book-kind",
         "GET /companies/{companyId}/cash-books", "GET /companies/{companyId}/cash-books/{accountId}",
         "GET /companies/{companyId}/cash-balance-series",
-        // GL-T-32: people only (the Tax module) until the tax service credential is provisioned and allow-listed.
-        "GET /companies/{companyId}/vat-lines",
         // GL-T-30: people only until CBB's "Pay VAT" task puts it on the cbb allow-list.
         "POST /companies/{companyId}/cash-books/{accountId}/vat-settlement",
         "POST /companies/{companyId}/standard-accounts",
@@ -631,7 +637,7 @@ class TenantIsolationMatrixRouteTest {
         "GET /companies/{companyId}/fixed-assets", "GET /companies/{companyId}/money-velocity",
         "GET /companies/{companyId}/expense-velocity", "GET /companies/{companyId}/sales-to-expense-ratio",
 
-        "GET /companies/{companyId}/reports/balance-sheet", "GET /companies/{companyId}/reports/profit-and-loss",
+        "GET /companies/{companyId}/reports/balance-sheet",
         "GET /companies/{companyId}/reports/cash-flow", "GET /companies/{companyId}/reports/working-capital",
         "GET /companies/{companyId}/reports/trial-balance", "GET /companies/{companyId}/reports/trading-profit-and-loss",
         "GET /companies/{companyId}/reports/fixed-asset-register",

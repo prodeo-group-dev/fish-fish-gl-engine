@@ -77,6 +77,12 @@ object ServiceEndpointAllowList {
         ),
         // The Payroll service (2026-10-19, Femi: Payroll is split out of HR): the payroll posting context, the account list and balances,
         // the pay run routes and the leave accrual routes it takes over from HR.
+        // The Tax service (2026-10-23): exactly the three reads it makes, all GET. Inert until FISH_JWT_SERVICE_AUDIENCE_TAX is set.
+        "tax" to setOf(
+            "GET /companies/{companyId}",
+            "GET /companies/{companyId}/reports/profit-and-loss",
+            "GET /companies/{companyId}/vat-lines"
+        ),
         "payroll" to setOf(
             "GET /companies/{companyId}/payroll-posting-context",
             "GET /companies/{companyId}",
