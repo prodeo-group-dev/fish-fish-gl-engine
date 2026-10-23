@@ -156,13 +156,22 @@ data class VatRateRow(
 }
 
 /**
- * The VAT rate table. Deliberately small: [save] for seeding/the future
- * operator write path, and the one read every posting and the
- * categories route make.
+ * Where a posting gets the VAT rates in force (GL-T-34, 2026-10-23): the one read every posting and the categories route
+ * make. A port, so that the source of the rates can change without touching a posting: today it is GL's own `vat_rates`
+ * table ([VatRateRepository]); once the Tax service's refresher is live it is still that table, refreshed from Tax
+ * (docs/GL_Tax_Extraction_Plan.md in fish-tax). Only VERIFIED rates are ever served, and a jurisdiction with none has no
+ * schedule, never a fallback to another jurisdiction's.
  */
-interface VatRateRepository {
-    fun save(row: VatRateRow)
-
+fun interface RateSource {
     /** The schedule for [jurisdiction] built from its VERIFIED rows only, or `null` if it has none. */
     fun findVerifiedScheduleFor(jurisdiction: Jurisdiction): VatRateSchedule?
+}
+
+/**
+ * The VAT rate table. Deliberately small: [save] for seeding/the future
+ * operator write path, and, as a [RateSource], the one read every posting
+ * and the categories route make.
+ */
+interface VatRateRepository : RateSource {
+    fun save(row: VatRateRow)
 }

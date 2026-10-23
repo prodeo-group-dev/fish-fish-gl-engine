@@ -10,7 +10,7 @@ import com.theprodeogroup.common.Money
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.sales.CustomerId
 import com.theprodeogroup.fish.domain.tax.VatCategory
-import com.theprodeogroup.fish.domain.tax.VatRateRepository
+import com.theprodeogroup.fish.domain.tax.RateSource
 import com.theprodeogroup.fish.domain.tax.VatRateSchedule
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
@@ -53,7 +53,7 @@ fun Route.recordSaleAndCollectionRoutes(
     recordSaleUseCase: RecordSaleUseCase,
     recordCollectionUseCase: RecordCollectionUseCase,
     companyRepository: CompanyRepository,
-    vatRateRepository: VatRateRepository,
+    rateSource: RateSource,
     idempotencyKeyRepository: IdempotencyKeyRepository,
     accountRepository: AccountRepository,
     cashBookPolicies: CashBookPolicies
@@ -72,7 +72,7 @@ fun Route.recordSaleAndCollectionRoutes(
 
         // The rate schedule is read only when GL computes the VAT: a request whose every line carries a finished vatAmount reads no rate.
         val callerComputesVat = request.lines.isNotEmpty() && request.lines.all { it.vatAmount != null }
-        val vatRateSchedule = if (callerComputesVat) null else vatRateRepository.findVerifiedScheduleFor(company.jurisdiction)
+        val vatRateSchedule = if (callerComputesVat) null else rateSource.findVerifiedScheduleFor(company.jurisdiction)
         if (!callerComputesVat && vatRateSchedule == null) {
             call.respond(
                 HttpStatusCode.Conflict,
