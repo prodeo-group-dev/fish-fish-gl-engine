@@ -66,6 +66,9 @@ const val FISH_JWT_SERVICE_AUTH_NAME_POP = "fish-jwt-service-pop"
 /** The Cash and Bank Books service's own service-account JWT auth configuration (2026-10-19, Femi: CBB is its own service). A separate provider, same reasoning as [FISH_JWT_SERVICE_AUTH_NAME_IM]. */
 const val FISH_JWT_SERVICE_AUTH_NAME_CBB = "fish-jwt-service-cbb"
 
+/** The Tax service's own service-account JWT auth configuration (2026-10-23, Femi: Tax is its own service; split by kind). A separate provider, same reasoning as [FISH_JWT_SERVICE_AUTH_NAME_IM]. Inert until `FISH_JWT_SERVICE_AUDIENCE_TAX` is set. */
+const val FISH_JWT_SERVICE_AUTH_NAME_TAX = "fish-jwt-service-tax"
+
 /** The Payroll service's own service-account JWT auth configuration (2026-10-19, Femi: Payroll is its own service, split out of HR). A separate provider from HR's. */
 const val FISH_JWT_SERVICE_AUTH_NAME_PAYROLL = "fish-jwt-service-payroll"
 
@@ -137,6 +140,8 @@ fun Application.installFishJwtAuth(
     // Cash and Bank Books' and the Payroll service's own verifiers (2026-10-19), same shape as the others.
     cbbServiceVerifier: JWTVerifier = DenyAllJwtVerifier,
     payrollServiceVerifier: JWTVerifier = DenyAllJwtVerifier,
+    // The Tax service's own verifier (2026-10-23), same shape as the others; deny-all until its audience is provisioned.
+    taxServiceVerifier: JWTVerifier = DenyAllJwtVerifier,
     // Whether a service call off its credential's allow-list is refused (the default) or only logged
     // (T15 / G3, [ServiceEndpointAllowList]); production reads FISH_SERVICE_ALLOWLIST_MODE.
     serviceAllowListMode: ServiceAllowListMode = ServiceAllowListMode.ENFORCE
@@ -188,6 +193,14 @@ fun Application.installFishJwtAuth(
         jwt(FISH_JWT_SERVICE_AUTH_NAME_CBB) {
             this.verifier(cbbServiceVerifier)
             validate { credential -> credential.toAuthenticatedCaller(isServiceAccount = true, service = "cbb") }
+            challenge { _, _ ->
+                call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
+            }
+        }
+
+        jwt(FISH_JWT_SERVICE_AUTH_NAME_TAX) {
+            this.verifier(taxServiceVerifier)
+            validate { credential -> credential.toAuthenticatedCaller(isServiceAccount = true, service = "tax") }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponseDto("unauthorized", "Missing or invalid bearer token"))
             }
@@ -348,7 +361,7 @@ private fun buildJwksVerifierFor(issuer: String, audience: String): JWTVerifier 
  * itself is a [Route], so every existing call site still resolves.
  */
 fun Route.fishAuthenticated(build: Route.() -> Unit): Route =
-    authenticate(FISH_JWT_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME_IM, FISH_JWT_SERVICE_AUTH_NAME_HR, FISH_JWT_SERVICE_AUTH_NAME_POP, FISH_JWT_SERVICE_AUTH_NAME_CBB, FISH_JWT_SERVICE_AUTH_NAME_PAYROLL) {
+    authenticate(FISH_JWT_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME, FISH_JWT_SERVICE_AUTH_NAME_IM, FISH_JWT_SERVICE_AUTH_NAME_HR, FISH_JWT_SERVICE_AUTH_NAME_POP, FISH_JWT_SERVICE_AUTH_NAME_CBB, FISH_JWT_SERVICE_AUTH_NAME_PAYROLL, FISH_JWT_SERVICE_AUTH_NAME_TAX) {
         // T15 / G3: after authentication and before any handler, a service credential may reach only the
         // routes on its own allow-list. People are not touched. A new route is unreachable by services
         // until it is listed.
@@ -693,3 +706,15 @@ fun buildJwksServiceVerifierForPayroll(): JWTVerifier? {
     val serviceAudience = System.getenv("FISH_JWT_SERVICE_AUDIENCE_PAYROLL")?.takeIf { it.isNotBlank() } ?: return null
     return buildJwksVerifierFor(issuer, serviceAudience)
 }
+
+/** [buildJwksServiceVerifier]'s counterpart for the Tax service (`FISH_JWT_SERVICE_AUDIENCE_TAX`, its dedicated Cognito app client). Returns `null` when unset, same reasoning: until CM provisions the audience the Tax credential does not exist. */
+fun buildJwksServiceVerifierForTax(): JWTVerifier? {
+    val issuer = System.getenv("FISH_JWT_ISSUER")
+        ?: error("FISH_JWT_ISSUER environment variable is required - no default for a security-relevant value")
+    val serviceAudience = taxServiceAudience() ?: return null
+    return buildJwksVerifierFor(issuer, serviceAudience)
+}
+
+/** The Tax audience: `FISH_JWT_SERVICE_AUDIENCE_TAX` and no other variable; unset or blank is `null` (no credential), never an empty audience. [env] is injectable for the test. */
+internal fun taxServiceAudience(env: (String) -> String? = System::getenv): String? =
+    env("FISH_JWT_SERVICE_AUDIENCE_TAX")?.takeIf { it.isNotBlank() }
