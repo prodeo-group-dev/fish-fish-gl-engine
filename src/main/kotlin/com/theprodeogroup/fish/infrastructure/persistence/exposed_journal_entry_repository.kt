@@ -19,7 +19,6 @@ import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
-import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.insertIgnore
 import org.jetbrains.exposed.sql.selectAll
@@ -43,21 +42,41 @@ import java.util.Currency
  */
 class ExposedJournalEntryRepository : JournalEntryRepository {
 
+    /**
+     * Stores a NEW entry, or records the one change a stored entry may ever undergo: POSTED to REVERSED. GL-FR-IMM-1e / GL-T-IMM-1
+     * (docs/GL_Posted_Entry_Immutability_Requirements.md). This enforces, in the repository, the
+     * adopted standard "Corrections and immutability of posted entries" (2026-10-22): S1 (a posted entry is never edited or deleted: no
+     * change to its lines, amounts, date, accounts or description) and S2 (a correction is a NEW journal; the original keeps its place and
+     * is only marked reversed). Authority: Decisions_Log 2026-10-23, "Posted entries are never deleted ..." (Femi: "Agreed to all 3"), a
+     * clarification that this is enforcement of the standard, not new policy. (S5, the reconciliation lock, is Cash and Bank Books' to enforce, not the ledger's: Femi, 2026-10-23.) For an entry that is already stored this
+     * writes the status and NOTHING else: it no longer deletes and re-inserts the lines, and it refuses (an exception: a programming error,
+     * never a user path) a save that carries any other difference or any other status move. A save that changes nothing writes nothing.
+     */
     override fun save(entry: JournalEntry): Unit = transaction {
-        val exists = JournalEntriesTable.selectAll().where { JournalEntriesTable.id eq entry.id.value }.count() > 0
-        if (exists) {
-            JournalEntriesTable.update({ JournalEntriesTable.id eq entry.id.value }) { statement ->
-                populate(statement, entry)
-            }
-        } else {
+        val stored = findById(entry.id)
+        if (stored == null) {
             JournalEntriesTable.insert { statement ->
                 statement[id] = entry.id.value
                 populate(statement, entry)
                 stampProvenance(statement)
             }
+            insertLines(entry)
+            return@transaction
         }
 
-        JournalLinesTable.deleteWhere { JournalLinesTable.journalEntryId eq entry.id.value }
+        check(sameFacts(stored, entry)) {
+            "A stored entry never changes (period, date, source, description, reversal link, lines): entry ${entry.id.value}"
+        }
+        if (stored.status == entry.status) return@transaction
+        check(stored.status == PostingStatus.POSTED && entry.status == PostingStatus.REVERSED) {
+            "A stored entry moves only from POSTED to REVERSED, not ${stored.status} to ${entry.status}: entry ${entry.id.value}"
+        }
+        JournalEntriesTable.update({ JournalEntriesTable.id eq entry.id.value }) { statement ->
+            statement[JournalEntriesTable.status] = entry.status.name
+        }
+    }
+
+    private fun insertLines(entry: JournalEntry) {
         entry.lines.forEachIndexed { index, line ->
             JournalLinesTable.insert { statement ->
                 statement[journalEntryId] = entry.id.value
@@ -71,25 +90,24 @@ class ExposedJournalEntryRepository : JournalEntryRepository {
         }
     }
 
+    /** Everything about an entry except its status: what must never differ between the stored entry and one being saved. Amounts compare by value, not by scale. */
+    private fun sameFacts(a: JournalEntry, b: JournalEntry): Boolean =
+        a.periodId == b.periodId && a.date == b.date && a.source == b.source && a.description == b.description &&
+            a.reversalOfEntryId == b.reversalOfEntryId && a.lines.size == b.lines.size &&
+            a.lines.indices.all { i ->
+                val x = a.lines[i]
+                val y = b.lines[i]
+                x.accountId == y.accountId && x.side == y.side && x.amount.currency == y.amount.currency &&
+                    x.amount.amount.compareTo(y.amount.amount) == 0 && x.dimensions == y.dimensions
+            }
+
     override fun insertIfAbsent(entry: JournalEntry): Boolean = transaction {
         val inserted = JournalEntriesTable.insertIgnore { statement ->
             statement[id] = entry.id.value
             populate(statement, entry)
             stampProvenance(statement)
         }.insertedCount > 0
-        if (inserted) {
-            entry.lines.forEachIndexed { index, line ->
-                JournalLinesTable.insert { statement ->
-                    statement[journalEntryId] = entry.id.value
-                    statement[lineIndex] = index
-                    statement[accountId] = line.accountId.value
-                    statement[amount] = line.amount.amount
-                    statement[currency] = line.amount.currency.currencyCode
-                    statement[side] = line.side.name
-                    statement[dimensions] = encodeDimensions(line.dimensions)
-                }
-            }
-        }
+        if (inserted) insertLines(entry)
         inserted
     }
 
