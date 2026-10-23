@@ -19,6 +19,7 @@ import com.theprodeogroup.fish.domain.tax.VatCategory
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
 import com.theprodeogroup.fish.domain.tenancy.CompanyRepository
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.auth.principal
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.request.header
@@ -367,6 +368,14 @@ private suspend fun ApplicationCall.handleCashBookUndo(
     val tenantId = resolveTenantForCompany(companyId, companyRepository) ?: return
     if (!verifyClaimedTenant(tenantId)) return
     authorizeTenantForWrite(tenantId, companyId) ?: return
+
+    // Femi 2026-10-23 ("Restrict to CBB now"; CBB corrects errors in a Bank and Cash Book, never the GL): this door is for the Cash and
+    // Bank Books service only. A person reaching it here would skip CBB's reconciled lock; people undo through Cash and Bank Books.
+    val caller = principal<AuthenticatedCaller>()
+    if (caller?.isServiceAccount != true || caller.service != "cbb") {
+        respond(HttpStatusCode.Forbidden, ErrorResponseDto("forbidden", "Undo is done in Cash and Bank Books"))
+        return
+    }
 
     // The body is optional (GL-T-39, standard S4): {"reason": "..."} says why. An empty body still works; a malformed one is a 400.
     val undoRequest = try {
