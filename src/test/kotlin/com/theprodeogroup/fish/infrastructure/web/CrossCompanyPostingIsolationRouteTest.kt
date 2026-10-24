@@ -203,6 +203,7 @@ class CrossCompanyPostingIsolationRouteTest {
                 popServiceVerifier = TestJwtSupport.serviceVerifier("pop"),
                 imServiceVerifier = TestJwtSupport.serviceVerifier("im"),
                 hrServiceVerifier = TestJwtSupport.serviceVerifier("hr"),
+                cbbServiceVerifier = TestJwtSupport.serviceVerifier("cbb"),
                 addCompanyToTenantUseCase = addCompanyToTenantUseCase,
                 computeTaxUseCase = computeTaxUseCase,
                 taxRuleRepository = taxRuleRepository,
@@ -367,7 +368,8 @@ class CrossCompanyPostingIsolationRouteTest {
         "sop" to listOf("record-sale", "record-collection", "record-sales-return"),
         "pop" to listOf("record-obligation", "record-payment", "record-credit-note"),
         "im" to listOf("record-receipt", "record-issue"),
-        "hr" to listOf("record-pay-run")
+        "hr" to listOf("record-pay-run"),
+        "cbb" to listOf("record-collection")
     )
 
     @Test
