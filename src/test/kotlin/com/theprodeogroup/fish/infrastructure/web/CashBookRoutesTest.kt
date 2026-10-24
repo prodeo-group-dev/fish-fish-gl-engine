@@ -701,6 +701,31 @@ class CashBookRoutesTest {
         }
     }
 
+    // ---- SOP's standing receivables tie-out (FR-SOP-AR-26, GL-T-12a): SOP reads the 1100 control balance as at a date ----
+
+    @Test
+    fun `given the sop login, when it reads the receivables control balance, then it gets the balance and currency, and a foreign Tenant or account is refused`() = testApplication {
+        val fixture = Fixture()
+        val receivables = fixture.arAccount!!
+        fixture.post(receivables, fixture.revenueAccount!!, "300.00", TODAY.minusDays(2))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val url = "/api/companies/${fixture.company.id.value}/accounts/${receivables.id.value}/balance?asOf=$TODAY"
+        val sop = TestJwtSupport.signServiceToken("sop")
+
+        val own = client.get(url) { header(HttpHeaders.Authorization, "Bearer $sop") }
+        own.status shouldBe HttpStatusCode.OK
+        val balance: AccountBalanceResponseDto = own.body()
+        balance.balance shouldBe "300.00"
+        balance.side shouldBe "DEBIT"
+        balance.currency shouldBe "GBP"
+
+        client.get(url) { header(HttpHeaders.Authorization, "Bearer $sop"); header("X-Tenant-Id", java.util.UUID.randomUUID().toString()) }.status shouldBe HttpStatusCode.Forbidden
+        client.get("/api/companies/${fixture.company.id.value}/accounts/${java.util.UUID.randomUUID()}/balance") { header(HttpHeaders.Authorization, "Bearer $sop") }.status shouldBe HttpStatusCode.NotFound
+        // Still not the rest of the account reads: postings stay CBB's.
+        client.get("/api/companies/${fixture.company.id.value}/accounts/${receivables.id.value}/postings?from=$TODAY&to=$TODAY") { header(HttpHeaders.Authorization, "Bearer $sop") }.status shouldBe HttpStatusCode.Forbidden
+    }
+
     // ---- recording money in and out (Release B) ----
 
     private fun entryBody(counter: Account, amount: String = "100.00", description: String = "Takings", date: LocalDate = TODAY, extra: String = "") =
