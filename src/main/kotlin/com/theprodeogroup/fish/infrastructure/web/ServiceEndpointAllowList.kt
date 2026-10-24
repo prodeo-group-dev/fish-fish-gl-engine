@@ -77,7 +77,10 @@ object ServiceEndpointAllowList {
             "POST /companies/{companyId}/cash-books/{accountId}/receipts",
             "POST /companies/{companyId}/cash-books/{accountId}/payments",
             "POST /companies/{companyId}/cash-books/{accountId}/transfers",
-            "POST /companies/{companyId}/cash-books/{accountId}/entries/{entryId}/undo"
+            "POST /companies/{companyId}/cash-books/{accountId}/entries/{entryId}/undo",
+            // Cash Sale SPUTO Option A (CM, 2026-10-24): CBB posts a SOP cash sale's settlement through the existing collection route, with
+            // sourceReference {COLLECTION, invoice id, CBR number}. Nothing else of the sales routes.
+            "POST /sales/record-collection"
         ),
         // The Payroll service (2026-10-19, Femi: Payroll is split out of HR): the payroll posting context, the account list and balances,
         // the pay run routes and the leave accrual routes it takes over from HR.

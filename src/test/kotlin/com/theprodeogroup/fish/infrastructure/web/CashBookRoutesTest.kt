@@ -655,6 +655,52 @@ class CashBookRoutesTest {
         fixture.accountRepository.findAllByCompany(fixture.company.id).size shouldBe before
     }
 
+    // ---- Cash Sale SPUTO Option A: CBB posts a SOP cash sale's settlement through the existing POST /sales/record-collection ----
+
+    private fun collectionBody(fixture: Fixture, settlement: Account, reference: String) =
+        """{"companyId":"${fixture.company.id.value}","periodId":"${fixture.period!!.id.value}","date":"$TODAY","settlementAccountId":"${settlement.id.value}",
+            |"arControlAccountId":"${fixture.arAccount!!.id.value}","amount":"60.00","currency":"GBP","customerId":"00000000-0000-4000-8000-0000000000c1",
+            |"sourceReference":{"type":"COLLECTION","id":"inv-7","number":"$reference"}}""".trimMargin()
+
+    @Test
+    fun `given the cbb login, when it records a collection with the receipt's sourceReference, then GL accepts it and the entry carries the reference`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.post("/api/sales/record-collection") {
+            asCbb(fixture); header("Idempotency-Key", "sale-7:settle"); contentType(ContentType.Application.Json); setBody(collectionBody(fixture, cash, "CBR-000007"))
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        val stored = fixture.journalEntryRepository.findAllByAccount(cash.id).single()
+        stored.provenance!!.sourceReference shouldBe com.theprodeogroup.fish.domain.ledger.SourceReference(
+            com.theprodeogroup.fish.domain.ledger.SourceReferenceType.COLLECTION, "inv-7", "CBR-000007"
+        )
+        stored.provenance!!.recordedBy shouldBe "SERVICE:cbb"
+        val postings: AccountPostingsAuditResponseDto = client
+            .get("/api/companies/${fixture.company.id.value}/accounts/${cash.id.value}/postings?from=${TODAY.minusDays(1)}&to=$TODAY&include=audit") { asCbb(fixture) }.body()
+        postings.postings.single().sourceReference!!.number shouldBe "CBR-000007"
+    }
+
+    @Test
+    fun `given the cbb login, then it may call the collection route and still not the other sales routes`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.post("/api/sales/record-collection") {
+            asCbb(fixture); contentType(ContentType.Application.Json); setBody(collectionBody(fixture, cash, "CBR-000008"))
+        }.status shouldBe HttpStatusCode.OK
+        for (route in listOf("/api/sales/record-sale", "/api/sales/record-sales-return", "/api/sales/create-invoice")) {
+            val refused = client.post(route) { asCbb(fixture); contentType(ContentType.Application.Json); setBody("{}") }
+            refused.status shouldBe HttpStatusCode.Forbidden
+            refused.body<ErrorResponseDto>().error shouldBe "forbidden_endpoint"
+        }
+    }
+
     // ---- recording money in and out (Release B) ----
 
     private fun entryBody(counter: Account, amount: String = "100.00", description: String = "Takings", date: LocalDate = TODAY, extra: String = "") =
