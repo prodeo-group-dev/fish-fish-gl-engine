@@ -14,6 +14,7 @@ import com.theprodeogroup.fish.domain.fixedassets.FixedAsset
 import com.theprodeogroup.fish.domain.fixedassets.FixedAssetId
 import com.theprodeogroup.fish.domain.fixedassets.FixedAssetRepository
 import com.theprodeogroup.fish.domain.ledger.AccountId
+import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.domain.ledger.PeriodId
 import com.theprodeogroup.fish.domain.ledger.PeriodRepository
 import com.theprodeogroup.common.Money
@@ -67,7 +68,9 @@ fun Route.fixedAssetRoutes(
     fixedAssetRepository: FixedAssetRepository,
     periodRepository: PeriodRepository,
     companyRepository: CompanyRepository,
-    idempotencyKeyRepository: IdempotencyKeyRepository
+    idempotencyKeyRepository: IdempotencyKeyRepository,
+    accountRepository: AccountRepository,
+    cashBookPolicies: CashBookPolicies
 ) {
     get("/companies/{companyId}/fixed-assets") {
         val companyId = call.parseFixedAssetCompanyId() ?: return@get
@@ -315,6 +318,8 @@ fun Route.fixedAssetRoutes(
         val lossOnDisposalAccountId = request.lossOnDisposalAccountId?.let { call.parseUuid(it) ?: return@post }
         val accumulatedImpairmentAccountId = request.accumulatedImpairmentAccountId?.let { call.parseUuid(it) ?: return@post }
         val date = call.parseLocalDate(request.date) ?: return@post
+        // The cash side of a disposal is a settlement account like any other: a cash or bank book (log-first, FISH_SETTLEMENT_ACCOUNT_MODE).
+        if (!call.settlementAccountAllowed(cashBookPolicies, accountRepository, period.companyId, cashAccountId, "POST /fixed-assets/{fixedAssetId}/dispose")) return@post
 
         call.respondIdempotently(
             idempotencyKeyRepository, tenantId, "dispose-fixed-asset",
@@ -350,6 +355,12 @@ fun Route.fixedAssetRoutes(
                     HttpStatusCode.NotFound to errorResponseJson("accumulated_depreciation_account_not_found", result.accountId.value.toString())
                 is DisposeFixedAssetResult.GainLossAccountNotFound ->
                     HttpStatusCode.NotFound to errorResponseJson("gain_loss_account_not_found", result.accountId.value.toString())
+                is DisposeFixedAssetResult.CashAccountNotAllowed ->
+                    HttpStatusCode.BadRequest to errorResponseJson("cash_account_not_allowed", "${result.accountId.value}: ${result.reason.name.lowercase()}")
+                is DisposeFixedAssetResult.FixedAssetAccountNotAllowed ->
+                    HttpStatusCode.BadRequest to errorResponseJson("fixed_asset_account_not_allowed", "${result.accountId.value}: ${result.reason.name.lowercase()}")
+                is DisposeFixedAssetResult.AccumulatedDepreciationAccountNotAllowed ->
+                    HttpStatusCode.BadRequest to errorResponseJson("accumulated_depreciation_account_not_allowed", "${result.accountId.value}: ${result.reason.name.lowercase()}")
                 is DisposeFixedAssetResult.GainLossAccountNotAllowed ->
                     HttpStatusCode.BadRequest to errorResponseJson("gain_loss_account_not_allowed", "${result.accountId.value}: ${result.reason.name.lowercase()}")
                 DisposeFixedAssetResult.SuspenseAccountNotConfigured ->

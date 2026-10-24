@@ -304,4 +304,115 @@ class DisposeFixedAssetUseCaseTest {
         fixedAssetRepository.findById(asset.id)!!.isDisposed shouldBe false
         journalEntryRepository.saveCalls shouldBe emptyList()
     }
+
+    // ---- FR-FA26 / FS-24 (finding F22-20, FA, 2026-10-24): the TYPE of the accounts a disposal names ----
+
+    private fun disposal(
+        asset: FixedAsset, period: Period, cash: Account, fixedAssetAccount: Account, accumulated: Account,
+        gain: Account? = null, loss: Account? = null, proceeds: String = "6000.00"
+    ) = DisposeFixedAssetUseCase.Request(
+        asset.id, Money(BigDecimal(proceeds), GBP), cash.id, fixedAssetAccount.id, accumulated.id, null, period.id, TODAY,
+        gainOnDisposalAccountId = gain?.id, lossOnDisposalAccountId = loss?.id
+    )
+
+    private fun untouched(asset: FixedAsset) {
+        fixedAssetRepository.findById(asset.id)!!.isDisposed shouldBe false
+        journalEntryRepository.findAllByCompany(companyId).size shouldBe 0
+    }
+
+    @Test
+    fun `given the Sales revenue account named as the cash account, when executed, then it is refused as the wrong type and nothing posts`() {
+        val period = openPeriod(); val asset = asset()
+        val sales = account("4000", AccountType.REVENUE)
+
+        val result = useCase.execute(disposal(asset, period, sales, account("1200", AccountType.ASSET), account("1210", AccountType.ASSET), loss = account("5510", AccountType.EXPENSE)))
+
+        result.shouldBeInstanceOf<DisposeFixedAssetResult.CashAccountNotAllowed>().let {
+            it.accountId shouldBe sales.id
+            it.reason shouldBe LineAccountResolver.Reason.WRONG_TYPE
+        }
+        untouched(asset)
+    }
+
+    @Test
+    fun `given an inactive cash account, when executed, then it is refused as inactive, and a cash book or an ordinary asset account is accepted`() {
+        val period = openPeriod(); val asset = asset()
+        val fixedAssetAccount = account("1200", AccountType.ASSET); val accumulated = account("1210", AccountType.ASSET)
+        val loss = account("5510", AccountType.EXPENSE)
+        val inactive = account("1015", AccountType.ASSET).also { it.deactivate(); accountRepository.save(it) }
+
+        useCase.execute(disposal(asset, period, inactive, fixedAssetAccount, accumulated, loss = loss))
+            .shouldBeInstanceOf<DisposeFixedAssetResult.CashAccountNotAllowed>().reason shouldBe LineAccountResolver.Reason.INACTIVE
+        untouched(asset)
+
+        val book = Account.create(companyId, AccountType.ASSET, AccountClassification.CURRENT, "1010", "Bank", cashBookKind = com.theprodeogroup.fish.domain.ledger.CashBookKind.BANK)
+            .also { accountRepository.save(it) }
+        useCase.execute(disposal(asset, period, book, fixedAssetAccount, accumulated, loss = loss)).shouldBeInstanceOf<DisposeFixedAssetResult.Success>()
+    }
+
+    @Test
+    fun `given a wrong, inactive, cash-book or control account named as the fixed-asset account, when executed, then it is refused and nothing posts`() {
+        val period = openPeriod(); val asset = asset()
+        val cash = account("1000", AccountType.ASSET); val accumulated = account("1210", AccountType.ASSET); val loss = account("5510", AccountType.EXPENSE)
+        val revenue = account("4100", AccountType.REVENUE)
+        val inactive = account("1220", AccountType.ASSET).also { it.deactivate(); accountRepository.save(it) }
+        val book = Account.create(companyId, AccountType.ASSET, AccountClassification.CURRENT, "1010", "Bank", cashBookKind = com.theprodeogroup.fish.domain.ledger.CashBookKind.BANK)
+            .also { accountRepository.save(it) }
+        val receivables = account("1100", AccountType.ASSET)
+
+        val expected = listOf(
+            revenue to LineAccountResolver.Reason.WRONG_TYPE, inactive to LineAccountResolver.Reason.INACTIVE,
+            book to LineAccountResolver.Reason.CONTROL_OR_MODULE_OWNED, receivables to LineAccountResolver.Reason.CONTROL_OR_MODULE_OWNED
+        )
+        for ((named, reason) in expected) {
+            val refused = useCase.execute(disposal(asset, period, cash, named, accumulated, loss = loss)).shouldBeInstanceOf<DisposeFixedAssetResult.FixedAssetAccountNotAllowed>()
+            refused.accountId shouldBe named.id
+            refused.reason shouldBe reason
+        }
+        untouched(asset)
+    }
+
+    @Test
+    fun `given a wrong, inactive, cash-book or control account named as the accumulated depreciation account, when executed, then it is refused and nothing posts`() {
+        val period = openPeriod(); val asset = asset()
+        val cash = account("1000", AccountType.ASSET); val fixedAssetAccount = account("1200", AccountType.ASSET); val loss = account("5510", AccountType.EXPENSE)
+        val revenue = account("4100", AccountType.REVENUE)
+        val inactive = account("1220", AccountType.ASSET).also { it.deactivate(); accountRepository.save(it) }
+        val inventory = account("1300", AccountType.ASSET)
+
+        for ((named, reason) in listOf(
+            revenue to LineAccountResolver.Reason.WRONG_TYPE, inactive to LineAccountResolver.Reason.INACTIVE,
+            inventory to LineAccountResolver.Reason.CONTROL_OR_MODULE_OWNED
+        )) {
+            val refused = useCase.execute(disposal(asset, period, cash, fixedAssetAccount, named, loss = loss)).shouldBeInstanceOf<DisposeFixedAssetResult.AccumulatedDepreciationAccountNotAllowed>()
+            refused.accountId shouldBe named.id
+            refused.reason shouldBe reason
+        }
+        untouched(asset)
+    }
+
+    @Test
+    fun `given the owner's own fixed-asset accounts, when executed, then they are accepted`() {
+        val period = openPeriod(); val asset = asset()
+        val cash = account("1000", AccountType.ASSET)
+        val vehicles = account("1230", AccountType.ASSET); val vehiclesDepreciation = account("1231", AccountType.ASSET)
+
+        useCase.execute(disposal(asset, period, cash, vehicles, vehiclesDepreciation, loss = account("5510", AccountType.EXPENSE))).shouldBeInstanceOf<DisposeFixedAssetResult.Success>()
+    }
+
+    @Test
+    fun `given a gain, when the gain account is the Sales revenue account, then it is refused, and any other income account is accepted`() {
+        val period = openPeriod(); val asset = asset()
+        val cash = account("1000", AccountType.ASSET); val fixedAssetAccount = account("1200", AccountType.ASSET); val accumulated = account("1210", AccountType.ASSET)
+        val sales = account("4000", AccountType.REVENUE)
+        val otherIncome = account("4100", AccountType.REVENUE)
+
+        val refused = useCase.execute(disposal(asset, period, cash, fixedAssetAccount, accumulated, gain = sales, proceeds = "12000.00"))
+            .shouldBeInstanceOf<DisposeFixedAssetResult.GainLossAccountNotAllowed>()
+        refused.accountId shouldBe sales.id
+        refused.reason shouldBe LineAccountResolver.Reason.SALES_REVENUE_ACCOUNT
+        untouched(asset)
+
+        useCase.execute(disposal(asset, period, cash, fixedAssetAccount, accumulated, gain = otherIncome, proceeds = "12000.00")).shouldBeInstanceOf<DisposeFixedAssetResult.Success>()
+    }
 }

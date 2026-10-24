@@ -96,4 +96,19 @@ class LineAccountResolverTest {
         resolver.resolve(co.id, LineAccountResolver.Kind.PURCHASE, receivables.id)
             .shouldBeInstanceOf<LineAccountResolver.Result.NotAllowed>().reason shouldBe LineAccountResolver.Reason.CONTROL_OR_MODULE_OWNED
     }
+
+    @Test
+    fun `given the account list for a gain on disposal, then Sales Revenue 4000 is not offered, and any other active income account is`() {
+        val co = company()
+        val sales = account(co, AccountType.REVENUE, "4000")
+        val gain = account(co, AccountType.REVENUE, "4930")
+        val other = account(co, AccountType.REVENUE, "4100")
+
+        val offered = resolver.usableAccounts(accounts.findAllByCompany(co.id), LineAccountResolver.Kind.GAIN_ON_DISPOSAL, co.clientType)
+
+        offered.map { it.id } shouldBe listOf(other.id, gain.id)
+        resolver.resolve(co.id, LineAccountResolver.Kind.GAIN_ON_DISPOSAL, sales.id)
+            .shouldBeInstanceOf<LineAccountResolver.Result.NotAllowed>().reason shouldBe LineAccountResolver.Reason.SALES_REVENUE_ACCOUNT
+        resolver.resolve(co.id, LineAccountResolver.Kind.SALE, sales.id).shouldBeInstanceOf<LineAccountResolver.Result.Resolved>()
+    }
 }

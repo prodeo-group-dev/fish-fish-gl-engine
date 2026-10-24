@@ -722,7 +722,7 @@ fun Application.fishModule(
                 fixedAssetRoutes(
                     createFixedAssetUseCase, recordFixedAssetDepreciationUseCase, assessFixedAssetImpairmentUseCase,
                     disposeFixedAssetUseCase, computeFixedAssetRegisterUseCase, fixedAssetRepository, periodRepository,
-                    companyRepository, idempotencyKeyRepository
+                    companyRepository, idempotencyKeyRepository, accountRepository, cashBookPolicies
                 )
             }
         }

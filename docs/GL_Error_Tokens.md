@@ -92,6 +92,9 @@ Status codes are what the code answers today; a token that appears with two stat
 | `line_account_not_allowed` | 400 | A line's account has the wrong type, is inactive, or is a control or module-owned account; the detail is `<id>: <reason>`. |
 | `gain_loss_account_not_found` | 404 | The gain or loss account named for a disposal does not exist. |
 | `gain_loss_account_not_allowed` | 400 | The gain account must be income and the loss account an expense. |
+| `cash_account_not_allowed` | 400 | The cash account named on a fixed-asset disposal is not an active asset account (for example the Sales account, or an inactive account); the detail names it and the reason (FR-FA26, 2026-10-24). That it is a cash or bank book is the settlement-account rule. |
+| `fixed_asset_account_not_allowed` | 400 | The fixed-asset account named on a disposal is not an active asset account, or it is a cash book or another module's control account (receivables, inventory, VAT ...); the detail names it and the reason. |
+| `accumulated_depreciation_account_not_allowed` | 400 | The accumulated depreciation account named on a disposal is refused for the same reasons as the fixed-asset account. |
 | `salaries_expense_account_not_found` | 404 | The salaries expense account named does not exist. |
 | `salaries_expense_account_not_configured` | 409 | The chart has no salaries expense account. |
 | `wages_expense_account_not_found` | 404 | The wages expense account named does not exist. |
