@@ -5,7 +5,11 @@ import com.theprodeogroup.fish.domain.common.DomainEvent
 import com.theprodeogroup.fish.domain.fixedassets.FixedAsset
 import com.theprodeogroup.fish.domain.fixedassets.FixedAssetId
 import com.theprodeogroup.fish.domain.fixedassets.FixedAssetRepository
+import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.ledger.Account
+import com.theprodeogroup.fish.domain.ledger.AccountType
+import com.theprodeogroup.fish.domain.ledger.ModuleOwnedAccounts
+import com.theprodeogroup.fish.domain.ledger.UseInstead
 import com.theprodeogroup.fish.domain.ledger.AccountId
 import com.theprodeogroup.fish.domain.ledger.AccountRepository
 import com.theprodeogroup.fish.domain.ledger.JournalEntry
@@ -36,6 +40,15 @@ sealed class DisposeFixedAssetResult {
     data class CashAccountNotFound(val accountId: AccountId) : DisposeFixedAssetResult()
     data class FixedAssetAccountNotFound(val accountId: AccountId) : DisposeFixedAssetResult()
     data class AccumulatedDepreciationAccountNotFound(val accountId: AccountId) : DisposeFixedAssetResult()
+
+    /** The cash account is not an active asset account (FR-FA26): Sales 4000 or any income, expense, liability or equity account is refused. */
+    data class CashAccountNotAllowed(val accountId: AccountId, val reason: LineAccountResolver.Reason) : DisposeFixedAssetResult()
+
+    /** The fixed-asset account is not an active asset account that is neither a cash book nor another module's control account (FR-FA26). */
+    data class FixedAssetAccountNotAllowed(val accountId: AccountId, val reason: LineAccountResolver.Reason) : DisposeFixedAssetResult()
+
+    /** The accumulated depreciation account is refused for the same reasons as the fixed-asset account (FR-FA26). */
+    data class AccumulatedDepreciationAccountNotAllowed(val accountId: AccountId, val reason: LineAccountResolver.Reason) : DisposeFixedAssetResult()
     /** The gain or loss account named is not an account of this Company. */
     data class GainLossAccountNotFound(val accountId: AccountId) : DisposeFixedAssetResult()
     /** The gain account must be income and the loss account an expense (or Suspense); inactive and control accounts are refused (see [LineAccountResolver]). */
@@ -63,7 +76,7 @@ class DisposeFixedAssetUseCase(
     private val periodRepository: PeriodRepository,
     private val accountRepository: AccountRepository,
     private val journalEntryRepository: JournalEntryRepository,
-    companyRepository: CompanyRepository? = null
+    private val companyRepository: CompanyRepository? = null
 ) {
     private val lineAccountResolver = LineAccountResolver(accountRepository, companyRepository)
 
@@ -120,6 +133,18 @@ class DisposeFixedAssetUseCase(
                 ?: return DisposeFixedAssetResult.AccumulatedImpairmentAccountNotFound(accountId)
         }
 
+        // FR-FA26 / FS-24 (finding F22-20, 2026-10-24): the TYPE of the accounts a disposal names. Validation only, nothing here is an
+        // authorization. The cash side must be an active asset account (Sales 4000 as the cash account is the finding); that it is also a cash or
+        // bank book is the settlement-account policy's rule, applied by the route (log-first, like every other settlement account).
+        // The fixed-asset and accumulated depreciation accounts must be active asset accounts that are neither a cash book nor another module's
+        // control account (receivables, inventory, VAT ...); the owner's own fixed-asset accounts pass.
+        val clientType = companyRepository?.findById(fixedAsset.companyId)?.clientType ?: ClientType.COMPANY_LIMITED
+        cashAccountRefusal(cashAccount)?.let { return DisposeFixedAssetResult.CashAccountNotAllowed(cashAccount.id, it) }
+        fixedAssetAccountRefusal(fixedAssetAccount, clientType)?.let { return DisposeFixedAssetResult.FixedAssetAccountNotAllowed(fixedAssetAccount.id, it) }
+        fixedAssetAccountRefusal(accumulatedDepreciationAccount, clientType)?.let {
+            return DisposeFixedAssetResult.AccumulatedDepreciationAccountNotAllowed(accumulatedDepreciationAccount.id, it)
+        }
+
         // The account for the difference between proceeds and carrying amount, by which side it falls on.
         val gainOrLoss = request.proceeds - fixedAsset.carryingAmount
         val gainLossAccount: Account? = when {
@@ -167,5 +192,20 @@ class DisposeFixedAssetUseCase(
         fixedAssetRepository.save(fixedAsset)
 
         return DisposeFixedAssetResult.Success(entry, fixedAsset, entry.pullDomainEvents())
+    }
+
+    private fun cashAccountRefusal(account: Account): LineAccountResolver.Reason? = when {
+        !account.active -> LineAccountResolver.Reason.INACTIVE
+        account.type != AccountType.ASSET -> LineAccountResolver.Reason.WRONG_TYPE
+        else -> null
+    }
+
+    private fun fixedAssetAccountRefusal(account: Account, clientType: ClientType): LineAccountResolver.Reason? = when {
+        !account.active -> LineAccountResolver.Reason.INACTIVE
+        account.type != AccountType.ASSET -> LineAccountResolver.Reason.WRONG_TYPE
+        account.cashBookKind != null -> LineAccountResolver.Reason.CONTROL_OR_MODULE_OWNED
+        else -> ModuleOwnedAccounts.useInstead(account, clientType)
+            ?.takeIf { it != UseInstead.FIXED_ASSETS }
+            ?.let { LineAccountResolver.Reason.CONTROL_OR_MODULE_OWNED }
     }
 }

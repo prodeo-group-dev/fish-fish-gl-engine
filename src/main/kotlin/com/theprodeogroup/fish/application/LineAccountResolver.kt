@@ -35,7 +35,12 @@ class LineAccountResolver(
 ) {
     enum class Kind { PURCHASE, SALE, GAIN_ON_DISPOSAL, LOSS_ON_DISPOSAL, PAYROLL_EXPENSE, PAYROLL_LIABILITY, SETTLEMENT }
 
-    enum class Reason { INACTIVE, WRONG_TYPE, CONTROL_OR_MODULE_OWNED, NOT_A_CASH_BOOK }
+    enum class Reason {
+        INACTIVE, WRONG_TYPE, CONTROL_OR_MODULE_OWNED, NOT_A_CASH_BOOK,
+
+        /** A gain on disposal may not be posted to the Sales revenue account (4000): the main income account is for sales (FR-FA26, 2026-10-24). */
+        SALES_REVENUE_ACCOUNT
+    }
 
     sealed class Result {
         data class Resolved(val account: Account) : Result()
@@ -74,6 +79,7 @@ class LineAccountResolver(
         }
         if (!typeAllowed) return Reason.WRONG_TYPE
         if (ModuleOwnedAccounts.useInstead(account, clientType) != null) return Reason.CONTROL_OR_MODULE_OWNED
+        if (kind == Kind.GAIN_ON_DISPOSAL && account.code == ChartOfAccountsTemplate.SALES_REVENUE_CODE) return Reason.SALES_REVENUE_ACCOUNT
         // The trade finance facility is not a payroll liability (HR, 2026-10-18); accrued leave 2200 is payroll-owned and stays usable.
         if (kind == Kind.PAYROLL_LIABILITY && account.code == ChartOfAccountsTemplate.FACILITY_LIABILITY_CODE) return Reason.CONTROL_OR_MODULE_OWNED
         return null

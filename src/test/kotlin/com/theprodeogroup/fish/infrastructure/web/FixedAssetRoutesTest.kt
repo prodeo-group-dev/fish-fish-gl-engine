@@ -683,6 +683,61 @@ class FixedAssetRoutesTest {
             )
         }
 
+    // ---- FR-FA26 / FS-24 (finding F22-20): the type of the accounts a disposal names; 400 with a token and the reason ----
+
+    private suspend fun io.ktor.client.HttpClient.disposeWith(
+        fixture: Fixture, assetId: String, cash: Account, fixedAsset: Account, accumulated: Account, extra: String = "", proceeds: String = "0.00"
+    ) = post("/api/fixed-assets/$assetId/dispose") {
+        header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(TEST_EMAIL)}")
+        header("X-Tenant-Id", fixture.tenantId.value.toString())
+        contentType(ContentType.Application.Json)
+        setBody(
+            """{"proceeds": "$proceeds", "currency": "GBP", "cashAccountId": "${cash.id.value}", "fixedAssetAccountId": "${fixedAsset.id.value}",
+                |"accumulatedDepreciationAccountId": "${accumulated.id.value}", "periodId": "${fixture.period.id.value}", "date": "$TODAY"$extra}""".trimMargin()
+        )
+    }
+
+    @Test
+    fun `given the Sales account named as the cash account, or a revenue account as the fixed-asset or accumulated depreciation account, when disposed, then it is 400 with the token and nothing posts`() = testApplication {
+        val fixture = Fixture()
+        val sales = Account.create(fixture.company.id, AccountType.REVENUE, null, "4000", "Sales Revenue").also { fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val assetId = client.createAsset(fixture)
+        val before = fixture.journalEntryRepository.findAllByCompany(fixture.company.id).size
+
+        val cash = client.disposeWith(fixture, assetId, sales, fixture.fixedAssetAccount, fixture.accumulatedDepreciationAccount)
+        val fixedAsset = client.disposeWith(fixture, assetId, fixture.cashAccount, sales, fixture.accumulatedDepreciationAccount)
+        val accumulated = client.disposeWith(fixture, assetId, fixture.cashAccount, fixture.fixedAssetAccount, sales)
+
+        cash.status shouldBe HttpStatusCode.BadRequest
+        cash.body<ErrorResponseDto>().let { it.error shouldBe "cash_account_not_allowed"; it.detail shouldBe "${sales.id.value}: wrong_type" }
+        fixedAsset.status shouldBe HttpStatusCode.BadRequest
+        fixedAsset.body<ErrorResponseDto>().error shouldBe "fixed_asset_account_not_allowed"
+        accumulated.status shouldBe HttpStatusCode.BadRequest
+        accumulated.body<ErrorResponseDto>().error shouldBe "accumulated_depreciation_account_not_allowed"
+        fixture.journalEntryRepository.findAllByCompany(fixture.company.id).size shouldBe before
+    }
+
+    @Test
+    fun `given a gain, when the gain account is Sales it is 400 gain_loss_account_not_allowed, and Other income is accepted`() = testApplication {
+        val fixture = Fixture()
+        val sales = Account.create(fixture.company.id, AccountType.REVENUE, null, "4000", "Sales Revenue").also { fixture.accountRepository.save(it) }
+        val otherIncome = Account.create(fixture.company.id, AccountType.REVENUE, null, "4100", "Other income").also { fixture.accountRepository.save(it) }
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val assetId = client.createAsset(fixture)
+
+        val toSales = client.disposeWith(fixture, assetId, fixture.cashAccount, fixture.fixedAssetAccount, fixture.accumulatedDepreciationAccount,
+            """, "gainOnDisposalAccountId": "${sales.id.value}"""", proceeds = "9000.00")
+        toSales.status shouldBe HttpStatusCode.BadRequest
+        toSales.body<ErrorResponseDto>().let { it.error shouldBe "gain_loss_account_not_allowed"; it.detail shouldBe "${sales.id.value}: sales_revenue_account" }
+
+        val toOther = client.disposeWith(fixture, assetId, fixture.cashAccount, fixture.fixedAssetAccount, fixture.accumulatedDepreciationAccount,
+            """, "gainOnDisposalAccountId": "${otherIncome.id.value}"""", proceeds = "9000.00")
+        toOther.status shouldBe HttpStatusCode.OK
+    }
+
     @Test
     fun `given a disposal with a loss and a loss account, when disposed, then the loss is debited to it and the revenue account is untouched`() = testApplication {
         val fixture = Fixture()

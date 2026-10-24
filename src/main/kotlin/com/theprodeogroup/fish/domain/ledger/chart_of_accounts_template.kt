@@ -64,6 +64,9 @@ import com.theprodeogroup.fish.domain.tenancy.CompanyId
  */
 object ChartOfAccountsTemplate {
     const val CASH_CODE = "1000"
+
+    /** The main income account in every business chart ("Sales Revenue"); a gain on disposal may not be posted to it (FR-FA26, 2026-10-24). */
+    const val SALES_REVENUE_CODE = "4000"
     const val OPENING_BALANCE_EQUITY_CODE = "3900"
     const val SUSPENSE_ACCOUNT_CODE = "3910"
 
