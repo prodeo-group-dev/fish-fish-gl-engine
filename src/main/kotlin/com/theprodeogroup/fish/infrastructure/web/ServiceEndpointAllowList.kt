@@ -34,6 +34,8 @@ object ServiceEndpointAllowList {
             "GET /companies/{companyId}",
             "GET /companies/{companyId}/sales-posting-context",
             "GET /companies/{companyId}/sales-invoices",
+            // The standing receivables tie-out (GL-T-12a, GL-FR-RPT-5; SOP FR-SOP-AR-26, approved by Femi): SOP compares its open total with the 1100 control balance as at a date.
+            "GET /companies/{companyId}/accounts/{accountId}/balance",
             // GL-T-28: the VAT rate SOP reads (with the sale date) to work out the VAT it sends; F22-18.
             "GET /companies/{companyId}/vat-categories",
             "POST /companies/{companyId}/customer-balances",
