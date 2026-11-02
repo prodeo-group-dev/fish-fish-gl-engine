@@ -551,6 +551,131 @@ class CashBookRoutesTest {
         client.get("$base/accounts/${live.id.value}/postings?from=${TODAY.minusDays(7)}&to=$TODAY") { signedIn(fixture) }.body<AccountPostingsResponseDto>().active shouldBe true
     }
 
+    // ---- the owner decides the life span of his accounts (Femi 2026-10-23): PUT .../accounts/{id}/active ----
+
+    private suspend fun io.ktor.client.HttpClient.setActive(fixture: Fixture, account: Account, active: Boolean, email: String = ADMIN_EMAIL) =
+        put("/api/companies/${fixture.company.id.value}/accounts/${account.id.value}/active") {
+            signedIn(fixture, email); contentType(ContentType.Application.Json); setBody("""{"active":$active}""")
+        }
+
+    @Test
+    fun `given a bank book holding a balance, when the owner inactivates it, then it is 200 with the balance, nothing posted changes, and reactivating restores it`() = testApplication {
+        val fixture = Fixture()
+        val bank = fixture.cashBook("1016", CashBookKind.BANK)
+        val entry = fixture.post(bank, fixture.revenueAccount!!, "800.00", TODAY.minusDays(1))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val off = client.setActive(fixture, bank, false)
+
+        off.status shouldBe HttpStatusCode.OK
+        val body: AccountActiveDto = off.body()
+        body.active shouldBe false
+        body.code shouldBe "1016"
+        body.balance shouldBe "800.00"
+        body.balanceSide shouldBe "DEBIT"
+        fixture.accountRepository.findById(bank.id)!!.active shouldBe false
+        fixture.journalEntryRepository.findById(entry.id)!!.status shouldBe com.theprodeogroup.fish.domain.common.PostingStatus.POSTED
+        client.get("/api/companies/${fixture.company.id.value}/accounts/${bank.id.value}/balance") { signedIn(fixture) }
+            .body<AccountBalanceResponseDto>().balance shouldBe "800.00"
+
+        client.setActive(fixture, bank, false).status shouldBe HttpStatusCode.OK
+        val on = client.setActive(fixture, bank, true)
+        on.status shouldBe HttpStatusCode.OK
+        on.body<AccountActiveDto>().active shouldBe true
+        fixture.accountRepository.findById(bank.id)!!.active shouldBe true
+    }
+
+    @Test
+    fun `given an account the system posts to, when the owner inactivates it, then it is 409 account_required_by_system and stays active`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.setActive(fixture, cash, false)
+
+        response.status shouldBe HttpStatusCode.Conflict
+        response.body<ErrorResponseDto>().error shouldBe "account_required_by_system"
+        fixture.accountRepository.findById(cash.id)!!.active shouldBe true
+    }
+
+    @Test
+    fun `given someone who is not the Owner-Admin, or a service credential, or a body that is not true or false, when they ask, then it is refused and nothing changes`() = testApplication {
+        val fixture = Fixture()
+        val expense = fixture.account("5800", AccountType.EXPENSE)
+        val accountant = User.create("accountant-active@example.com", "Accountant").also { fixture.userRepository.save(it) }
+        fixture.membershipRepository.save(Membership.grant(accountant.id, fixture.tenant, Role.ACCOUNTANT, fixture.company.id, accessLevel = AccessLevel.ADMIN))
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        client.setActive(fixture, expense, false, "accountant-active@example.com").status shouldBe HttpStatusCode.Forbidden
+        client.put("/api/companies/${fixture.company.id.value}/accounts/${expense.id.value}/active") {
+            asCbb(fixture); contentType(ContentType.Application.Json); setBody("""{"active":false}""")
+        }.status shouldBe HttpStatusCode.Forbidden
+        client.put("/api/companies/${fixture.company.id.value}/accounts/${expense.id.value}/active") {
+            signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"active":"maybe"}""")
+        }.status shouldBe HttpStatusCode.BadRequest
+        client.put("/api/companies/${UUID.randomUUID()}/accounts/${expense.id.value}/active") {
+            signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"active":false}""")
+        }.status shouldBe HttpStatusCode.NotFound
+        client.put("/api/companies/${fixture.company.id.value}/accounts/${UUID.randomUUID()}/active") {
+            signedIn(fixture); contentType(ContentType.Application.Json); setBody("""{"active":false}""")
+        }.status shouldBe HttpStatusCode.NotFound
+
+        fixture.accountRepository.findById(expense.id)!!.active shouldBe true
+    }
+
+    @Test
+    fun `given an inactive account, when a person posts a manual journal to it or records a cash book entry in or against it, then it is 409 account_inactive and nothing is posted, but Undo of an earlier entry still works`() = testApplication {
+        val fixture = Fixture()
+        val cash = fixture.cashBook("1000", CashBookKind.CASH)
+        val bank = fixture.cashBook("1016", CashBookKind.BANK)
+        val dormantExpense = fixture.account("5800", AccountType.EXPENSE)
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+        val earlier: CashBookEntryResponseDto = client.recordEntry(fixture, bank, "receipts", entryBody(fixture.revenueAccount!!, "50.00"), "before-inactive").body()
+        client.setActive(fixture, bank, false).status shouldBe HttpStatusCode.OK
+        client.setActive(fixture, dormantExpense, false).status shouldBe HttpStatusCode.OK
+        val entriesBefore = fixture.journalEntryRepository.findAllByAccount(bank.id).size + fixture.journalEntryRepository.findAllByAccount(dormantExpense.id).size
+
+        // A manual journal naming an inactive account (people and the generic door alike).
+        val journal = client.post("/api/journal-entries") {
+            signedIn(fixture); contentType(ContentType.Application.Json)
+            setBody("""{"periodId":"${fixture.period!!.id.value}","date":"$TODAY","source":"MANUAL","lines":[
+                {"accountId":"${dormantExpense.id.value}","amount":"10.00","currency":"GBP","side":"DEBIT"},
+                {"accountId":"${fixture.revenueAccount!!.id.value}","amount":"10.00","currency":"GBP","side":"CREDIT"}]}""")
+        }
+        journal.status shouldBe HttpStatusCode.Conflict
+        journal.body<ErrorResponseDto>().error shouldBe "account_inactive"
+
+        // A cash book entry INTO an inactive book, and a transfer from or to one.
+        val receipt = client.recordEntry(fixture, bank, "receipts", entryBody(fixture.revenueAccount!!, "20.00"), "after-inactive")
+        receipt.status shouldBe HttpStatusCode.Conflict
+        receipt.body<ErrorResponseDto>().error shouldBe "account_inactive"
+        val move = client.post("/api/companies/${fixture.company.id.value}/cash-books/${cash.id.value}/transfers") {
+            signedIn(fixture); header("Idempotency-Key", "move-to-inactive"); contentType(ContentType.Application.Json)
+            setBody("""{"date":"$TODAY","amount":"5.00","toAccountId":"${bank.id.value}","description":"Move"}""")
+        }
+        move.status shouldBe HttpStatusCode.Conflict
+        move.body<ErrorResponseDto>().error shouldBe "account_inactive"
+
+        fixture.journalEntryRepository.findAllByAccount(bank.id).size + fixture.journalEntryRepository.findAllByAccount(dormantExpense.id).size shouldBe entriesBefore
+
+        // Corrections stay possible (S2): the earlier receipt on the now inactive book is still undone.
+        val undo = client.post("/api/companies/${fixture.company.id.value}/cash-books/${bank.id.value}/entries/${earlier.entryId}/undo") { asCbb(fixture) }
+        undo.status shouldBe HttpStatusCode.Created
+
+        // Reactivated, the same manual journal posts.
+        client.setActive(fixture, dormantExpense, true).status shouldBe HttpStatusCode.OK
+        client.post("/api/journal-entries") {
+            signedIn(fixture); contentType(ContentType.Application.Json)
+            setBody("""{"periodId":"${fixture.period!!.id.value}","date":"$TODAY","source":"MANUAL","lines":[
+                {"accountId":"${dormantExpense.id.value}","amount":"10.00","currency":"GBP","side":"DEBIT"},
+                {"accountId":"${fixture.revenueAccount!!.id.value}","amount":"10.00","currency":"GBP","side":"CREDIT"}]}""")
+        }.status shouldBe HttpStatusCode.Created
+    }
+
     @Test
     fun `given a bank book that was stopped, when it is set as a cash book, then it is 409 cash_book_kind_fixed, and when it is set as a bank account again it is a book again - Femi 2026-10-23`() = testApplication {
         val fixture = Fixture()

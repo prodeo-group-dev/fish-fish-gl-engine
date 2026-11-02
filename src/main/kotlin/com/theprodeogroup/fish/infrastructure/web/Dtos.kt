@@ -1287,6 +1287,25 @@ data class CashBookResponseDto(
 @Serializable
 data class CashBookRangeTooLargeDto(val error: String, val detail: String, val rowCount: Int, val limit: Int)
 
+/** `PUT /companies/{companyId}/accounts/{accountId}/active`: `true` reactivates the account, `false` inactivates it (the owner only). */
+@Serializable
+data class SetAccountActiveRequestDto(val active: Boolean)
+
+/**
+ * The answer to the call above: the account, whether it is active, and its balance as at today (a positive amount and the side it falls on)
+ * so a screen can say "this account still holds X and stays in your reports". Inactivating moves nothing.
+ */
+@Serializable
+data class AccountActiveDto(
+    val accountId: String,
+    val code: String,
+    val name: String,
+    val active: Boolean,
+    val currency: String,
+    val balance: String,
+    val balanceSide: String
+)
+
 /** `PUT /companies/{companyId}/accounts/{accountId}/cash-book-kind`: `CASH`, `BANK` or null to clear. */
 @Serializable
 data class ChangeCashBookKindRequestDto(val cashBookKind: String? = null)

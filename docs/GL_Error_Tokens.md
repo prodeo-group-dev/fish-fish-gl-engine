@@ -114,6 +114,8 @@ Status codes are what the code answers today; a token that appears with two stat
 | `cash_book_kind_fixed` | 409 | A cash book stays a cash book and a bank account stays a bank account (Femi, 2026-10-23); open a new account instead. |
 | `counter_account_not_found` | 404 | The other side of a receipt or payment does not exist for this Company. |
 | `counter_account_inactive` | 409 | The other side of a receipt or payment is inactive. |
+| `account_inactive` | 409 | The owner has made an account inactive (Femi, 2026-10-23), so nothing new is posted to it: a manual journal line, a cash book entry into it, or a move of money to or from it. Undo and reversal of earlier entries still work, and the balance stays in every report. |
+| `account_required_by_system` | 409 | The owner tried to inactivate an account the system posts to by code (the Cash Book 1000, a control or module-owned account, Suspense), which would make sales, purchases, payroll or the cash book fail. Any other account, including a second bank account, can be inactivated. |
 | `counter_account_not_allowed` | 409 | The other side is a control or module-owned account; the answer carries a `useInstead` token naming the right screen (sales collection, supplier payment, inventory, fixed assets, VAT, opening figures, transfer). |
 | `undo_elsewhere` | 409 | This entry was not made in a cash or bank book, so it cannot be undone here; the answer says where to reverse it. |
 | `already_undone` | 409 | The entry was already reversed. |

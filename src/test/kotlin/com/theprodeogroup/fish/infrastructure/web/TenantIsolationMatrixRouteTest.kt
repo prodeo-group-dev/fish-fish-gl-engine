@@ -657,6 +657,8 @@ class TenantIsolationMatrixRouteTest {
         "POST /companies/{companyId}/accounts/{accountId}/opening-balance",
         "PUT /companies/{companyId}/accounts/{accountId}/expense-classification",
         "PUT /companies/{companyId}/accounts/{accountId}/cash-book-kind",
+        // The owner inactivates or reactivates an account (Femi 2026-10-23): Owner-Admin, signed in as a person; never a service credential.
+        "PUT /companies/{companyId}/accounts/{accountId}/active",
         "GET /companies/{companyId}/cash-books", "GET /companies/{companyId}/cash-books/{accountId}",
         "GET /companies/{companyId}/cash-balance-series",
         // GL-T-30: people only until CBB's "Pay VAT" task puts it on the cbb allow-list.

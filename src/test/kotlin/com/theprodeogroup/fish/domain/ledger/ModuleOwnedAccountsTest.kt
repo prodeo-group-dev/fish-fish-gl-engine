@@ -2,6 +2,7 @@ package com.theprodeogroup.fish.domain.ledger
 
 import com.theprodeogroup.fish.domain.common.ClientType
 import com.theprodeogroup.fish.domain.tenancy.CompanyId
+import io.kotest.assertions.withClue
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 
@@ -73,4 +74,38 @@ class ModuleOwnedAccountsTest {
             reserved["4920"] shouldBe UseInstead.PURCHASE_PAYMENT
         }
     }
+
+    @Test
+    fun `given a business chart, then the accounts the system posts to by code are required by the system and may not be inactivated`() {
+        val required = listOf(
+            AccountType.ASSET to "1000", AccountType.ASSET to "1100", AccountType.ASSET to "1200", AccountType.ASSET to "1210", AccountType.ASSET to "1300",
+            AccountType.LIABILITY to "2000", AccountType.LIABILITY to "2150", AccountType.LIABILITY to "2200", AccountType.LIABILITY to "2300",
+            AccountType.EQUITY to "3900", AccountType.EQUITY to "3910", AccountType.REVENUE to "4920",
+            AccountType.EXPENSE to "5200", AccountType.EXPENSE to "5300", AccountType.EXPENSE to "5400"
+        )
+        for ((type, code) in required) {
+            withClue("$type $code") { ModuleOwnedAccounts.requiredBySystem(account(type, code), ClientType.COMPANY_LIMITED) shouldBe true }
+        }
+    }
+
+    @Test
+    fun `given an ordinary account of the owner or a cash or bank book, then it is not required by the system`() {
+        ModuleOwnedAccounts.requiredBySystem(account(AccountType.EXPENSE, "5800"), ClientType.COMPANY_LIMITED) shouldBe false
+        ModuleOwnedAccounts.requiredBySystem(account(AccountType.REVENUE, "4100"), ClientType.COMPANY_LIMITED) shouldBe false
+        // A second bank account or a petty-cash book may be inactivated by its owner; only account 1000 is the Cash Book.
+        ModuleOwnedAccounts.requiredBySystem(account(AccountType.ASSET, "1015", CashBookKind.BANK), ClientType.COMPANY_LIMITED) shouldBe false
+        // The same code at another type is not the reserved account.
+        ModuleOwnedAccounts.requiredBySystem(account(AccountType.EXPENSE, "4920"), ClientType.COMPANY_LIMITED) shouldBe false
+    }
+
+    @Test
+    fun `given an Individual chart, then only the cash book and the opening-figure accounts are required by the system`() {
+        ModuleOwnedAccounts.requiredBySystem(account(AccountType.ASSET, "1000"), ClientType.INDIVIDUAL) shouldBe true
+        ModuleOwnedAccounts.requiredBySystem(account(AccountType.EQUITY, "3900"), ClientType.INDIVIDUAL) shouldBe true
+        ModuleOwnedAccounts.requiredBySystem(account(AccountType.EQUITY, "3910"), ClientType.INDIVIDUAL) shouldBe true
+        // An Individual chart uses 1100 for Investments and 2000 for Loans: the owner's own accounts.
+        ModuleOwnedAccounts.requiredBySystem(account(AccountType.ASSET, "1100"), ClientType.INDIVIDUAL) shouldBe false
+        ModuleOwnedAccounts.requiredBySystem(account(AccountType.LIABILITY, "2000"), ClientType.INDIVIDUAL) shouldBe false
+    }
 }
+

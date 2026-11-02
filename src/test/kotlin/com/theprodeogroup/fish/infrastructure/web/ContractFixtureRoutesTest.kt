@@ -1394,6 +1394,24 @@ class ContractFixtureRoutesTest {
     }
 
     @Test
+    fun `contract fixture - PUT account active inactivates an account that still holds a balance`() = testApplication {
+        val fixture = Fixture(configureAccounts = false, openPeriod = false)
+        fixture.seed()
+        application { fixture.installInto(this) }
+        val client = createClient { install(ContentNegotiation) { json() } }
+
+        val response = client.put("/api/companies/${fixture.company.id.value}/accounts/${id(2).value}/active") {
+            header(HttpHeaders.Authorization, "Bearer ${TestJwtSupport.signToken(ADMIN_EMAIL)}")
+            header("X-Tenant-Id", fixture.tenant.value.toString())
+            contentType(ContentType.Application.Json)
+            setBody("""{"active":false}""")
+        }
+
+        response.status shouldBe HttpStatusCode.OK
+        ContractFixtures.verifyOrUpdate("contracts/gl/account-active.json", response.bodyAsText())
+    }
+
+    @Test
     fun `contract fixture - GET account balance`() = contract("contracts/gl/account-balance.json", "accounts/${id(1).value}/balance?asOf=2026-10-31")
 
     @Test
